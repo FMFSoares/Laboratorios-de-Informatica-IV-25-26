@@ -3,4 +3,6 @@
 
 ora bem, estou a fazer um google docs para a primeira etapa do trabalho. faz me o docs inteiro. desenvolve extensamente todos os topicos, quero detalhe nas coisas, nada feito a pressa. pesquisa se for necessario sobre o tema para ter boas informações. especial atenção nos requisitos que sao a parte mais importante da primeira etapa, ja que vao ter de ser tidos em conta na implementação. demora o tempo que precisares mostra me uma cena como deve ser 
 
+
+
  

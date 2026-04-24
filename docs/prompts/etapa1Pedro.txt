@@ -1,0 +1,13 @@
+Contexto: Sou um Engenheiro de Requisitos a trabalhar no sistema DLMCare (Gestão de Oficinas de Trotinetes). Atualmente, temos apenas dados de reuniões qualitativas. Preciso de expandir a eliciação utilizando dois novos métodos: Survey Quantitativo e Análise de Artefatos.
+
+Tarefa: Gera os seguintes elementos para o meu relatório de Engenharia de Requisitos:
+
+Metodologia de Survey (Clientes e Staff):* Cria um questionário de 5 perguntas (escala Likert de 1-5 e escolha múltipla) para os Clientes Finais, focado na aceitação de um portal de histórico e notificações por SMS.* Cria um questionário de 5 perguntas para os Mecânicos e Rececionistas, focado na usabilidade de tablets e na eficácia da comunicação via grupos de WhatsApp atuais.
+
+Relatório de Análise de Artefatos:* Simula uma análise técnica às atuais "Folhas de Obra manchadas de óleo" e "Folhas de Excel de Stock" da DLMCare.* Identifica 3 campos de dados críticos que estão frequentemente ilegíveis ou em falta nestes papéis (ex: número de série, tempo exato de início/fim, referência da peça).
+
+Novos Requisitos Extraídos:
+
+Com base nestas simulações, deriva 2 novos Requisitos Funcionais (RF) e 1 Requisito Não Funcional (RNF) que não tenham sido captados nas reuniões iniciais.
+
+Formatação: Apresenta os resultados de forma estruturada, pronta a inserir no capítulo "Eliciação de Requisitos" do relatório.
