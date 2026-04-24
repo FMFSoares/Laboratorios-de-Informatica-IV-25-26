@@ -1,0 +1,268 @@
+================================================================
+  DLMCare — Guia de Git e Branching Strategy
+  Etapa 3 — Implementação e Desenvolvimento Assistido por LLM
+  Data: Abril 2026
+================================================================
+
+
+----------------------------------------------------------------
+1. CONCEITO — PORQUÊ USAR MÚLTIPLOS BRANCHES?
+----------------------------------------------------------------
+
+Quando se trabalha só com o main, qualquer alteração vai
+diretamente para o código "oficial" do projeto. Isso é
+problemático porque:
+
+  - Uma feature a meio pode partir o que já funcionava
+  - É difícil trabalhar em paralelo com o grupo
+  - Não há separação entre "em desenvolvimento" e "estável"
+  - Reverter erros é mais complicado
+
+Com múltiplos branches, cada funcionalidade é desenvolvida
+de forma isolada. O main só recebe código que já foi testado
+e aprovado.
+
+
+----------------------------------------------------------------
+2. OS TRÊS TIPOS DE BRANCHES NO DLMCARE
+----------------------------------------------------------------
+
+  main
+    O branch "oficial" do projeto. Representa o estado mais
+    estável e entregável. Só recebe código através de merges
+    vindos do develop. NUNCA se trabalha diretamente aqui
+    (exceto setup inicial e infraestrutura).
+
+  develop
+    Branch de integração. É aqui que os módulos acabados se
+    juntam antes de ir para o main. Funciona como uma
+    "zona de testes de integração". Quando develop está
+    estável e testado, faz-se merge para main.
+
+  feature/nome-do-modulo
+    Um branch temporário por cada módulo ou funcionalidade.
+    Criado a partir do develop, desenvolvido de forma isolada,
+    e eliminado depois do merge para develop.
+
+    Exemplos de nomes:
+      feature/auth
+      feature/clientes
+      feature/ordens-servico
+      feature/stock
+      feature/faturacao
+      feature/dashboard
+
+
+----------------------------------------------------------------
+3. DIAGRAMA DO FLUXO
+----------------------------------------------------------------
+
+  main     ──────────────────────────────────────────────────►
+               ▲                          ▲
+               │ merge                    │ merge
+  develop  ────┴──────────────────────────┴──────────────────►
+               ▲             ▲
+               │ merge        │ merge
+  feature/A  ──┘              │
+  feature/B  ─────────────────┘
+
+Leitura: as features partem do develop, são desenvolvidas
+em paralelo, e depois regressam ao develop via merge.
+Periodicamente, o develop é mergeado para o main.
+
+
+----------------------------------------------------------------
+4. FLUXO COMPLETO — IMPLEMENTAR UM MÓDULO NOVO
+----------------------------------------------------------------
+
+Exemplo: implementar o módulo de autenticação.
+
+  PASSO 1 — Partir sempre do develop atualizado
+
+    git checkout develop
+    git pull origin develop
+
+    O pull garante que tens as últimas alterações dos colegas
+    antes de criares o teu branch.
+
+
+  PASSO 2 — Criar o branch da feature
+
+    git checkout -b feature/auth
+
+    O flag -b cria e muda para o novo branch ao mesmo tempo.
+    Estás agora num branch isolado — o que fizeres aqui não
+    afeta o develop nem o main.
+
+
+  PASSO 3 — Programar o módulo
+
+    Trabalha normalmente. Faz commits frequentes com mensagens
+    descritivas (ver secção 6 para convenções de commits).
+
+    git add app/auth/jwt.py app/auth/dependencies.py
+    git commit -m "feat: criar geração e validação de tokens JWT"
+
+    git add app/routers/auth.py app/schemas/auth.py
+    git commit -m "feat: implementar endpoint POST /auth/login"
+
+    Commits pequenos e frequentes são melhores do que um commit
+    gigante no final — facilitam o code review e a deteção de erros.
+
+
+  PASSO 4 — Integrar no develop
+
+    git checkout develop
+    git merge feature/auth
+    git push origin develop
+
+
+  PASSO 5 — Apagar o branch da feature (boa prática)
+
+    git branch -d feature/auth              (apaga localmente)
+    git push origin --delete feature/auth   (apaga no GitHub)
+
+    O branch já não é necessário — o trabalho está no develop.
+
+
+  PASSO 6 — Quando develop está estável, merge para main
+
+    git checkout main
+    git merge develop
+    git push origin main
+    git checkout develop                    (voltar ao develop)
+
+
+----------------------------------------------------------------
+5. SITUAÇÕES ESPECIAIS
+----------------------------------------------------------------
+
+  Setup inicial / infraestrutura
+    Ficheiros de configuração, estrutura de pastas, .gitignore,
+    requirements.txt, etc. vão diretamente para o main porque
+    são a fundação do projeto, não uma feature.
+
+    git checkout main
+    git add .gitignore backend/ database/ ...
+    git commit -m "setup: estrutura inicial do projeto"
+    git push origin main
+
+    Depois sincronizar o develop:
+    git checkout develop
+    git merge main
+    git push origin develop
+
+
+  Conflitos de merge
+    Acontecem quando dois branches alteraram o mesmo ficheiro.
+    O Git marca as zonas em conflito assim:
+
+      <<<<<<< develop
+      código que estava no develop
+      =======
+      código que veio da feature
+      >>>>>>> feature/auth
+
+    Resolve manualmente (escolhe o código correto, apaga as
+    marcas), depois:
+
+    git add ficheiro_com_conflito.py
+    git commit -m "merge: resolver conflito em auth.py"
+
+
+  Atualizar uma feature com alterações do develop
+    Se o develop avançou enquanto estavas na tua feature e
+    queres incorporar as novidades:
+
+    git checkout feature/auth
+    git merge develop
+
+    Isto traz as alterações do develop para a tua feature
+    sem precisares de abandonar o que estás a fazer.
+
+
+  Ver em que branch estás
+    git branch
+    → o branch atual aparece com * à frente
+
+  Ver todos os branches (locais e remotos)
+    git branch -a
+
+
+----------------------------------------------------------------
+6. CONVENÇÕES DE MENSAGENS DE COMMIT
+----------------------------------------------------------------
+
+Usar um prefixo padronizado facilita a leitura do histórico.
+
+  feat:     nova funcionalidade
+  fix:      correção de bug
+  setup:    configuração de ambiente ou infraestrutura
+  refactor: reestruturação de código sem alterar comportamento
+  docs:     alterações a documentação
+  style:    formatação, espaços, etc. (sem alteração de lógica)
+  test:     adição ou correção de testes
+
+Exemplos:
+  git commit -m "feat: implementar listagem de clientes"
+  git commit -m "fix: corrigir validação do NIF no schema"
+  git commit -m "refactor: separar lógica de stock em service"
+  git commit -m "docs: atualizar guia de branching"
+
+Regras práticas:
+  - Mensagem no imperativo ("implementar" não "implementei")
+  - Primeira linha com menos de 72 caracteres
+  - Se precisares de mais detalhe, deixa uma linha em branco
+    e escreve parágrafos adicionais
+
+
+----------------------------------------------------------------
+7. COMANDOS DE REFERÊNCIA RÁPIDA
+----------------------------------------------------------------
+
+  Ver estado atual:
+    git status
+    git branch
+    git log --oneline --graph --all   (histórico visual)
+
+  Mudar de branch:
+    git checkout nome-do-branch
+
+  Criar e mudar para novo branch:
+    git checkout -b feature/nome
+
+  Guardar trabalho temporariamente (sem fazer commit):
+    git stash
+    git stash pop                     (recuperar)
+
+  Atualizar branch local com o remoto:
+    git pull origin nome-do-branch
+
+  Enviar branch para o GitHub:
+    git push origin nome-do-branch
+
+  Fazer merge (estando no branch de destino):
+    git merge nome-do-branch-origem
+
+  Apagar branch local:
+    git branch -d nome-do-branch
+
+  Apagar branch remoto (GitHub):
+    git push origin --delete nome-do-branch
+
+
+----------------------------------------------------------------
+8. RESUMO — REGRAS DO PROJETO
+----------------------------------------------------------------
+
+  1. NUNCA trabalhar diretamente no main (exceto setup)
+  2. SEMPRE partir do develop atualizado para criar features
+  3. UM branch por módulo/funcionalidade
+  4. Commits PEQUENOS e FREQUENTES com mensagens descritivas
+  5. Fazer PUSH do branch para o GitHub regularmente
+     (não só no final — serve de backup e permite code review)
+  6. O main só é atualizado quando o develop está estável
+
+================================================================
+  Fim do documento
+================================================================

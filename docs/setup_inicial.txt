@@ -1,0 +1,529 @@
+================================================================
+  DLMCare — Documentação do Setup Inicial
+  Etapa 3 — Implementação e Desenvolvimento Assistido por LLM
+  Data: Abril 2026
+================================================================
+
+
+----------------------------------------------------------------
+1. CONTROLO DE VERSÕES — GIT
+----------------------------------------------------------------
+
+O repositório Git já existia e estava ligado ao GitHub.
+Foram criados dois branches adicionais para suportar uma
+estratégia de branching profissional:
+
+  - main      → código estável, pronto para entrega/produção
+  - develop   → branch de integração contínua; é aqui que os
+                módulos são integrados antes de irem para main
+  - feature/* → um branch por módulo/funcionalidade, criado a
+                partir de develop (ex: feature/auth,
+                feature/clientes, feature/stock)
+
+Fluxo de trabalho:
+  1. Criar feature/nome-modulo a partir de develop
+  2. Implementar e testar o módulo
+  3. Fazer merge para develop
+  4. Quando develop está estável, merge para main
+
+Também foi atualizado o ficheiro .gitignore (já existia para
+Python) com entradas em falta para:
+  - Node.js / npm / Vite (node_modules/, dist/, *.local, etc.)
+  - Ficheiros de ambiente (.env, .env.local)
+  - Pastas de IDE (.idea/, .vscode/settings.json)
+  - Cache do Docker (.docker/)
+  - Ficheiros compilados do Alembic
+
+IMPORTANTE: O ficheiro .env NUNCA deve ser commitado.
+Apenas o .env.example vai para o repositório.
+
+
+----------------------------------------------------------------
+2. VARIÁVEIS DE AMBIENTE — .env.example
+----------------------------------------------------------------
+
+Foi criado o ficheiro .env.example na raiz do projeto.
+Este ficheiro serve como template documentado de todas as
+variáveis necessárias para correr o sistema.
+
+Cada developer copia este ficheiro para .env e preenche
+com os valores reais do seu ambiente local:
+
+  cp .env.example backend/.env
+
+As variáveis definidas agrupam-se em 4 categorias:
+
+  a) Base de dados
+       DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+       DATABASE_URL  (URL composta usada pelo SQLAlchemy)
+
+  b) Autenticação JWT
+       JWT_SECRET_KEY       (gerar com secrets.token_hex(32))
+       JWT_ALGORITHM        (HS256)
+       ACCESS_TOKEN_EXPIRE_MINUTES  (480 = 8h, 1 turno)
+       REFRESH_TOKEN_EXPIRE_DAYS    (7 dias)
+
+  c) Aplicação
+       APP_ENV       (development / production)
+       APP_DEBUG     (true / false)
+       APP_HOST / APP_PORT
+       ALLOWED_ORIGINS  (lista separada por vírgulas de origens
+                         CORS permitidas, ex: frontend Vite)
+
+  d) Frontend (Vite)
+       VITE_API_BASE_URL  (URL base da API, usada nos axios
+                           calls do Vue)
+
+Razão de usar .env e não hardcode: segurança (credenciais fora
+do código), portabilidade (cada ambiente tem os seus valores)
+e conformidade com boas práticas (12-factor app).
+
+
+----------------------------------------------------------------
+3. ESTRUTURA DE PASTAS DO PROJETO
+----------------------------------------------------------------
+
+Após o setup, a estrutura do repositório é:
+
+  /
+  ├── backend/                  → API FastAPI (Python)
+  │   ├── app/
+  │   │   ├── __init__.py
+  │   │   ├── main.py           → ponto de entrada da aplicação
+  │   │   ├── config.py         → leitura de variáveis de ambiente
+  │   │   ├── database.py       → ligação SQLAlchemy à BD
+  │   │   ├── models/           → modelos ORM (tabelas)
+  │   │   ├── routers/          → endpoints REST por módulo
+  │   │   ├── schemas/          → schemas Pydantic (request/response)
+  │   │   ├── services/         → lógica de negócio
+  │   │   ├── repositories/     → acesso à base de dados
+  │   │   ├── auth/             → autenticação e JWT
+  │   │   └── utils/            → utilitários partilhados
+  │   ├── alembic/              → sistema de migrations de BD
+  │   │   ├── env.py            → configuração do Alembic
+  │   │   ├── script.py.mako    → template para novas migrations
+  │   │   └── versions/         → ficheiros de migration gerados
+  │   ├── alembic.ini           → configuração principal do Alembic
+  │   ├── requirements.txt      → dependências Python
+  │   └── .env                  → variáveis locais (não commitado)
+  │
+  ├── frontend/                 → SPA Vue.js (criado com Vite)
+  │   (criado manualmente com: npm create vite@latest frontend
+  │    -- --template vue)
+  │
+  ├── database/
+  │   ├── init.sql              → criação do schema e utilizador MySQL
+  │   └── seed.sql              → dados iniciais de teste
+  │
+  ├── docs/                     → documentação do projeto
+  ├── .env.example              → template de variáveis de ambiente
+  ├── .gitignore                → ficheiros a ignorar no Git
+  └── README.md
+
+Esta separação backend/frontend segue o padrão de projetos
+full-stack com API REST independente, o que facilita o
+desenvolvimento paralelo e a futura separação de deploys.
+
+
+----------------------------------------------------------------
+4. BACKEND — DEPENDÊNCIAS PYTHON (requirements.txt)
+----------------------------------------------------------------
+
+As dependências foram fixadas em versões específicas para
+garantir reprodutibilidade entre máquinas de developers.
+
+NOTA IMPORTANTE — compatibilidade Python 3.13:
+  A versão inicial usava pydantic==2.7.1 com pydantic-core==2.18.2,
+  que não tinha wheel pré-compilada para Python 3.13 e falhava
+  ao tentar compilar código Rust. A solução foi atualizar para
+  pydantic>=2.9.0, que já inclui wheels binárias para Python 3.13.
+
+Dependências instaladas e sua função:
+
+  fastapi==0.115.12
+    Framework web assíncrono. Gera automaticamente documentação
+    OpenAPI em /docs e /redoc. Base de todos os endpoints REST.
+
+  uvicorn[standard]==0.34.2
+    Servidor ASGI que corre o FastAPI. O flag [standard] instala
+    extras (uvloop, httptools, websockets) para melhor performance.
+    Modo de desenvolvimento: uvicorn app.main:app --reload
+
+  sqlalchemy==2.0.40
+    ORM (Object-Relational Mapper). Permite definir tabelas como
+    classes Python e fazer queries sem escrever SQL manual.
+    Versão 2.0 usa a nova API com session.execute().
+
+  pymysql==1.1.1
+    Driver Python puro para MySQL. Usado pelo SQLAlchemy para
+    comunicar com a base de dados MySQL.
+
+  cryptography==44.0.3
+    Dependência do pymysql para suporte a ligações TLS/SSL.
+
+  alembic==1.15.2
+    Sistema de migrations de base de dados. Permite versionar
+    alterações ao schema (criar tabelas, adicionar colunas, etc.)
+    de forma incremental e reversível.
+
+  pydantic==2.11.3
+    Validação de dados e serialização. Usado para definir os
+    schemas de request e response da API. Valida tipos
+    automaticamente e gera erros detalhados se os dados forem
+    inválidos.
+
+  pydantic-settings==2.9.1
+    Extensão do Pydantic para ler configurações de ficheiros
+    .env e variáveis de ambiente. Usado em config.py.
+
+  python-jose[cryptography]==3.3.0
+    Geração e verificação de tokens JWT. Usado no módulo de
+    autenticação para criar access tokens e refresh tokens.
+
+  passlib[bcrypt]==1.7.4
+    Hashing seguro de passwords. O bcrypt é o algoritmo
+    recomendado: é lento por design (dificulta brute force)
+    e inclui salt automático.
+
+  python-multipart==0.0.20
+    Necessário para receber dados de formulários HTML no FastAPI.
+    Usado no endpoint de login (OAuth2PasswordRequestForm).
+
+  python-dotenv==1.1.0
+    Carrega variáveis do ficheiro .env para o ambiente do processo.
+
+Para instalar:
+  cd backend
+  python3 -m venv venv
+  source venv/bin/activate     (Linux/Mac)
+  venv\Scripts\activate        (Windows)
+  pip install -r requirements.txt
+
+
+----------------------------------------------------------------
+5. BACKEND — VIRTUALENV
+----------------------------------------------------------------
+
+O virtualenv (pasta venv/) é um ambiente Python isolado.
+Garante que as dependências do projeto não interferem com
+outros projetos Python na mesma máquina.
+
+Comandos importantes:
+
+  Criar (só uma vez):
+    python3 -m venv venv
+
+  Ativar (em cada sessão de terminal):
+    source venv/bin/activate           (Linux/Mac)
+    venv\Scripts\activate              (Windows)
+
+  Desativar:
+    deactivate
+
+  Verificar que está ativo:
+    which python   → deve apontar para backend/venv/bin/python
+
+A pasta venv/ está no .gitignore — não vai para o repositório.
+Cada developer cria o seu próprio venv localmente.
+
+
+----------------------------------------------------------------
+6. BACKEND — config.py
+----------------------------------------------------------------
+
+Ficheiro: backend/app/config.py
+
+Usa a classe BaseSettings do pydantic-settings para ler
+automaticamente as variáveis do ficheiro .env.
+
+Funcionalidades:
+  - Lê DATABASE_URL, JWT_SECRET_KEY, etc. do .env
+  - Valores com tipos errados levantam erro de validação
+    imediatamente ao arrancar (fail-fast)
+  - Propriedade origins_list converte a string de ALLOWED_ORIGINS
+    numa lista Python (necessário para o middleware de CORS)
+  - model_config define o ficheiro .env e o encoding
+
+Uso em qualquer módulo:
+  from app.config import settings
+  print(settings.JWT_SECRET_KEY)
+
+O objeto settings é um singleton — é instanciado uma vez
+quando o módulo é importado pela primeira vez.
+
+
+----------------------------------------------------------------
+7. BACKEND — database.py
+----------------------------------------------------------------
+
+Ficheiro: backend/app/database.py
+
+Responsável por toda a ligação à base de dados.
+
+Componentes criados:
+
+  engine
+    Objeto central do SQLAlchemy. Gere o pool de ligações à BD.
+    pool_pre_ping=True: testa a ligação antes de usar (evita
+    erros silenciosos com ligações expiradas).
+    pool_recycle=3600: fecha e reabre ligações ao fim de 1 hora
+    (evita o erro "MySQL has gone away").
+    echo=True em dev: imprime todas as queries SQL no terminal
+    (útil para debug, desligar em produção).
+
+  SessionLocal
+    Fábrica de sessões. Cada request HTTP cria uma sessão
+    independente (autocommit=False para controlo transacional).
+
+  Base (DeclarativeBase)
+    Classe base de todos os modelos ORM. Todos os modelos herdam
+    desta classe. O Alembic usa Base.metadata para detetar
+    alterações ao schema.
+
+  get_db()
+    Dependency injection do FastAPI. Injetada nos endpoints
+    que precisam de aceder à BD:
+
+      @router.get("/clientes")
+      def listar(db: Session = Depends(get_db)):
+          ...
+
+    O bloco try/finally garante que a sessão é sempre fechada,
+    mesmo que ocorra uma exceção.
+
+  check_connection()
+    Função usada pelo endpoint /health para verificar se a
+    ligação à BD está operacional.
+
+
+----------------------------------------------------------------
+8. BACKEND — main.py
+----------------------------------------------------------------
+
+Ficheiro: backend/app/main.py
+
+Ponto de entrada da aplicação FastAPI.
+
+Componentes:
+
+  FastAPI(...)
+    Instância principal. Os parâmetros title, description e
+    version aparecem na documentação automática em /docs.
+
+  CORSMiddleware
+    Middleware de CORS (Cross-Origin Resource Sharing).
+    Necessário porque o frontend (localhost:5173) e o backend
+    (localhost:8000) correm em portas diferentes.
+    allow_credentials=True permite enviar cookies (refresh token).
+    As origens permitidas vêm de settings.origins_list.
+
+  /health
+    Endpoint de verificação de saúde do sistema.
+    Retorna o estado da ligação à BD e o ambiente atual.
+    Útil para monitorização e para confirmar que o setup está OK.
+
+  Routers (comentados)
+    Os routers dos módulos estão comentados. Serão descomentados
+    à medida que cada módulo for implementado. Todos usam o
+    prefixo /api/v1 para versionamento da API.
+
+Arrancar o servidor:
+  uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+  --reload: reinicia automaticamente ao detectar alterações
+  --host 0.0.0.0: acessível na rede local (não só localhost)
+
+Documentação automática disponível em:
+  http://localhost:8000/docs      (Swagger UI)
+  http://localhost:8000/redoc     (ReDoc)
+
+
+----------------------------------------------------------------
+9. ALEMBIC — MIGRATIONS DE BASE DE DADOS
+----------------------------------------------------------------
+
+O Alembic é o sistema de controlo de versões do schema da BD.
+Em vez de alterar a BD manualmente, cada alteração ao schema
+é registada num ficheiro de migration Python versionado.
+
+Ficheiros criados:
+
+  backend/alembic.ini
+    Configuração principal. Define onde estão os scripts e
+    o formato dos logs. A URL da BD é substituída em runtime
+    pelo valor de DATABASE_URL no .env.
+
+  backend/alembic/env.py
+    Script de configuração do Alembic. Importa o Base dos modelos
+    e a settings da aplicação. O target_metadata=Base.metadata
+    permite ao Alembic comparar os modelos com a BD real e
+    gerar migrations automaticamente (autogenerate).
+
+  backend/alembic/script.py.mako
+    Template Mako para os ficheiros de migration gerados.
+    Define a estrutura base de cada migration (upgrade/downgrade).
+
+  backend/alembic/versions/
+    Pasta onde ficam os ficheiros de migration gerados.
+    Começa vazia — será preenchida quando os modelos forem criados.
+
+Comandos principais do Alembic:
+
+  Gerar migration automaticamente (após criar/alterar modelos):
+    alembic revision --autogenerate -m "descricao da alteracao"
+
+  Aplicar todas as migrations pendentes:
+    alembic upgrade head
+
+  Reverter a última migration:
+    alembic downgrade -1
+
+  Ver histórico de migrations:
+    alembic history
+
+  Ver estado atual:
+    alembic current
+
+IMPORTANTE: Antes de gerar a primeira migration, é necessário
+criar os modelos em app/models/ e importá-los em alembic/env.py.
+
+
+----------------------------------------------------------------
+10. BASE DE DADOS — SCRIPTS SQL
+----------------------------------------------------------------
+
+database/init.sql
+  Script de inicialização a correr uma única vez, como root
+  do MySQL. Cria:
+    - O schema dlmcare com charset utf8mb4 (suporte a emojis
+      e caracteres especiais, incluindo portugueses)
+    - O utilizador dlmcare_user com password a definir
+    - Permissões restritas ao schema dlmcare (princípio do
+      menor privilégio — a aplicação não tem acesso a outros
+      schemas nem permissões de administração)
+
+  Executar:
+    mysql -u root -p < database/init.sql
+
+  Com Docker:
+    docker run --name dlmcare-mysql \
+      -e MYSQL_ROOT_PASSWORD=rootpass \
+      -p 3306:3306 -d mysql:8.0
+    docker exec -i dlmcare-mysql mysql -u root -prootpass \
+      < database/init.sql
+
+database/seed.sql
+  Dados iniciais para desenvolvimento e testes. Inclui:
+    - As 3 lojas (Lisboa, Porto, Braga)
+    - 4 utilizadores de teste (um por perfil)
+
+  NOTA: As passwords no seed.sql são placeholders. Antes de
+  correr o seed, substituir pelos hashes reais gerados com:
+    python -c "from passlib.hash import bcrypt; \
+               print(bcrypt.hash('password123'))"
+
+  Executar (apenas após as migrations do Alembic estarem aplicadas):
+    mysql -u dlmcare_user -p dlmcare < database/seed.sql
+
+
+----------------------------------------------------------------
+11. FRONTEND — SETUP INICIAL (Vue + Vite)
+----------------------------------------------------------------
+
+O projeto frontend foi criado com:
+  npm create vite@latest frontend -- --template vue
+
+Isto gera uma SPA (Single Page Application) Vue.js com Vite
+como bundler e dev server. Vite é significativamente mais
+rápido que o Vue CLI clássico (webpack).
+
+Dependências instaladas adicionalmente:
+  npm install axios pinia vue-router
+
+  axios
+    Cliente HTTP para fazer chamadas à API REST do backend.
+    Alternativa ao fetch nativo com melhor tratamento de erros
+    e suporte a interceptors (ex: para adicionar o token JWT
+    automaticamente a todos os pedidos).
+
+  pinia
+    Store de estado global do Vue 3. Substitui o Vuex.
+    Mais simples, com melhor suporte a TypeScript e DevTools.
+    Usado para guardar o estado de autenticação, dados do
+    utilizador atual, etc.
+
+  vue-router
+    Roteamento client-side da SPA. Define quais os componentes
+    a renderizar para cada URL. Suporta navigation guards
+    para proteger rotas que requerem autenticação.
+
+Dev server do frontend:
+  cd frontend
+  npm run dev
+  → Disponível em http://localhost:5173
+
+A variável VITE_API_BASE_URL no .env define para onde o
+axios aponta (http://localhost:8000/api/v1 em desenvolvimento).
+
+
+----------------------------------------------------------------
+12. VERIFICAÇÃO DO SETUP — TESTES MANUAIS
+----------------------------------------------------------------
+
+Após o setup completo, os seguintes testes confirmam que
+tudo está operacional:
+
+  1. Backend arranca sem erros:
+       cd backend && source venv/bin/activate
+       uvicorn app.main:app --reload
+       → Sem erros no terminal
+
+  2. Health check responde:
+       GET http://localhost:8000/health
+       → {"status": "ok", "database": "connected", "env": "development"}
+
+  3. Documentação automática acessível:
+       http://localhost:8000/docs
+       → Swagger UI com o endpoint /health visível
+
+  4. Frontend arranca sem erros:
+       cd frontend && npm run dev
+       → "Local: http://localhost:5173/"
+
+  5. Dependências Python instaladas:
+       python -c "import fastapi, pydantic; print(fastapi.__version__)"
+       → 0.115.12
+
+
+----------------------------------------------------------------
+13. PRÓXIMOS PASSOS
+----------------------------------------------------------------
+
+Com o setup inicial concluído, a ordem de implementação é:
+
+  Fase 1 — Fundações do backend:
+    1. Criar modelos ORM (app/models/)
+       Ordem: Loja → Utilizador → Cliente → Trotinete →
+              OrdemServico → Peca → Stock → Fatura → Auditoria
+    2. Gerar e aplicar a primeira migration (Alembic)
+    3. Correr o seed.sql com os dados iniciais
+
+  Fase 2 — Autenticação:
+    4. Implementar app/auth/ (JWT, hashing, dependências)
+    5. Implementar POST /api/v1/auth/login
+    6. Proteger rotas com Depends(get_current_user)
+
+  Fase 3 — Módulos de negócio (por ordem de dependência):
+    7. Clientes e Trotinetes
+    8. Ordens de Serviço
+    9. Stock e Transferências
+    10. Faturação
+    11. Dashboard e Auditoria
+
+  Fase 4 — Frontend:
+    Desenvolver em paralelo com o backend a partir da Fase 3,
+    começando pelo Login e avançando módulo a módulo.
+
+================================================================
+  Fim do documento
+================================================================
