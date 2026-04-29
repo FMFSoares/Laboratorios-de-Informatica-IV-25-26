@@ -1,0 +1,798 @@
+
+################################################################################33
+Prompt 1 - ANALISE BACKEND
+
+Estou a trabalhar no projeto DLMCare, da UC de Laboratórios de Informática IV.
+
+Quero que analises apenas o BACKEND do projeto.
+
+Contexto:
+- O projeto é um sistema de gestão para uma cadeia de oficinas de reparação de trotinetes.
+- A stack definida é FastAPI + Python no backend, MySQL na persistência e Vue no frontend.
+- Eu vou tratar apenas do backend.
+- NÃO quero implementar frontend.
+- NÃO quero implementar a base de dados.
+- NÃO quero criar modelos SQLAlchemy.
+- NÃO quero criar migrations Alembic.
+- NÃO quero alterar scripts SQL.
+
+Podes analisar:
+- backend/app/main.py
+- backend/app/config.py
+- backend/app/database.py
+- backend/app/routers/
+- backend/app/schemas/
+- backend/app/services/
+- backend/app/auth/
+- README.md
+- docs/setup_inicial.txt
+- docs/git_branching.txt
+- o relatório, especialmente a secção da API REST e os casos de uso.
+
+Quero que faças:
+1. Estado atual do backend.
+2. O que já está preparado.
+3. O que falta implementar para a Etapa 3.
+4. Lista de módulos backend a criar.
+5. Ordem de implementação recomendada.
+6. Riscos/incoerências que devo corrigir antes de programar.
+7. Lista exata de ficheiros a criar/alterar.
+
+Regras:
+- Não escrevas código ainda.
+- Não mexas na base de dados.
+- Não mexas no frontend.
+- A faturação deve seguir esta regra:
+  valor final = preço do serviço + valor de venda das peças utilizadas.
+- O custo de compra das peças é apenas interno e não deve ser usado para calcular o valor cobrado ao cliente.
+###################################################################################################################
+
+#######################################################################################################################
+Prompt 2
+
+docs/backend_api_contract_etapa3.md
+
+Objetivo:
+Definir o contrato da API backend do projeto DLMCare para a Etapa 3.
+
+Contexto do projeto:
+- DLMCare é um sistema de gestão para uma cadeia/rede de oficinas de reparação de trotinetes.
+- O backend usa FastAPI.
+- O frontend será tratado por outra pessoa.
+- A base de dados será tratada por outra pessoa.
+- Eu vou implementar apenas a camada backend aplicacional: routers, schemas, services, autenticação, validações, permissões, lógica de negócio mockada/stub e documentação.
+
+Regras obrigatórias:
+- NÃO implementar código.
+- NÃO criar modelos SQLAlchemy.
+- NÃO criar migrations Alembic.
+- NÃO criar ou alterar scripts SQL.
+- NÃO criar repositories reais com queries à BD.
+- NÃO decidir estrutura física da base de dados.
+- NÃO implementar frontend.
+- Este ficheiro é apenas documentação do contrato da API.
+- Sempre que algo depender da BD, marcar como “pendente de integração com BD”.
+- A lógica pode ser preparada para services mockados/in-memory na Etapa 3.
+
+Também quero que evites sugerir que a falta de BD bloqueia completamente o backend. A API deve poder ser implementada temporariamente com services mockados, para permitir desenvolvimento incremental.
+
+Estrutura obrigatória do documento:
+
+1. Introdução
+   - Objetivo do contrato da API
+   - Papel deste contrato na Etapa 3
+   - Separação entre backend aplicacional e persistência
+   - Explicação de que a BD será integrada posteriormente
+
+2. Convenções gerais da API
+   - Prefixo base: /api/v1
+   - Formato JSON
+   - Códigos HTTP usados
+   - Formato padrão de sucesso
+   - Formato padrão de erro
+   - Paginação, quando aplicável
+   - Autenticação via Bearer Token JWT
+
+3. Perfis de utilizador e permissões
+   Usar estes perfis:
+   - ADMINISTRADOR
+   - GERENTE_LOJA
+   - RECECIONISTA
+   - MECANICO
+
+   Explicar:
+   - ADMINISTRADOR pode aceder a dados globais
+   - GERENTE_LOJA, RECECIONISTA e MECANICO devem ficar limitados à sua loja_id
+   - loja_id pode ser null apenas para ADMINISTRADOR
+   - As permissões devem ser aplicadas nas dependencies do backend
+
+4. Autenticação
+   Documentar estes endpoints:
+   - POST /api/v1/auth/login
+   - POST /api/v1/auth/refresh
+   - GET /api/v1/auth/me
+
+   Para cada endpoint, incluir:
+   - método
+   - path
+   - descrição
+   - perfis autorizados
+   - request body JSON
+   - response body JSON
+   - erros possíveis
+   - service associado
+   - estado atual: mockado / pendente de BD / pronto para integração
+
+   Decisão temporária:
+   - Na Etapa 3, o login pode usar utilizadores mockados.
+   - O refresh token deve ser stateless com JWT, por agora.
+   - Não criar tabela de refresh tokens.
+
+5. Clientes
+   Documentar:
+   - GET /api/v1/clientes?query={nif|telemovel}
+   - POST /api/v1/clientes
+   - GET /api/v1/clientes/{id}
+   - GET /api/v1/clientes/{id}/historico
+
+   Incluir validações:
+   - NIF com 9 dígitos
+   - telemóvel português com 9 dígitos
+   - email válido, quando fornecido
+   - consentimento RGPD obrigatório no registo
+
+6. Trotinetes
+   Documentar:
+   - POST /api/v1/trotinetes
+   - GET /api/v1/trotinetes/{id}
+   - GET /api/v1/trotinetes?cliente_id={id}
+
+   Incluir:
+   - associação obrigatória a cliente
+   - número de série único, validado no mock service por agora
+   - marca, modelo e observações técnicas
+
+7. Peças
+   Documentar:
+   - GET /api/v1/pecas
+   - GET /api/v1/pecas/{id}
+   - POST /api/v1/pecas
+
+   A peça deve distinguir obrigatoriamente:
+   - preco_custo: valor interno de compra/aquisição
+   - preco_venda: valor cobrado ao cliente
+
+   Regra:
+   - preco_custo nunca deve ser usado para calcular o valor final da fatura do cliente.
+
+8. Stock
+   Documentar:
+   - GET /api/v1/stock?loja_id={id}
+   - POST /api/v1/stock/entradas
+   - POST /api/v1/stock/transferencias
+
+   Incluir:
+   - stock por loja
+   - limite mínimo
+   - alerta quando quantidade <= limite_minimo
+   - validação de stock suficiente em transferências
+   - movimentos de stock devem gerar registo de auditoria mockado
+
+9. Ordens de Serviço
+   Documentar:
+   - POST /api/v1/ordens-servico
+   - GET /api/v1/ordens-servico/{id}
+   - GET /api/v1/ordens-servico?loja_id={id}&estado={estado}
+   - PATCH /api/v1/ordens-servico/{id}/estado
+   - POST /api/v1/ordens-servico/{id}/tempos/iniciar
+   - POST /api/v1/ordens-servico/{id}/tempos/parar
+   - POST /api/v1/ordens-servico/{id}/pecas
+
+   Definir estes estados:
+   - PENDENTE
+   - EM_DIAGNOSTICO
+   - AGUARDA_APROVACAO
+   - EM_REPARACAO
+   - AGUARDA_PECAS
+   - CONCLUIDA
+   - FATURADA
+   - CANCELADA
+
+   Definir transições permitidas:
+   - PENDENTE → EM_DIAGNOSTICO
+   - EM_DIAGNOSTICO → AGUARDA_APROVACAO
+   - AGUARDA_APROVACAO → EM_REPARACAO
+   - EM_REPARACAO → AGUARDA_PECAS
+   - AGUARDA_PECAS → EM_REPARACAO
+   - EM_REPARACAO → CONCLUIDA
+   - CONCLUIDA → FATURADA
+   - qualquer estado antes de FATURADA pode passar para CANCELADA
+
+   Notas importantes:
+   - O registo de tempos serve para métricas internas.
+   - O tempo de mão de obra NÃO deve ser usado diretamente para calcular o valor final da fatura.
+   - A ordem de serviço deve guardar ou referenciar o preço comercial/tabelado do serviço.
+
+10. Faturação
+   Documentar:
+   - POST /api/v1/faturas
+   - GET /api/v1/faturas/{id}
+   - GET /api/v1/faturas?ordem_servico_id={id}
+
+   Regra de negócio obrigatória:
+   valor_final = preco_servico + subtotal_pecas
+
+   Onde:
+   - preco_servico é o preço comercial/tabelado do serviço prestado.
+   - subtotal_pecas = soma de quantidade * preco_venda_unitario.
+   - preco_custo das peças é apenas interno.
+   - tempo de mão de obra não entra diretamente no cálculo do valor final.
+   - Não pode ser emitida fatura para OS que não esteja CONCLUIDA.
+   - Não pode existir mais do que uma fatura para a mesma OS.
+
+   A response da fatura deve discriminar:
+   - id da fatura
+   - ordem_servico_id
+   - cliente
+   - trotinete
+   - serviço prestado
+   - preco_servico
+   - peças aplicadas
+   - subtotal_pecas
+   - valor_final
+   - estado
+   - data_emissao
+
+11. Dashboard
+   Documentar:
+   - GET /api/v1/dashboard
+
+   Métricas mockadas:
+   - ordens por estado
+   - ordens concluídas por loja
+   - tempo médio de reparação
+   - faturação total
+   - peças abaixo do stock mínimo
+   - eficiência por mecânico
+
+12. Auditoria
+   Documentar:
+   - GET /api/v1/auditoria
+
+   Logs mockados:
+   - login
+   - alteração de estado da OS
+   - movimentação de stock
+   - emissão de fatura
+   - tentativa de acesso negada
+
+13. Tabela-resumo final
+   Criar uma tabela com:
+   - Módulo
+   - Endpoints
+   - Perfil autorizado
+   - Service associado
+   - Estado atual
+   - Dependência futura da BD
+
+14. Notas para implementação backend na Etapa 3
+   Explicar:
+   - Primeiro devem ser criados schemas Pydantic.
+   - Depois auth/JWT/RBAC.
+   - Depois routers e services mockados.
+   - Depois testes unitários e de integração com TestClient.
+   - A integração com BD fica para depois/outro elemento.
+   - Os services devem ser desenhados para serem facilmente ligados a repositories reais no futuro.
+
+15. Fora de âmbito
+   Explicitar que nesta fase ficam fora do meu trabalho:
+   - frontend
+   - modelos ORM
+   - migrations
+   - scripts SQL
+   - repositories reais com queries
+   - integração com software certificado de faturação
+
+Formato:
+- Markdown limpo.
+- Tabelas sempre que fizer sentido.
+- Exemplos JSON para os endpoints principais.
+- Não escrever código Python.
+- Não implementar nada.
+
+
+##############################################################################################################################
+
+##############################################################################
+
+Prompt 3
+
+Implementa apenas os schemas Pydantic e enums do backend DLMCare, com base no ficheiro:
+
+docs/backend_api_contract_etapa3.md
+
+Contexto:
+- O projeto DLMCare é um sistema de gestão para uma cadeia de oficinas de reparação de trotinetes.
+- A Etapa 3 será feita no backend FastAPI.
+- O backend atual tem apenas infraestrutura base: main.py, config.py, database.py, /health e diretórios vazios.
+- O contrato da API já está definido em docs/backend_api_contract_etapa3.md.
+- Nesta tarefa quero criar apenas a camada de schemas/DTOs e enums, que será usada depois pelos routers e services.
+
+Objetivo desta tarefa:
+Criar todos os schemas Pydantic necessários para suportar o contrato da API da Etapa 3.
+
+Regras obrigatórias:
+- Implementar apenas ficheiros em backend/app/schemas/.
+- NÃO implementar routers.
+- NÃO implementar services.
+- NÃO implementar repositories.
+- NÃO implementar autenticação/JWT.
+- NÃO alterar main.py.
+- NÃO alterar config.py.
+- NÃO alterar database.py.
+- NÃO criar modelos SQLAlchemy.
+- NÃO criar migrations Alembic.
+- NÃO criar ou alterar scripts SQL.
+- NÃO implementar frontend.
+- NÃO inventar endpoints novos fora do contrato.
+- Os schemas devem estar alinhados com docs/backend_api_contract_etapa3.md.
+- Usar Pydantic v2.
+
+Criar/alterar os seguintes ficheiros:
+
+backend/app/schemas/__init__.py
+backend/app/schemas/common.py
+backend/app/schemas/auth.py
+backend/app/schemas/utilizador.py
+backend/app/schemas/loja.py
+backend/app/schemas/cliente.py
+backend/app/schemas/trotinete.py
+backend/app/schemas/peca.py
+backend/app/schemas/stock.py
+backend/app/schemas/ordem_servico.py
+backend/app/schemas/fatura.py
+backend/app/schemas/dashboard.py
+backend/app/schemas/auditoria.py
+
+1. common.py
+
+Criar schemas e utilitários comuns:
+
+- ErrorResponse
+  - detail: str
+  - code: str | None
+
+- SuccessResponse genérico, se fizer sentido
+  - data
+  - message
+
+- PaginatedResponse genérico, se fizer sentido
+  - data
+  - total
+  - page
+  - page_size
+  - pages
+
+- PaginationParams
+  - page: int = 1
+  - page_size: int = 20
+  - validar page >= 1
+  - validar 1 <= page_size <= 100
+
+- BaseConfig comum para from_attributes=True, se fizer sentido em Pydantic v2.
+
+Também podes criar validators reutilizáveis ou funções auxiliares para:
+- NIF português com 9 dígitos
+- telemóvel português com 9 dígitos e começado por 9
+- valores monetários >= 0
+- quantidades positivas
+
+2. Enums obrigatórios
+
+Criar os enums nos ficheiros mais adequados, evitando duplicação:
+
+- PerfilUtilizador:
+  - ADMINISTRADOR
+  - GERENTE_LOJA
+  - RECECIONISTA
+  - MECANICO
+
+- EstadoOrdemServico:
+  - PENDENTE
+  - EM_DIAGNOSTICO
+  - AGUARDA_APROVACAO
+  - EM_REPARACAO
+  - AGUARDA_PECAS
+  - CONCLUIDA
+  - FATURADA
+  - CANCELADA
+
+- PrioridadeOrdemServico:
+  - BAIXA
+  - NORMAL
+  - ALTA
+  - URGENTE
+
+- EstadoFatura:
+  - EMITIDA
+  - ANULADA
+
+- CategoriaPeca:
+  - BATERIA
+  - PNEU
+  - TRAVAO
+  - MOTOR
+  - CONTROLADOR
+  - LUZ
+  - ACESSORIO
+  - OUTRO
+
+- TipoMovimentoStock:
+  - ENTRADA
+  - TRANSFERENCIA
+  - SAIDA_REPARACAO
+
+- TipoEventoAuditoria:
+  - LOGIN_SUCESSO
+  - LOGIN_FALHA
+  - ACESSO_NEGADO
+  - OS_ESTADO_ALTERADO
+  - STOCK_ENTRADA
+  - STOCK_TRANSFERENCIA
+  - FATURA_EMITIDA
+
+3. auth.py
+
+Criar schemas para:
+
+- LoginRequest
+  - email
+  - password
+
+- TokenResponse
+  - access_token
+  - refresh_token
+  - token_type = "bearer"
+  - expires_in
+  - user
+
+- RefreshTokenRequest
+  - refresh_token
+
+- RefreshTokenResponse
+  - access_token
+  - refresh_token
+  - token_type
+  - expires_in
+
+- CurrentUserResponse ou AuthUserResponse
+  - id
+  - nome
+  - email
+  - perfil
+  - loja_id
+  - loja_nome
+  - ativo
+
+Validar email com EmailStr.
+
+4. utilizador.py
+
+Criar schemas para representar utilizadores autenticados e utilizadores internos:
+
+- UtilizadorBase
+- UtilizadorResponse
+- UtilizadorResumo
+
+Campos:
+- id
+- nome
+- email
+- perfil
+- loja_id
+- loja_nome
+- ativo
+
+Notas:
+- ADMINISTRADOR pode ter loja_id = None.
+- Outros perfis devem ter loja_id, mas esta regra pode ficar comentada como validação futura se for melhor não bloquear já os schemas.
+
+5. loja.py
+
+Criar schemas para lojas:
+
+- LojaBase
+- LojaResponse
+- LojaResumo
+
+Campos:
+- id
+- nome
+- morada
+- telefone
+- ativo
+
+6. cliente.py
+
+Criar schemas para:
+
+- ClienteCreate
+- ClienteResponse
+- ClienteDetalheResponse
+- ClienteResumo
+- ClienteHistoricoItem
+- ClienteHistoricoResponse, se necessário
+
+Campos principais:
+- id
+- nome
+- nif
+- telemovel
+- email
+- morada
+- consentimento_rgpd
+- data_registo
+- loja_id
+
+Validações obrigatórias:
+- nif: string com exatamente 9 dígitos numéricos.
+- telemovel: string com exatamente 9 dígitos e começa por 9.
+- email: EmailStr | None.
+- consentimento_rgpd: no ClienteCreate tem de ser true. Se for false, deve falhar validação.
+- nome obrigatório e não vazio.
+
+7. trotinete.py
+
+Criar schemas para:
+
+- TrotineteCreate
+- TrotineteResponse
+- TrotineteDetalheResponse
+- TrotineteResumo
+
+Campos:
+- id
+- cliente_id
+- marca
+- modelo
+- numero_serie
+- ano_compra
+- cor
+- observacoes_tecnicas
+- data_registo
+
+Validações:
+- cliente_id obrigatório e positivo.
+- marca, modelo e numero_serie obrigatórios e não vazios.
+- ano_compra opcional, mas se existir deve estar num intervalo plausível, por exemplo 2000 a 2100.
+
+8. peca.py
+
+Criar schemas para:
+
+- PecaCreate
+- PecaResponse
+- PecaDetalheResponse
+- PecaResumo
+
+Campos:
+- id
+- referencia
+- nome
+- categoria
+- descricao
+- unidade
+- preco_custo
+- preco_venda
+- ativo
+
+Regra crítica:
+- preco_custo é interno.
+- preco_venda é o valor usado para faturar o cliente.
+- PecaResponse e PecaResumo NÃO devem expor preco_custo em respostas públicas.
+- PecaCreate pode receber preco_custo e preco_venda.
+- preco_custo >= 0.
+- preco_venda >= 0.
+- referencia e nome obrigatórios.
+
+9. stock.py
+
+Criar schemas para:
+
+- StockItemResponse
+- StockEntradaRequest
+- StockEntradaResponse
+- StockTransferenciaRequest
+- StockTransferenciaResponse
+
+Campos conforme o contrato:
+- peca_id
+- peca_referencia
+- peca_nome
+- loja_id
+- loja_nome
+- quantidade
+- limite_minimo
+- alerta
+
+Validações:
+- quantidade em entradas/transferências tem de ser > 0.
+- loja_origem_id e loja_destino_id devem ser diferentes na transferência.
+- ids devem ser positivos.
+- alerta será calculado depois no service, mas o schema deve permitir o campo bool.
+
+10. ordem_servico.py
+
+Criar schemas para:
+
+- OrdemServicoCreate
+- OrdemServicoResponse
+- OrdemServicoResumo
+- OrdemServicoDetalheResponse
+- OrdemServicoEstadoUpdate
+- OrdemServicoEstadoUpdateResponse
+- TempoInicioResponse
+- TempoParagemResponse
+- PecaAplicadaRequest
+- PecaAplicadaResponse
+- PecaAplicadaResumo
+
+Campos principais:
+- id
+- numero
+- trotinete_id
+- cliente_id
+- loja_id
+- mecanico_id
+- estado
+- prioridade
+- descricao_problema
+- preco_servico
+- data_entrada
+- data_conclusao
+- pecas_aplicadas
+- subtotal_pecas
+- valor_estimado_total
+- tempo_total_minutos
+- fatura_id
+
+Validações:
+- trotinete_id positivo.
+- loja_id positivo.
+- mecanico_id opcional mas, se existir, positivo.
+- descricao_problema obrigatória e não vazia.
+- preco_servico >= 0.
+- quantidade de peça > 0.
+- novo_estado deve ser EstadoOrdemServico.
+- Não implementar as transições de estado aqui; isso ficará no service.
+- O registo de tempos é apenas para métricas internas e não deve ser usado em schemas de faturação como base de cálculo.
+
+11. fatura.py
+
+Criar schemas para:
+
+- FaturaCreateRequest
+- FaturaResponse
+- FaturaResumo
+- FaturaClienteInfo
+- FaturaTrotineteInfo
+- FaturaServicoInfo
+- FaturaPecaAplicada
+- FaturaLojaInfo
+
+Regra de negócio obrigatória a refletir nos nomes/campos:
+valor_final = preco_servico + subtotal_pecas
+
+Campos:
+- id
+- numero
+- ordem_servico_id
+- data_emissao
+- estado
+- cliente
+- trotinete
+- servico
+- pecas_aplicadas
+- subtotal_pecas
+- valor_final
+- loja
+
+Atenção:
+- Não incluir custo de compra/preco_custo em nenhum schema público de fatura.
+- Não incluir cálculo por tempo de mão de obra.
+- preco_servico é o preço comercial/tabelado do serviço.
+- subtotal_pecas é soma de quantidade * preco_venda_unitario.
+- valor_final é calculado depois no service, mas o schema deve representar claramente esse resultado.
+
+Validações:
+- ordem_servico_id positivo.
+- valores monetários >= 0.
+- quantidade de peças > 0.
+
+12. dashboard.py
+
+Criar schemas para a resposta do dashboard:
+
+- DashboardPeriodo
+- OrdensConcluidasPorLoja
+- PecaAbaixoStockMinimo
+- EficienciaMecanico
+- DashboardResponse
+
+Campos conforme o contrato:
+- periodo
+- ordens_por_estado
+- ordens_concluidas_por_loja
+- tempo_medio_reparacao_minutos
+- faturacao_total
+- pecas_abaixo_stock_minimo
+- eficiencia_por_mecanico
+
+Validações:
+- valores numéricos não negativos.
+
+13. auditoria.py
+
+Criar schemas para:
+
+- AuditoriaDetalhe
+- AuditoriaItemResponse
+- AuditoriaResponse, se necessário
+
+Campos:
+- id
+- evento
+- descricao
+- utilizador_id
+- utilizador_nome
+- loja_id
+- ip_origem
+- timestamp
+- detalhe
+
+O campo detalhe pode ser dict[str, Any].
+
+14. __init__.py
+
+Atualizar backend/app/schemas/__init__.py para exportar os principais schemas e enums de forma organizada.
+
+15. Requisitos técnicos
+
+- Usar Pydantic v2.
+- Usar Field para descrições, exemplos e constraints.
+- Usar EmailStr onde aplicável.
+- Usar datetime para timestamps.
+- Usar date quando o contrato indicar apenas data.
+- Usar Decimal para valores monetários, se fizer sentido.
+- Se usares Decimal, garante que os exemplos JSON continuam legíveis.
+- Usar ConfigDict(from_attributes=True) quando fizer sentido para futura integração com ORM, sem criar modelos ORM.
+- Evitar lógica de negócio complexa nos schemas.
+- Validações simples de formato podem ficar nos schemas.
+- Regras de negócio como transições de estado, duplicados, permissões e cálculo efetivo da fatura ficam para os services.
+
+16. Cuidados especiais
+
+- Não criar schemas com nomes contraditórios ao contrato.
+- Não usar EstadoOrdemServico antigo como ABERTA ou AGUARDAR_PECAS. Usar exatamente AGUARDA_PECAS, como no contrato.
+- Não criar perfil GERENTE. Usar exatamente GERENTE_LOJA.
+- Não expor preco_custo em PecaResponse público nem em FaturaResponse.
+- Não colocar tempo_total_minutos como base de cálculo da fatura.
+- Não criar qualquer dependência da base de dados.
+- Os schemas devem importar uns dos outros apenas quando fizer sentido e sem causar imports circulares.
+
+17. No final da resposta, apresenta:
+
+- Lista de ficheiros criados/alterados.
+- Pequena explicação do papel de cada ficheiro.
+- Exemplos JSON de:
+  1. ClienteCreate
+  2. TrotineteCreate
+  3. OrdemServicoCreate
+  4. PecaAplicadaRequest
+  5. FaturaResponse
+- Indicação clara de que routers, services, repositories, auth e BD ainda não foram implementados nesta tarefa.
+- Comandos para verificar sintaxe/imports, por exemplo:
+  python -m compileall backend/app/schemas
+  
+  
+  #############################################################################################################
