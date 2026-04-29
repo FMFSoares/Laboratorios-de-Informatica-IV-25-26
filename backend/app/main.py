@@ -33,10 +33,13 @@ def health():
     }
 
 
-# ── Routers (serão adicionados à medida que os módulos forem criados) ──
-# from app.routers import auth, clientes, trotinetes, ordens_servico, stock, faturas, dashboard, auditoria
-# app.include_router(auth.router,           prefix="/api/v1")
-# app.include_router(clientes.router,       prefix="/api/v1")
+# ── Routers ───────────────────────────────────────────────────────────────────
+from app.routers import auth, clientes
+# from app.routers import trotinetes, ordens_servico, stock, faturas, dashboard, auditoria
+
+app.include_router(auth.router,           prefix="/api/v1")
+app.include_router(clientes.router,       prefix="/api/v1")
+# app.include_router(trotinetes.router,     prefix="/api/v1")
 # app.include_router(trotinetes.router,     prefix="/api/v1")
 # app.include_router(ordens_servico.router, prefix="/api/v1")
 # app.include_router(stock.router,          prefix="/api/v1")

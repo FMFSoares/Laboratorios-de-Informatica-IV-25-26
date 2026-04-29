@@ -793,6 +793,273 @@ Atualizar backend/app/schemas/__init__.py para exportar os principais schemas e 
 - Indicação clara de que routers, services, repositories, auth e BD ainda não foram implementados nesta tarefa.
 - Comandos para verificar sintaxe/imports, por exemplo:
   python -m compileall backend/app/schemas
-  
-  
+
+
   #############################################################################################################
+
+##############################################################################
+
+Prompt 4 - AUTH LAYER (jwt.py, password.py, dependencies.py)
+
+Implementa a camada de autenticação do backend DLMCare.
+
+Contexto:
+- O projeto DLMCare é um sistema de gestão para uma cadeia de oficinas de reparação de trotinetes.
+- O backend usa FastAPI + Python 3.13.
+- Os schemas Pydantic já estão todos criados em backend/app/schemas/.
+- O contrato da API está em docs/backend_api_contract_etapa3.md.
+- As configurações JWT estão em backend/app/config.py:
+  JWT_SECRET_KEY, JWT_ALGORITHM (HS256), ACCESS_TOKEN_EXPIRE_MINUTES (480), REFRESH_TOKEN_EXPIRE_DAYS (7).
+- As dependências python-jose[cryptography] e passlib[bcrypt] já estão em requirements.txt.
+
+Objetivo desta tarefa:
+Criar a camada de autenticação em backend/app/auth/, composta por três ficheiros.
+
+Regras obrigatórias:
+- Implementar apenas ficheiros em backend/app/auth/.
+- NÃO implementar routers ainda.
+- NÃO implementar services ainda.
+- NÃO alterar main.py.
+- NÃO alterar config.py nem database.py.
+- NÃO criar modelos SQLAlchemy.
+- NÃO criar migrations Alembic.
+- NÃO criar ou alterar scripts SQL.
+- NÃO implementar frontend.
+- Usar apenas python-jose para JWT e passlib[bcrypt] para passwords.
+
+Ficheiros a criar:
+
+1. backend/app/auth/jwt.py
+
+Criar funções para geração e verificação de JWT:
+
+- create_access_token(data: dict) -> str
+  Cria um JWT de acesso com expiração ACCESS_TOKEN_EXPIRE_MINUTES.
+  Adiciona ao payload: exp, iat, type="access".
+
+- create_refresh_token(data: dict) -> str
+  Cria um JWT de renovação com expiração REFRESH_TOKEN_EXPIRE_DAYS.
+  Adiciona ao payload: exp, iat, type="refresh".
+
+- decode_token(token: str) -> dict
+  Descodifica e valida um JWT. Lança JWTError em caso de token inválido ou expirado.
+  Os callers devem converter JWTError em HTTPException 401.
+
+- decode_refresh_token(token: str) -> dict
+  Como decode_token mas valida também que type == "refresh".
+  Lança JWTError se não for refresh token.
+
+Usar settings.JWT_SECRET_KEY e settings.JWT_ALGORITHM.
+
+2. backend/app/auth/password.py
+
+Criar funções de hashing de password com passlib bcrypt:
+
+- hash_password(plain: str) -> str
+- verify_password(plain: str, hashed: str) -> bool
+
+3. backend/app/auth/dependencies.py
+
+Criar as dependencies FastAPI para autenticação e RBAC:
+
+- oauth2_scheme: OAuth2PasswordBearer com tokenUrl="/api/v1/auth/login"
+
+- get_current_user(token: str = Depends(oauth2_scheme)) -> AuthUserInfo
+  Descodifica o JWT de acesso.
+  Extrai do payload: sub (int), nome, email, perfil, loja_id, loja_nome.
+  Lança HTTPException 401 se token inválido, expirado ou type != "access".
+  Lança HTTPException 401 se campos obrigatórios em falta no payload.
+  Retorna AuthUserInfo (schema já existe em app/schemas/auth.py).
+
+- require_roles(*roles: PerfilUtilizador) -> Callable
+  Retorna uma dependency FastAPI que lança HTTPException 403 se o perfil
+  do utilizador não estiver na lista de roles autorizados.
+  Uso: dependencies=[Depends(require_roles(ADMINISTRADOR, GERENTE_LOJA))]
+
+- require_same_loja_or_admin(loja_id: int, user: AuthUserInfo) -> AuthUserInfo
+  Função (não dependency direta) para usar dentro de route handlers.
+  Lança HTTPException 403 se o utilizador não for ADMINISTRADOR e
+  o seu loja_id não coincidir com o loja_id pedido.
+
+- Convenience dependencies prontos a usar nos routers:
+  - admin_only
+  - admin_or_gerente
+  - admin_gerente_or_rececionista
+  - any_authenticated
+
+4. backend/app/auth/__init__.py
+
+Exportar tudo o que for necessário dos três módulos acima.
+
+Payload JWT obrigatório:
+O payload dos tokens deve conter:
+- sub: str(user_id)
+- nome: str
+- email: str
+- perfil: str (valor do enum PerfilUtilizador)
+- loja_id: int | None
+- loja_nome: str | None
+- type: "access" | "refresh"
+- exp, iat
+
+No final da resposta:
+- Lista de ficheiros criados/alterados com breve descrição do papel de cada um:
+  - app/auth/jwt.py — geração e verificação de tokens JWT (access e refresh); toda a lógica de assinar/verificar com a secret key
+  - app/auth/password.py — hashing e verificação de passwords com bcrypt direto (passlib 1.7.4 incompatível com bcrypt >= 4.x)
+  - app/auth/dependencies.py — FastAPI dependencies de autenticação e RBAC: get_current_user, require_roles, require_same_loja_or_admin, shortcuts por perfil
+  - app/auth/__init__.py — re-exporta tudo da auth layer para imports limpos
+- Comandos de verificação de sintaxe:
+  cd backend && source venv/bin/activate
+  python -c "from app.auth.jwt import create_access_token; print('jwt OK')"
+  python -c "from app.auth.password import hash_password; print('password OK')"
+  python -c "from app.auth.dependencies import get_current_user; print('dependencies OK')"
+- Indicação clara de que routers e services ainda não foram implementados nesta tarefa.
+
+#############################################################################################################
+
+##############################################################################
+
+Prompt 5 - ROUTER E SERVICE DE AUTENTICAÇÃO (routers/auth.py + services/auth_service.py)
+
+Implementa o router e o service de autenticação do backend DLMCare.
+
+Contexto:
+- O projeto DLMCare é um sistema de gestão para uma cadeia de oficinas de reparação de trotinetes.
+- O backend usa FastAPI + Python 3.13.
+- Os schemas Pydantic já estão todos criados em backend/app/schemas/.
+- A auth layer já está criada em backend/app/auth/ (jwt.py, password.py, dependencies.py).
+- O contrato da API está em docs/backend_api_contract_etapa3.md, secção 4 (Autenticação).
+- A configuração JWT está em backend/app/config.py.
+- Nota técnica: passlib 1.7.4 é incompatível com bcrypt >= 4.x. Usar bcrypt diretamente:
+    import bcrypt
+    hash_password: bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
+    verify_password: bcrypt.checkpw(plain.encode(), hashed.encode())
+
+Objetivo desta tarefa:
+Criar o service mockado e o router para os três endpoints de autenticação.
+
+Regras obrigatórias:
+- Implementar apenas backend/app/services/auth_service.py e backend/app/routers/auth.py.
+- Atualizar backend/app/main.py para registar o router com prefixo /api/v1.
+- NÃO criar modelos SQLAlchemy, migrations, scripts SQL, repositories reais, frontend.
+- O service usa utilizadores mockados em memória (lista de dicts com password_hash pré-computado).
+- Os hashes são calculados no módulo ao arrancar (hash_password chamado ao nível do módulo).
+- Quando a BD estiver disponível, apenas o service muda — o router não é alterado.
+
+Utilizadores mock obrigatórios (um por perfil):
+- admin@dlmcare.pt / admin123 → ADMINISTRADOR, loja_id=None
+- carlos.porto@dlmcare.pt / gerente123 → GERENTE_LOJA, loja_id=1, loja_nome="DLMCare Porto"
+- ana.lisboa@dlmcare.pt / password123 → RECECIONISTA, loja_id=2, loja_nome="DLMCare Lisboa"
+- joao.braga@dlmcare.pt / mecanico123 → MECANICO, loja_id=3, loja_nome="DLMCare Braga"
+
+Endpoints a implementar (prefixo /api/v1/auth):
+
+1. POST /login → status 201, response_model=TokenResponse
+   - Valida email e password contra o mock store.
+   - Verifica campo ativo.
+   - 401 INVALID_CREDENTIALS se email não existe ou password errada.
+   - 403 ACCOUNT_INACTIVE se ativo=False.
+   - Devolve TokenResponse com access_token, refresh_token, expires_in, user.
+
+2. POST /refresh → status 200, response_model=RefreshTokenResponse
+   - Descodifica o refresh token usando decode_refresh_token de app/auth/jwt.py.
+   - Re-emite novos access + refresh tokens para o mesmo utilizador.
+   - 401 TOKEN_INVALID se token inválido ou expirado.
+   - Verifica que o utilizador ainda existe e está ativo.
+
+3. GET /me → status 200, response_model=CurrentUserResponse
+   - Usa Depends(get_current_user) de app/auth/dependencies.py.
+   - Devolve dados do utilizador autenticado.
+   - Consulta o mock store para obter o campo ativo.
+
+Payload JWT (já definido na Prompt 4):
+sub (str), nome, email, perfil, loja_id, loja_nome, type, exp, iat.
+
+expires_in = ACCESS_TOKEN_EXPIRE_MINUTES * 60 (em segundos).
+
+No final da resposta:
+- Lista de ficheiros criados/alterados com breve descrição do papel de cada um:
+  - app/services/auth_service.py — lógica de negócio da autenticação; mock store com 4 utilizadores (um por perfil); funções login, refresh e get_me; substituir mock por BD quando disponível
+  - app/routers/auth.py — router FastAPI com os 3 endpoints de auth; apenas trata do HTTP e delega no service
+  - app/main.py — editado para registar o router de auth com prefixo /api/v1
+- Testes com TestClient (instalar httpx se necessário):
+  from fastapi.testclient import TestClient
+  POST /api/v1/auth/login → 201
+  GET /api/v1/auth/me com token → 200
+  POST /api/v1/auth/login com password errada → 401
+  POST /api/v1/auth/refresh → 200
+  GET /api/v1/auth/me com token inválido → 401
+
+#############################################################################################################
+
+##############################################################################
+
+Prompt 6 - CLIENTES (routers/clientes.py + services/cliente_service.py)
+
+Implementa o router e o service de clientes do backend DLMCare.
+
+Contexto:
+- O projeto DLMCare é um sistema de gestão para uma cadeia de oficinas de reparação de trotinetes.
+- O backend usa FastAPI + Python 3.13.
+- Os schemas Pydantic já estão em backend/app/schemas/cliente.py.
+- A auth layer está em backend/app/auth/ (dependencies: any_authenticated, admin_gerente_or_rececionista).
+- O contrato da API está em docs/backend_api_contract_etapa3.md, secção 5 (Clientes).
+- O padrão de resposta usa DataResponse[T] e PaginatedResponse[T] de app/schemas/common.py.
+
+Objetivo desta tarefa:
+Criar o service mockado e o router para os 4 endpoints de clientes.
+
+Regras obrigatórias:
+- Implementar apenas backend/app/services/cliente_service.py e backend/app/routers/clientes.py.
+- Atualizar backend/app/main.py para registar o router com prefixo /api/v1.
+- NÃO criar modelos SQLAlchemy, migrations, scripts SQL, repositories reais, frontend.
+- O service usa uma lista em memória (_clientes) como mock store.
+- Filtro de loja automático: não-administradores veem apenas dados da sua loja_id.
+- ADMINISTRADOR vê tudo (sem filtro de loja).
+
+Mock store com pelo menos 3 clientes em lojas diferentes para permitir testar o isolamento.
+
+Endpoints a implementar (prefixo /api/v1/clientes):
+
+1. GET / → status 200, PaginatedResponse[ClienteResponse]
+   - Query params: query (NIF ou telemóvel, exact match), page, page_size.
+   - Filtro automático por loja_id para não-administradores.
+   - Perfis: todos os autenticados.
+
+2. POST / → status 201, DataResponse[ClienteResponse]
+   - Regista um novo cliente na loja do utilizador autenticado.
+   - 409 DUPLICATE_ENTRY se NIF já existe.
+   - Perfis: ADMINISTRADOR, GERENTE_LOJA, RECECIONISTA.
+   - Nota: consentimento_rgpd=false já é rejeitado pelo schema Pydantic com 422.
+
+3. GET /{cliente_id} → status 200, DataResponse[ClienteDetalheResponse]
+   - Inclui lista de trotinetes do cliente (TrotineteResumoEmCliente).
+   - 404 RESOURCE_NOT_FOUND se não existe.
+   - 403 LOJA_MISMATCH se cliente pertence a outra loja.
+   - Perfis: todos os autenticados.
+
+4. GET /{cliente_id}/historico → status 200, PaginatedResponse[ClienteHistoricoItem]
+   - Devolve histórico mockado de OS do cliente.
+   - 404 RESOURCE_NOT_FOUND se cliente não existe.
+   - 403 LOJA_MISMATCH se cliente pertence a outra loja.
+   - Perfis: todos os autenticados.
+
+Helper interno no service (não exposto):
+- _check_loja_access(user, loja_id): lança 403 LOJA_MISMATCH se user não for ADMIN e loja_id diferente.
+- _effective_loja_id(user): retorna None para ADMIN (sem filtro) ou user.loja_id para os restantes.
+
+No final da resposta:
+- Lista de ficheiros criados/alterados com breve descrição:
+  - app/services/cliente_service.py — mock store com clientes, filtro por loja, funções list_clientes, create_cliente, get_cliente, get_historico
+  - app/routers/clientes.py — router com 4 endpoints; aplica dependencies de auth e delega no service
+  - app/main.py — editado para registar o router de clientes
+- Testes com TestClient:
+  GET /api/v1/clientes (loja filtrada para não-admin) → 200
+  POST /api/v1/clientes → 201
+  POST /api/v1/clientes com NIF duplicado → 409
+  GET /api/v1/clientes/{id} (mesma loja) → 200
+  GET /api/v1/clientes/{id} (outra loja) → 403
+  GET /api/v1/clientes/999 → 404
+  GET /api/v1/clientes/{id}/historico → 200
+
+#############################################################################################################
