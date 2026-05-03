@@ -796,3 +796,565 @@ Atualizar backend/app/schemas/__init__.py para exportar os principais schemas e 
   
   
   #############################################################################################################
+
+
+##############################################################################
+
+Prompt 4 — Auth / JWT / RBAC
+
+Implementa a camada de autenticação e controlo de acesso do backend DLMCare.
+
+Contexto:
+- Os schemas Pydantic já estão implementados em backend/app/schemas/.
+- O contrato da API está em docs/backend_api_contract_etapa3.md.
+- As dependências disponíveis são: python-jose[cryptography], passlib[bcrypt], fastapi, pydantic-settings.
+- A configuração JWT (JWT_SECRET_KEY, JWT_ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS) já está em app/config.py via pydantic-settings.
+
+Regras obrigatórias:
+- NÃO implementar routers.
+- NÃO implementar services.
+- NÃO criar modelos SQLAlchemy.
+- NÃO criar migrations Alembic.
+- NÃO criar ou alterar scripts SQL.
+- NÃO implementar frontend.
+- NÃO criar repositories reais com queries à BD.
+- NÃO alterar main.py, config.py, database.py nem nenhum schema.
+
+Criar os seguintes ficheiros:
+
+1. backend/app/core/__init__.py  (vazio)
+
+2. backend/app/core/security.py
+
+   Funções a implementar:
+   - hash_password(password: str) -> str         usando passlib bcrypt
+   - verify_password(plain: str, hashed: str) -> bool  usando passlib bcrypt
+   - create_access_token(payload: dict) -> str   JWT com type="access", exp = now + ACCESS_TOKEN_EXPIRE_MINUTES
+   - create_refresh_token(payload: dict) -> str  JWT com type="refresh", exp = now + REFRESH_TOKEN_EXPIRE_DAYS
+   - decode_token(token: str, expected_type: str = "access") -> dict
+     - Usa jose.jwt.decode com JWT_SECRET_KEY e JWT_ALGORITHM
+     - Lança HTTPException 401 com code TOKEN_EXPIRED se JWTError ou type errado
+
+   O payload dos tokens deve incluir:
+   - sub: str (user_id como string)
+   - nome: str
+   - email: str
+   - perfil: str (valor do enum PerfilUtilizador)
+   - loja_id: int | None
+   - loja_nome: str | None
+   - ativo: bool
+   - type: "access" | "refresh"
+   - exp: datetime
+   - iat: datetime
+
+3. backend/app/auth/dependencies.py
+
+   Dependências FastAPI a implementar:
+
+   a) get_current_user(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())) -> CurrentUserResponse
+      - Chama decode_token com expected_type="access"
+      - Constrói e devolve CurrentUserResponse a partir das claims do payload
+      - Lança 401 se "sub" estiver ausente
+
+   b) require_roles(*perfis: PerfilUtilizador)
+      - Factory que devolve uma dependency FastAPI
+      - A dependency verifica que current_user.perfil está em perfis
+      - Lança 403 com code PERMISSION_DENIED se não estiver
+
+   c) get_loja_context(loja_id: int | None = None, current_user = Depends(get_current_user)) -> int | None
+      - ADMINISTRADOR: devolve o loja_id do query param (pode ser None para ver tudo)
+      - Outros perfis: ignora o query param e devolve sempre current_user.loja_id
+      - Se o query param loja_id for fornecido e diferente de current_user.loja_id (para não-ADMIN), lança 403 com code LOJA_MISMATCH
+
+Notas:
+- Usar HTTPBearer (não OAuth2PasswordBearer) pois o login é JSON, não form data.
+- Os erros de autenticação/autorização devem seguir o formato {"detail": "...", "code": "..."} do contrato.
+- get_current_user extrai o utilizador exclusivamente do JWT — sem acesso à BD.
+- Neste passo os services mockados ainda não existem; routers e services serão implementados nos passos seguintes.
+
+No final da resposta, apresenta:
+- Lista de ficheiros criados com explicação de cada um.
+- Comando para verificar sintaxe:
+  python -m compileall backend/app/core backend/app/auth
+- Tabela de progresso atualizada com ✅ e ❌.
+
+##############################################################################
+
+Prompt 5 — Router + Service: Auth
+
+Implementa o router e o service de autenticação do backend DLMCare.
+
+Contexto:
+- Os schemas estão em backend/app/schemas/auth.py e utilizador.py.
+- O contrato dos endpoints está em docs/backend_api_contract_etapa3.md, secção 4.
+- As utilities JWT e de password estão em app/core/security.py.
+- As dependencies FastAPI (get_current_user, require_roles, get_loja_context) estão em app/auth/dependencies.py.
+- passlib 1.7.4 é INCOMPATÍVEL com bcrypt >= 5.x. Usar bcrypt diretamente em security.py:
+    import bcrypt as _bcrypt
+    def hash_password(p): return _bcrypt.hashpw(p.encode(), _bcrypt.gensalt()).decode()
+    def verify_password(plain, hashed): return _bcrypt.checkpw(plain.encode(), hashed.encode())
+
+Regras obrigatórias:
+- NÃO criar modelos SQLAlchemy, migrations, SQL, frontend, repositories reais.
+- NÃO alterar schemas.
+
+Criar/alterar os seguintes ficheiros:
+
+1. backend/app/services/auth_service.py
+
+   Lista mockada de utilizadores em memória [pendente de integração com BD].
+   Incluir um utilizador de cada perfil:
+   - ADMINISTRADOR: admin@dlmcare.pt / admin123
+   - GERENTE_LOJA:  gerente.porto@dlmcare.pt / gerente123
+   - RECECIONISTA:  ana.lisboa@dlmcare.pt / password123
+   - MECANICO:      joao.mecanico@dlmcare.pt / mecanico123
+
+   Hashes bcrypt pré-calculados (bcrypt 5.x, cost 12):
+   - admin123:     $2b$12$Ljzvo8.JjstrAfsohpMqauw4OdBbLNksDIvP5eKKHaBEWRS5c4t4K
+   - password123:  $2b$12$fI2Bd1BsD7iZYQvzuKojZu2R/9A5IsqjyqQajWj4Zv1H7wuY/Rkwa
+   - gerente123:   $2b$12$d1NsqHAUS7myTvUEz3pef.Xfvpa5Du7.43v9zjIJVJek8t97LWC0G
+   - mecanico123:  $2b$12$97e79p34JpiM2uZbSjJbvu3j6Q3HJtD1FSA67mNC8HmoVT5PKQOru
+
+   Funções a implementar:
+   - login(email, password) -> TokenResponse
+     - Pesquisa utilizador por email (case-insensitive)
+     - Verifica password com verify_password
+     - Se email não existe ou password errada: 401 INVALID_CREDENTIALS
+     - Se utilizador inativo: 403 ACCOUNT_INACTIVE
+     - Cria access_token e refresh_token com create_access_token / create_refresh_token
+     - Payload JWT: sub (str do id), nome, email, perfil (str), loja_id, loja_nome, ativo
+     - expires_in = ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
+   - refresh(refresh_token) -> RefreshTokenResponse
+     - Chama decode_token com expected_type="refresh"
+     - Verifica que o utilizador ainda existe e está ativo
+     - Emite novo par de tokens
+     - Se inválido: 401 TOKEN_INVALID
+
+2. backend/app/routers/auth.py
+
+   Router FastAPI com prefix="/auth", tags=["autenticação"].
+
+   Endpoints:
+   - POST /login      → status 201, sem autenticação exigida
+   - POST /refresh    → status 200, sem autenticação exigida
+   - GET  /me         → status 200, requer get_current_user
+
+3. backend/app/main.py
+
+   Descomentar e adicionar:
+     from app.routers import auth
+     app.include_router(auth.router, prefix="/api/v1")
+
+Notas:
+- O GET /me devolve diretamente o CurrentUserResponse do get_current_user — sem BD.
+- O router não importa nada da BD.
+- Erros seguem o formato {"detail": "...", "code": "..."}.
+
+No final da resposta, apresenta:
+- Lista de ficheiros criados/alterados com explicação de cada um.
+- Comandos para verificar:
+  python -m compileall backend/app/services/auth_service.py backend/app/routers/auth.py backend/app/main.py
+- Tabela de progresso atualizada com ✅ e ❌.
+
+##############################################################################
+
+Prompt 6 — Router + Service: Clientes
+
+Implementa o router e o service de clientes do backend DLMCare.
+
+Contexto:
+- Schemas em backend/app/schemas/cliente.py: ClienteCreate, ClienteResponse, ClienteDetalheResponse, ClienteResumo, ClienteHistoricoItem, TrotineteResumoEmCliente.
+- Schemas comuns: DataResponse[T], PaginatedResponse[T] em schemas/common.py.
+- Dependencies: get_current_user, require_roles em app/auth/dependencies.py.
+- Contrato em docs/backend_api_contract_etapa3.md, secção 5.
+
+Regras obrigatórias:
+- NÃO criar modelos SQLAlchemy, migrations, SQL, frontend, repositories reais.
+- NÃO alterar schemas.
+
+Criar/alterar os seguintes ficheiros:
+
+1. backend/app/services/cliente_service.py
+
+   Dados mockados em memória [pendente de integração com BD].
+   Incluir 2 clientes de teste (loja_id=1).
+
+   Funções a implementar:
+
+   - listar(query, page, page_size, current_user) -> PaginatedResponse[ClienteResponse]
+     - Filtro de loja automático: não-ADMIN vê só clientes da sua loja_id
+     - query (opcional): exact match por NIF ou telemóvel
+     - Paginação manual sobre a lista filtrada
+
+   - criar(body: ClienteCreate, current_user) -> DataResponse[ClienteResponse]
+     - Verifica NIF duplicado → 409 DUPLICATE_ENTRY
+     - loja_id efectiva: current_user.loja_id ou 1 como fallback para ADMIN sem loja
+     - Adiciona à lista em memória
+     - message: "Cliente registado com sucesso."
+
+   - obter(cliente_id, current_user) -> DataResponse[ClienteDetalheResponse]
+     - 404 RESOURCE_NOT_FOUND se não existe
+     - 403 LOJA_MISMATCH se não-ADMIN tenta aceder a cliente de outra loja
+     - trotinetes=[]: será populado quando trotinetes forem implementadas
+
+   - historico(cliente_id, page, page_size, current_user) -> PaginatedResponse[ClienteHistoricoItem]
+     - Mesma verificação de acesso que obter
+     - Devolve lista vazia [pendente de integração com OS]
+
+   Helper interno:
+   - _check_loja(cliente, current_user): ADMIN passa sempre; outros levantam 403 se loja_id diferente
+
+2. backend/app/routers/clientes.py
+
+   Router FastAPI com prefix="/clientes", tags=["clientes"].
+
+   Endpoints:
+   - GET  /clientes                  → todos os perfis
+   - POST /clientes                  → ADMIN, GERENTE_LOJA, RECECIONISTA (status 201)
+   - GET  /clientes/{cliente_id}     → todos os perfis
+   - GET  /clientes/{cliente_id}/historico → todos os perfis
+
+   Usar require_roles() para RBAC. Não usar get_loja_context — a filtragem de loja
+   é feita dentro do service com base em current_user.
+
+3. backend/app/main.py
+
+   Adicionar:
+     from app.routers import auth, clientes
+     app.include_router(clientes.router, prefix="/api/v1")
+
+No final da resposta, apresenta:
+- Lista de ficheiros criados/alterados com explicação de cada um.
+- Comandos para verificar:
+  python -m compileall backend/app/services/cliente_service.py backend/app/routers/clientes.py
+- Tabela de progresso atualizada com ✅ e ❌.
+
+##############################################################################
+
+Prompt 7 — Router + Service: Trotinetes
+
+Implementa o router e o service de trotinetes do backend DLMCare.
+
+Contexto:
+- Schemas em backend/app/schemas/trotinete.py: TrotineteCreate, TrotineteResponse, TrotineteDetalheResponse, TrotineteResumo, ClienteResumoEmTrotinete.
+- Schemas comuns: DataResponse[T], PaginatedResponse[T] em schemas/common.py.
+- Dependencies: require_roles em app/auth/dependencies.py.
+- Contrato em docs/backend_api_contract_etapa3.md, secção 6.
+- cliente_service._find(id) está disponível para validar a existência do cliente.
+
+Regras obrigatórias:
+- NÃO criar modelos SQLAlchemy, migrations, SQL, frontend, repositories reais.
+- NÃO alterar schemas.
+
+Criar/alterar os seguintes ficheiros:
+
+1. backend/app/services/trotinete_service.py
+
+   Dados mockados em memória [pendente de integração com BD].
+   Incluir 2 trotinetes de teste (loja_id=1, associadas aos clientes mockados).
+   Guardar loja_id internamente no dict (para controlo de acesso), mas não expor
+   no TrotineteResponse (excluir com {k: v for k, v in t.items() if k != "loja_id"}).
+
+   Funções:
+   - listar(cliente_id, numero_serie, page, page_size, current_user) -> PaginatedResponse[TrotineteResponse]
+     - Filtro de loja automático para não-ADMIN
+     - Filtro opcional por cliente_id e numero_serie (exact match)
+
+   - criar(body, current_user) -> DataResponse[TrotineteResponse]
+     - Import local de cliente_service para validar cliente_id (evitar circular import)
+     - 404 se cliente não existe
+     - 403 LOJA_MISMATCH se cliente pertence a outra loja
+     - 409 DUPLICATE_ENTRY se numero_serie já existe
+     - loja_id da trotinete herdada do cliente
+
+   - obter(trotinete_id, current_user) -> DataResponse[TrotineteDetalheResponse]
+     - 404 / 403 como esperado
+     - Import local de cliente_service para construir ClienteResumoEmTrotinete
+     - total_ordens=0 [pendente OS]
+
+   - get_por_cliente(cliente_id) -> list[dict]  (helper interno, sem autenticação)
+     - Usado por cliente_service.obter para popular a lista de trotinetes
+
+2. backend/app/routers/trotinetes.py
+
+   Router com prefix="/trotinetes", tags=["trotinetes"].
+
+   Endpoints:
+   - GET  /trotinetes                → todos os perfis
+   - POST /trotinetes                → ADMIN, GERENTE_LOJA, RECECIONISTA (status 201)
+   - GET  /trotinetes/{trotinete_id} → todos os perfis
+
+3. backend/app/services/cliente_service.py  (actualizar obter)
+
+   Substituir trotinetes=[] por import local de trotinete_service.get_por_cliente
+   para popular a lista de trotinetes no ClienteDetalheResponse.
+   Usar import local (dentro da função) para evitar dependência circular.
+
+4. backend/app/main.py
+
+   Adicionar:
+     from app.routers import auth, clientes, trotinetes
+     app.include_router(trotinetes.router, prefix="/api/v1")
+
+No final da resposta, apresenta:
+- Lista de ficheiros criados/alterados com explicação de cada um.
+- Comandos para verificar:
+  python -m compileall backend/app/services/trotinete_service.py backend/app/routers/trotinetes.py
+- Tabela de progresso atualizada com ✅ e ❌.
+
+##############################################################################
+
+Prompt 8 — Router + Service: Peças
+
+Implementa o router e o service de peças do backend DLMCare.
+
+Contexto:
+- Schemas em backend/app/schemas/peca.py: PecaCreate, PecaResponse, PecaDetalheResponse, PecaResumo, CategoriaPeca.
+- PecaResponse NÃO inclui preco_custo — campo interno nunca exposto em respostas públicas.
+- Pydantic v2 ignora campos extra por defeito, por isso PecaResponse(**dict_com_preco_custo) funciona.
+- Schemas comuns: DataResponse[T], PaginatedResponse[T].
+- Dependencies: require_roles em app/auth/dependencies.py.
+- Contrato em docs/backend_api_contract_etapa3.md, secção 7.
+
+Regras obrigatórias:
+- NÃO criar modelos SQLAlchemy, migrations, SQL, frontend, repositories reais.
+- NÃO alterar schemas.
+- preco_custo NUNCA deve aparecer em respostas públicas da API.
+
+Criar/alterar os seguintes ficheiros:
+
+1. backend/app/services/peca_service.py
+
+   Dados mockados em memória [pendente de integração com BD].
+   Incluir 4 peças de teste cobrindo categorias diferentes (BATERIA, PNEU, TRAVAO, MOTOR).
+   Armazenar preco_custo no dict interno mas nunca serializar no schema de resposta.
+
+   Funções:
+   - listar(query, categoria, page, page_size) -> PaginatedResponse[PecaResponse]
+     - Filtra apenas peças ativas
+     - query: substring match em nome e referencia (case-insensitive)
+     - categoria: CategoriaPeca | None
+
+   - obter(peca_id) -> DataResponse[PecaDetalheResponse]
+     - 404 RESOURCE_NOT_FOUND se não existe
+
+   - criar(body: PecaCreate) -> DataResponse[PecaResponse]
+     - 409 DUPLICATE_ENTRY se referencia já existe
+     - message: "Peça criada com sucesso."
+
+   - get_peca_interna(peca_id) -> dict | None
+     - Helper para uso interno por outros services (stock, OS, fatura)
+     - Devolve o dict completo incluindo preco_custo
+
+   Nota: o router de peças não recebe current_user nas funções do service (sem
+   filtragem por loja — catálogo global). O current_user é usado apenas para RBAC no router.
+
+2. backend/app/routers/pecas.py
+
+   Router com prefix="/pecas", tags=["peças"].
+
+   Endpoints:
+   - GET  /pecas          → todos os perfis
+   - GET  /pecas/{peca_id} → todos os perfis
+   - POST /pecas          → ADMINISTRADOR, GERENTE_LOJA (status 201)
+
+   O current_user é recebido como _ (não utilizado no service).
+
+3. backend/app/main.py
+
+   Adicionar:
+     from app.routers import auth, clientes, trotinetes, pecas
+     app.include_router(pecas.router, prefix="/api/v1")
+
+No final da resposta, apresenta:
+- Lista de ficheiros criados/alterados com explicação de cada um.
+- Comandos para verificar:
+  python -m compileall backend/app/services/peca_service.py backend/app/routers/pecas.py
+- Tabela de progresso atualizada com ✅ e ❌.
+
+##############################################################################
+
+Prompt 9 — Router + Service: Stock
+
+Implementa o router e o service de stock do backend DLMCare.
+
+Contexto:
+- Schemas em backend/app/schemas/stock.py: StockItemResponse, StockEntradaRequest, StockEntradaResponse, StockTransferenciaRequest, StockTransferenciaResponse, TipoMovimentoStock.
+- Schemas comuns: DataResponse[T], PaginatedResponse[T].
+- Dependencies: require_roles em app/auth/dependencies.py.
+- peca_service.get_peca_interna(peca_id) disponível para lookup de peças.
+- Contrato em docs/backend_api_contract_etapa3.md, secção 8.
+
+Regras obrigatórias:
+- NÃO criar modelos SQLAlchemy, migrations, SQL, frontend, repositories reais.
+- NÃO alterar schemas.
+
+Criar/alterar os seguintes ficheiros:
+
+1. backend/app/services/stock_service.py
+
+   Dados mockados em memória [pendente de integração com BD].
+   Stock estruturado como lista de dicts {peca_id, loja_id, quantidade, limite_minimo}.
+   Mock com 2 lojas: {1: "DLMCare Porto", 2: "DLMCare Lisboa"}.
+   Incluir stock inicial para as 4 peças em loja 1 e 2 itens em loja 2.
+
+   Funções:
+   - listar(loja_id, apenas_alertas, page, page_size, current_user) -> PaginatedResponse[StockItemResponse]
+     - não-ADMIN: ignora loja_id param, usa sempre current_user.loja_id
+     - apenas_alertas=True: filtra quantidade <= limite_minimo
+     - StockItemResponse inclui peca_referencia e peca_nome (lookup via peca_service)
+     - alerta = quantidade <= limite_minimo (calculado no service)
+
+   - entrada(body, current_user) -> DataResponse[StockEntradaResponse]
+     - 403 LOJA_MISMATCH se não-ADMIN tenta dar entrada noutra loja
+     - 404 se loja ou peça não existe
+     - Cria registo de stock se não existir ainda para esse (peca_id, loja_id)
+     - [pendente] log auditoria STOCK_ENTRADA
+
+   - transferencia(body, current_user) -> DataResponse[StockTransferenciaResponse]
+     - 403 LOJA_MISMATCH se não-ADMIN e loja_origem_id != current_user.loja_id
+     - 404 se loja ou peça não existe
+     - 400 INSUFFICIENT_STOCK se origem não tem quantidade suficiente
+     - Actualiza quantidades de origem e destino
+     - [pendente] log auditoria STOCK_TRANSFERENCIA
+
+   Helpers internos expostos para outros services:
+   - get_stock_disponivel(peca_id, loja_id) -> int
+   - consumir_stock(peca_id, loja_id, quantidade) -> None  (lança 400 se insuficiente)
+
+2. backend/app/routers/stock.py
+
+   Router com prefix="/stock", tags=["stock"].
+
+   Endpoints:
+   - GET  /stock               → todos os perfis
+   - POST /stock/entradas      → ADMINISTRADOR, GERENTE_LOJA (status 201)
+   - POST /stock/transferencias → ADMINISTRADOR, GERENTE_LOJA (status 201)
+
+3. backend/app/main.py
+
+   Adicionar:
+     from app.routers import ..., stock
+     app.include_router(stock.router, prefix="/api/v1")
+
+No final da resposta, apresenta:
+- Lista de ficheiros criados/alterados com explicação de cada um.
+- Comandos para verificar:
+  python -m compileall backend/app/services/stock_service.py backend/app/routers/stock.py
+- Tabela de progresso atualizada com ✅ e ❌.
+
+##############################################################################
+
+Prompt 10 — Router + Service: Ordens de Serviço
+
+Implementa o router e o service de ordens de serviço do backend DLMCare.
+
+Contexto:
+- Schemas em backend/app/schemas/ordem_servico.py: OrdemServicoCreate, OrdemServicoResponse,
+  OrdemServicoResumo, OrdemServicoDetalheResponse, OrdemServicoEstadoUpdate,
+  OrdemServicoEstadoUpdateResponse, PecaAplicadaRequest, PecaAplicadaResponse,
+  PecaAplicadaResumo, TempoInicioResponse, TempoParagemResponse, EstadoOrdemServico,
+  PrioridadeOrdemServico, _OSClienteInfo, _OSTrotineteInfo, _OSMecanicoInfo.
+- Helpers disponíveis: trotinete_service._find, cliente_service._find,
+  peca_service.get_peca_interna, stock_service.consumir_stock, stock_service._MOCK_LOJAS,
+  auth_service._MOCK_USERS.
+- Usar imports locais (dentro das funções) para evitar dependências circulares.
+- Contrato em docs/backend_api_contract_etapa3.md, secção 9.
+
+Regras obrigatórias:
+- NÃO criar modelos SQLAlchemy, migrations, SQL, frontend, repositories reais.
+- NÃO alterar schemas.
+- preco_custo NUNCA deve aparecer em nenhum cálculo.
+- preco_venda_unitario é snapshotted no momento de adicionar_peca.
+
+Criar/alterar os seguintes ficheiros:
+
+1. backend/app/services/ordem_servico_service.py
+
+   Mock em memória com 2 OS (uma PENDENTE, uma EM_REPARACAO com peça aplicada).
+   Dict interno: {id, numero, trotinete_id, cliente_id, loja_id, mecanico_id, estado,
+   prioridade, descricao_problema, preco_servico, data_entrada, data_conclusao,
+   pecas_aplicadas: list[dict], tempo_total_minutos, inicio_tempo_atual, fatura_id}
+
+   Tabela de transições _TRANSICOES: dict[(E_atual, E_novo), frozenset(perfis)]:
+   - PENDENTE → EM_DIAGNOSTICO: ADMIN, GERENTE, MECANICO
+   - PENDENTE → CANCELADA: ADMIN, GERENTE, RECECIONISTA
+   - EM_DIAGNOSTICO → AGUARDA_APROVACAO: ADMIN, GERENTE, MECANICO
+   - EM_DIAGNOSTICO → CANCELADA: ADMIN, GERENTE
+   - AGUARDA_APROVACAO → EM_REPARACAO: ADMIN, GERENTE, RECECIONISTA
+   - AGUARDA_APROVACAO → CANCELADA: ADMIN, GERENTE, RECECIONISTA
+   - EM_REPARACAO → AGUARDA_PECAS: ADMIN, GERENTE, MECANICO
+   - EM_REPARACAO → CONCLUIDA: ADMIN, GERENTE, MECANICO
+   - EM_REPARACAO → CANCELADA: ADMIN, GERENTE
+   - AGUARDA_PECAS → EM_REPARACAO: ADMIN, GERENTE, MECANICO
+   - AGUARDA_PECAS → CANCELADA: ADMIN, GERENTE
+   (CONCLUIDA → FATURADA: apenas via POST /faturas, não aqui)
+
+   Funções:
+   - criar(body, current_user) -> DataResponse[OrdemServicoResponse]
+     - Valida trotinete existe; loja_id do body deve corresponder à loja da trotinete
+     - Valida mecanico_id se fornecido (deve ser MECANICO da mesma loja)
+     - cliente_id herdado da trotinete
+     - numero = f"OS-2026-{id:04d}"
+
+   - listar(loja_id, estado, mecanico_id, data_inicio, data_fim, page, page_size, current_user) -> PaginatedResponse[OrdemServicoResumo]
+     - Filtro de loja automático para não-ADMIN
+     - Filtros opcionais: estado, mecanico_id, data_inicio/fim (comparação de date)
+     - Resumo inclui loja_nome, cliente_nome, trotinete_numero_serie, mecanico_nome (lookups locais)
+
+   - obter(os_id, current_user) -> DataResponse[OrdemServicoDetalheResponse]
+     - 404 / 403 padrão
+     - Detalhe inclui objetos aninhados cliente, trotinete, mecanico
+     - subtotal_pecas = Σ(subtotal) das pecas_aplicadas
+     - valor_estimado_total = preco_servico + subtotal_pecas
+
+   - atualizar_estado(os_id, body, current_user) -> DataResponse[OrdemServicoEstadoUpdateResponse]
+     - Valida transição na tabela _TRANSICOES: 409 INVALID_STATE_TRANSITION se não existe
+     - Valida perfil do utilizador: 403 PERMISSION_DENIED se não autorizado
+     - Se novo_estado == CONCLUIDA: define data_conclusao = now()
+     - [pendente] auditoria OS_ESTADO_ALTERADO
+
+   - iniciar_tempo(os_id, current_user) -> DataResponse[TempoInicioResponse]
+     - 409 se inicio_tempo_atual já definido
+     - Guarda datetime.now() em inicio_tempo_atual
+
+   - parar_tempo(os_id, current_user) -> DataResponse[TempoParagemResponse]
+     - 409 se inicio_tempo_atual é None
+     - Calcula minutos = (now - inicio) // 60
+     - Acumula em tempo_total_minutos
+     - Limpa inicio_tempo_atual
+
+   - adicionar_peca(os_id, body, current_user) -> DataResponse[PecaAplicadaResponse]
+     - 409 se OS em CONCLUIDA, FATURADA ou CANCELADA
+     - 404 se peca não existe
+     - Chama stock_service.consumir_stock (lança 400 INSUFFICIENT_STOCK se falhar)
+     - Snapshot: preco_venda_unitario = peca["preco_venda"] (NUNCA preco_custo)
+     - Se peca já na lista, acumula quantidade e subtotal
+     - message: "Peça adicionada à ordem de serviço."
+
+   Helper público:
+   - get_os_interna(os_id) -> dict | None  (para fatura_service)
+
+2. backend/app/routers/ordens_servico.py
+
+   Router com prefix="/ordens-servico", tags=["ordens de serviço"].
+
+   Endpoints:
+   - POST  /ordens-servico                   → ADMIN, GERENTE, RECECIONISTA (201)
+   - GET   /ordens-servico                   → todos os perfis
+   - GET   /ordens-servico/{os_id}           → todos os perfis
+   - PATCH /ordens-servico/{os_id}/estado    → get_current_user (RBAC no service)
+   - POST  /ordens-servico/{os_id}/tempos/iniciar → ADMIN, GERENTE, MECANICO
+   - POST  /ordens-servico/{os_id}/tempos/parar   → ADMIN, GERENTE, MECANICO
+   - POST  /ordens-servico/{os_id}/pecas          → ADMIN, GERENTE, MECANICO (201)
+
+3. backend/app/main.py — adicionar ordens_servico router
+
+No final da resposta, apresenta:
+- Lista de ficheiros criados/alterados com explicação de cada um.
+- Comandos para verificar:
+  python -m compileall backend/app/services/ordem_servico_service.py backend/app/routers/ordens_servico.py
+- Tabela de progresso atualizada com ✅ e ❌.
+
+##############################################################################
