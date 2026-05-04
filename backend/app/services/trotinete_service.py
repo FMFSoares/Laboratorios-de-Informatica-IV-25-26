@@ -180,7 +180,10 @@ def obter(
         telemovel=cliente["telemovel"],
     )
 
-    total_ordens = 0  # [pendente] populado quando OS forem implementadas
+    from app.services import ordem_servico_service
+    total_ordens = sum(
+        1 for o in ordem_servico_service._MOCK_OS if o["trotinete_id"] == trotinete_id
+    )
 
     campos = {k: v for k, v in trotinete.items() if k != "loja_id"}
     return DataResponse[TrotineteDetalheResponse](

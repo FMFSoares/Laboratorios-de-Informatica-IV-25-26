@@ -181,5 +181,5 @@ def historico(
         total=0,
         page=page,
         page_size=page_size,
-        pages=0,
+        pages=1,
     )

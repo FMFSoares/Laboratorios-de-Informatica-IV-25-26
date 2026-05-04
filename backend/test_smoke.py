@@ -338,6 +338,158 @@ check("valor_estimado_total = preco_servico + subtotal_pecas",
 
 
 # ─────────────────────────────────────────────────────────────────
+print("\n── Faturas ─────────────────────────────────────────────")
+
+# Avançar a OS criada no teste até CONCLUIDA para poder faturar
+client.patch(f"/api/v1/ordens-servico/{ID_OS_NOVA}/estado",
+    json={"novo_estado": "CONCLUIDA"}, headers=HDR_MEC)
+
+# POST /faturas — OS ainda não faturada
+r = client.post("/api/v1/faturas", json={"ordem_servico_id": ID_OS_NOVA}, headers=HDR_REC)
+check("POST /faturas → 201", r.status_code == 201)
+d = r.json()["data"]
+check("numero tem formato FAT-2026-XXXX", d["numero"].startswith("FAT-2026-"))
+check("estado = EMITIDA", d["estado"] == "EMITIDA")
+check("valor_final = preco_servico + subtotal_pecas",
+    abs(d["valor_final"] - (d["servico"]["preco_servico"] + d["subtotal_pecas"])) < 0.01)
+check("preco_custo NÃO na fatura", "preco_custo" not in str(d))
+check("message presente", "message" in r.json())
+ID_FATURA = d["id"]
+
+# OS transitou para FATURADA
+r_os = client.get(f"/api/v1/ordens-servico/{ID_OS_NOVA}", headers=HDR_REC)
+check("OS transitou para FATURADA", r_os.json()["data"]["estado"] == "FATURADA")
+
+# POST /faturas — OS já faturada → 409
+r = client.post("/api/v1/faturas", json={"ordem_servico_id": ID_OS_NOVA}, headers=HDR_REC)
+check("POST /faturas OS já faturada → 409 ORDER_ALREADY_INVOICED", r.status_code == 409)
+check("code = ORDER_ALREADY_INVOICED", r.json()["detail"]["code"] == "ORDER_ALREADY_INVOICED")
+
+# POST /faturas — OS não concluída (OS 1 está PENDENTE) → 400
+r = client.post("/api/v1/faturas", json={"ordem_servico_id": 1}, headers=HDR_REC)
+check("POST /faturas OS não concluída → 400 ORDER_NOT_CONCLUDED", r.status_code == 400)
+check("code = ORDER_NOT_CONCLUDED", r.json()["detail"]["code"] == "ORDER_NOT_CONCLUDED")
+
+# POST /faturas — OS inexistente → 404
+r = client.post("/api/v1/faturas", json={"ordem_servico_id": 999}, headers=HDR_REC)
+check("POST /faturas OS inexistente → 404", r.status_code == 404)
+
+# MECANICO não pode emitir faturas → 403
+r = client.post("/api/v1/faturas", json={"ordem_servico_id": ID_OS_NOVA}, headers=HDR_MEC)
+check("MECANICO POST /faturas → 403", r.status_code == 403)
+
+# GET /faturas/{id}
+r = client.get(f"/api/v1/faturas/{ID_FATURA}", headers=HDR_REC)
+check("GET /faturas/{id} → 200", r.status_code == 200)
+check("campos obrigatórios presentes", all(k in r.json()["data"] for k in ("cliente", "trotinete", "servico", "loja", "pecas_aplicadas")))
+
+# GET /faturas/{id} inexistente
+r = client.get("/api/v1/faturas/999", headers=HDR_REC)
+check("GET /faturas/999 → 404", r.status_code == 404)
+
+# GET /faturas — listagem
+r = client.get("/api/v1/faturas", headers=HDR_REC)
+check("GET /faturas → 200", r.status_code == 200)
+check("1 fatura presente", r.json()["total"] >= 1)
+
+# Filtro por ordem_servico_id
+r = client.get(f"/api/v1/faturas?ordem_servico_id={ID_OS_NOVA}", headers=HDR_REC)
+check("GET /faturas?ordem_servico_id → 1 resultado", r.json()["total"] == 1)
+
+
+# ─────────────────────────────────────────────────────────────────
+print("\n── Dashboard ───────────────────────────────────────────")
+
+# ADMIN pode aceder
+r = client.get("/api/v1/dashboard", headers=HDR_ADMIN)
+check("GET /dashboard (ADMIN) → 200", r.status_code == 200)
+d = r.json()["data"]
+check("campos obrigatórios presentes", all(k in d for k in (
+    "periodo", "ordens_por_estado", "ordens_concluidas_por_loja",
+    "faturacao_total", "pecas_abaixo_stock_minimo", "eficiencia_por_mecanico"
+)))
+check("ordens_por_estado tem todos os estados", all(
+    e in d["ordens_por_estado"]
+    for e in ("PENDENTE", "EM_DIAGNOSTICO", "AGUARDA_APROVACAO",
+              "EM_REPARACAO", "AGUARDA_PECAS", "CONCLUIDA", "FATURADA", "CANCELADA")
+))
+check("faturacao_total é número", isinstance(d["faturacao_total"], (int, float)))
+check("pecas_abaixo_stock_minimo é lista", isinstance(d["pecas_abaixo_stock_minimo"], list))
+
+# GERENTE pode aceder
+r = client.get("/api/v1/dashboard", headers={"Authorization": f"Bearer {r.json().get('access_token', TOKEN_ADMIN)}"})
+r = client.get("/api/v1/dashboard", headers={"Authorization": f"Bearer {client.post('/api/v1/auth/login', json={'email': 'gerente.porto@dlmcare.pt', 'password': 'gerente123'}).json().get('access_token', '')}"})
+# Simplificar: usar token de admin com loja_id query param
+r = client.get("/api/v1/dashboard?loja_id=1", headers=HDR_ADMIN)
+check("GET /dashboard?loja_id=1 (ADMIN) → 200", r.status_code == 200)
+check("periodo.inicio e periodo.fim presentes", "inicio" in r.json()["data"]["periodo"])
+
+# RECECIONISTA não pode aceder
+r = client.get("/api/v1/dashboard", headers=HDR_REC)
+check("RECECIONISTA GET /dashboard → 403", r.status_code == 403)
+
+# MECANICO não pode aceder
+r = client.get("/api/v1/dashboard", headers=HDR_MEC)
+check("MECANICO GET /dashboard → 403", r.status_code == 403)
+
+# Filtro por período
+r = client.get("/api/v1/dashboard?data_inicio=2026-01-01&data_fim=2026-12-31", headers=HDR_ADMIN)
+check("GET /dashboard com período explícito → 200", r.status_code == 200)
+check("periodo reflete params enviados",
+    r.json()["data"]["periodo"]["inicio"] == "2026-01-01" and
+    r.json()["data"]["periodo"]["fim"] == "2026-12-31")
+
+
+# ─────────────────────────────────────────────────────────────────
+print("\n── Auditoria ───────────────────────────────────────────")
+
+# ADMIN pode listar
+r = client.get("/api/v1/auditoria", headers=HDR_ADMIN)
+check("GET /auditoria (ADMIN) → 200", r.status_code == 200)
+check("devolve lista paginada", "data" in r.json() and "total" in r.json())
+check("7 eventos mock presentes", r.json()["total"] >= 7)
+check("campos obrigatórios no item", all(
+    k in r.json()["data"][0]
+    for k in ("id", "evento", "descricao", "timestamp", "detalhe")
+))
+
+# RECECIONISTA não pode aceder
+r = client.get("/api/v1/auditoria", headers=HDR_REC)
+check("RECECIONISTA GET /auditoria → 403", r.status_code == 403)
+
+# MECANICO não pode aceder
+r = client.get("/api/v1/auditoria", headers=HDR_MEC)
+check("MECANICO GET /auditoria → 403", r.status_code == 403)
+
+# Filtro por evento
+r = client.get("/api/v1/auditoria?evento=LOGIN_SUCESSO", headers=HDR_ADMIN)
+check("GET /auditoria?evento=LOGIN_SUCESSO → 200", r.status_code == 200)
+check("todos os itens têm evento=LOGIN_SUCESSO", all(
+    i["evento"] == "LOGIN_SUCESSO" for i in r.json()["data"]
+))
+
+# Filtro por utilizador_id
+r = client.get("/api/v1/auditoria?utilizador_id=3", headers=HDR_ADMIN)
+check("GET /auditoria?utilizador_id=3 → filtra por utilizador", all(
+    i["utilizador_id"] == 3 for i in r.json()["data"]
+))
+
+# Filtro por loja_id (ADMIN)
+r = client.get("/api/v1/auditoria?loja_id=1", headers=HDR_ADMIN)
+check("GET /auditoria?loja_id=1 (ADMIN) → 200", r.status_code == 200)
+
+# Filtro por período
+r = client.get("/api/v1/auditoria?data_inicio=2026-04-28&data_fim=2026-04-28", headers=HDR_ADMIN)
+check("GET /auditoria com período → 200", r.status_code == 200)
+check("resultado filtrado pelo período", r.json()["total"] >= 1)
+
+# Paginação
+r = client.get("/api/v1/auditoria?page=1&page_size=3", headers=HDR_ADMIN)
+check("paginação page_size=3 → 3 itens ou menos", len(r.json()["data"]) <= 3)
+check("pages calculado corretamente", r.json()["pages"] >= 1)
+
+
+# ─────────────────────────────────────────────────────────────────
 print("\n── Resumo ──────────────────────────────────────────────")
 total = len(results)
 passed = sum(results)

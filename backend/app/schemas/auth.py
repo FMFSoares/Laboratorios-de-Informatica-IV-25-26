@@ -65,7 +65,7 @@ class TokenResponse(BaseModel):
                     "email": "ana.lisboa@dlmcare.pt",
                     "perfil": "RECECIONISTA",
                     "loja_id": 1,
-                    "loja_nome": "DLMCare Lisboa",
+                    "loja_nome": "DLMCare Porto",
                 },
             }
         }
@@ -122,7 +122,7 @@ class CurrentUserResponse(BaseModel):
                 "email": "ana.lisboa@dlmcare.pt",
                 "perfil": "RECECIONISTA",
                 "loja_id": 1,
-                "loja_nome": "DLMCare Lisboa",
+                "loja_nome": "DLMCare Porto",
                 "ativo": True,
             }
         },

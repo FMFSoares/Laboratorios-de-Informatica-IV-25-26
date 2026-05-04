@@ -1358,3 +1358,217 @@ No final da resposta, apresenta:
 - Tabela de progresso atualizada com ✅ e ❌.
 
 ##############################################################################
+
+##############################################################################
+
+Prompt 11 — Router + Service: Faturas
+
+Implementa o router e o service de faturação do backend DLMCare.
+
+Contexto:
+- Schemas em backend/app/schemas/fatura.py: FaturaCreateRequest, FaturaResponse, FaturaResumo,
+  FaturaClienteInfo, FaturaTrotineteInfo, FaturaServicoInfo, FaturaPecaAplicada, FaturaLojaInfo, EstadoFatura.
+- Schemas comuns: DataResponse[T], PaginatedResponse[T] em schemas/common.py.
+- Dependencies: require_roles em app/auth/dependencies.py.
+- Helpers disponíveis:
+    - ordem_servico_service.get_os_interna(os_id) -> dict | None
+    - cliente_service._find(id), trotinete_service._find(id), peca_service.get_peca_interna(id)
+    - stock_service._MOCK_LOJAS: dict[int, str]
+- Contrato em docs/backend_api_contract_etapa3.md, secção 10.
+
+Regras obrigatórias:
+- NÃO criar modelos SQLAlchemy, migrations, SQL, frontend, repositories reais.
+- NÃO alterar schemas.
+- preco_custo NUNCA deve aparecer em nenhum cálculo nem em nenhuma resposta.
+- valor_final = preco_servico + subtotal_pecas (onde subtotal_pecas = Σ quantidade × preco_venda_unitario).
+
+Criar/alterar os seguintes ficheiros:
+
+1. backend/app/services/fatura_service.py
+
+   Mock em memória: _MOCK_FATURAS: list[dict] = [], _next_id = 1.
+   _MOCK_LOJAS_INFO: dict[int, dict] com nome, morada e telefone das 2 lojas (para imprimir na fatura).
+
+   Funções:
+   - emitir(ordem_servico_id, current_user) -> DataResponse[FaturaResponse]
+     - Verificar existência da OS → 404 RESOURCE_NOT_FOUND
+     - Verificar loja (LOJA_MISMATCH para não-ADMIN)
+     - Verificar fatura_id != None ANTES de verificar estado → 409 ORDER_ALREADY_INVOICED
+       (importante: esta verificação deve ser ANTES da verificação de estado, pois a OS
+       já está em FATURADA e não CONCLUIDA após a primeira fatura emitida)
+     - Verificar estado == CONCLUIDA → 400 ORDER_NOT_CONCLUDED
+     - Construir linhas de peça: para cada peca em os["pecas_aplicadas"],
+       lookup de referencia via peca_service.get_peca_interna
+     - subtotal_pecas = Σ p["subtotal"] das pecas_linha
+     - valor_final = round(preco_servico + subtotal_pecas, 2)
+     - numero = f"FAT-2026-{id:04d}"
+     - Atualizar os["fatura_id"] = id e os["estado"] = E.FATURADA
+     - [pendente] auditoria FATURA_EMITIDA
+     - message: "Fatura emitida com sucesso."
+
+   - obter(fatura_id, current_user) -> DataResponse[FaturaResponse]
+     - 404 se não existe
+     - 403 LOJA_MISMATCH se não-ADMIN
+
+   - listar(ordem_servico_id, loja_id, data_inicio, data_fim, page, page_size, current_user)
+       -> PaginatedResponse[FaturaResumo]
+     - Filtro de loja automático para não-ADMIN
+     - Filtros opcionais: ordem_servico_id, data_inicio/fim (comparação de date)
+
+2. backend/app/routers/faturas.py
+
+   Router com prefix="/faturas", tags=["faturas"].
+   Perfis autorizados: ADMINISTRADOR, GERENTE_LOJA, RECECIONISTA.
+
+   Endpoints:
+   - POST /faturas             → status 201
+   - GET  /faturas/{fatura_id} → status 200
+   - GET  /faturas             → status 200
+
+3. backend/app/main.py
+
+   Adicionar:
+     from app.routers import ..., faturas
+     app.include_router(faturas.router, prefix="/api/v1")
+
+No final da resposta, apresenta:
+- Lista de ficheiros criados/alterados com explicação de cada um.
+- Comandos para verificar:
+  python -m compileall backend/app/services/fatura_service.py backend/app/routers/faturas.py
+- Tabela de progresso atualizada com ✅ e ❌.
+
+##############################################################################
+
+##############################################################################
+
+Prompt 12 — Router + Service: Dashboard
+
+Implementa o router e o service de dashboard do backend DLMCare.
+
+Contexto:
+- Schemas em backend/app/schemas/dashboard.py: DashboardResponse, DashboardPeriodo,
+  OrdensConcluidasPorLoja, PecaAbaixoStockMinimo, EficienciaMecanico.
+- Schemas comuns: DataResponse[T] em schemas/common.py.
+- Dependencies: require_roles em app/auth/dependencies.py.
+- Dados disponíveis via imports locais (para evitar circulares):
+    - ordem_servico_service._MOCK_OS
+    - fatura_service._MOCK_FATURAS
+    - stock_service._MOCK_STOCK, stock_service._MOCK_LOJAS
+    - peca_service._MOCK_PECAS
+    - auth_service._MOCK_USERS
+    - app.schemas.ordem_servico.EstadoOrdemServico
+- Contrato em docs/backend_api_contract_etapa3.md, secção 11.
+
+Regras obrigatórias:
+- NÃO criar modelos SQLAlchemy, migrations, SQL, frontend, repositories reais.
+- NÃO alterar schemas.
+- O service deve calcular as métricas a partir dos mocks em memória, não usar dados estáticos.
+
+Criar/alterar os seguintes ficheiros:
+
+1. backend/app/services/dashboard_service.py
+
+   Função única:
+   - obter(loja_id, data_inicio, data_fim, current_user) -> DataResponse[DashboardResponse]
+
+   Defaults do período:
+   - data_inicio: hoje - 30 dias
+   - data_fim: hoje
+
+   Filtro de loja:
+   - ADMINISTRADOR: usa loja_id do query param (None = todas as lojas)
+   - Outros perfis: usa sempre current_user.loja_id
+
+   Métricas a calcular:
+   - ordens_por_estado: dict com todos os valores de EstadoOrdemServico como chaves (zero se ausente)
+   - ordens_concluidas_por_loja: OS com estado CONCLUIDA ou FATURADA, agrupadas por loja_id
+   - tempo_medio_reparacao_minutos: média de tempo_total_minutos das OS com valor definido (None se nenhuma)
+   - faturacao_total: soma de valor_final das faturas emitidas no período (filtradas por loja se aplicável)
+   - pecas_abaixo_stock_minimo: registos de stock onde quantidade < limite_minimo
+   - eficiencia_por_mecanico: só mecânicos com OS concluídas no período;
+     ordens_concluidas = len, tempo_medio_minutos = média dos não-None (None se nenhum com tempo)
+
+2. backend/app/routers/dashboard.py
+
+   Router com prefix="/dashboard", tags=["dashboard"].
+   Perfis autorizados: ADMINISTRADOR, GERENTE_LOJA.
+
+   Endpoint:
+   - GET /dashboard → status 200
+     Query params: loja_id, data_inicio, data_fim
+
+3. backend/app/main.py
+
+   Adicionar:
+     from app.routers import ..., dashboard
+     app.include_router(dashboard.router, prefix="/api/v1")
+
+No final da resposta, apresenta:
+- Lista de ficheiros criados/alterados com explicação de cada um.
+- Comandos para verificar:
+  python -m compileall backend/app/services/dashboard_service.py backend/app/routers/dashboard.py
+- Tabela de progresso atualizada com ✅ e ❌.
+
+##############################################################################
+
+##############################################################################
+
+Prompt 13 — Router + Service: Auditoria
+
+Implementa o router e o service de auditoria do backend DLMCare.
+
+Contexto:
+- Schemas em backend/app/schemas/auditoria.py: AuditoriaItemResponse, TipoEventoAuditoria.
+- Schemas comuns: PaginatedResponse[T] em schemas/common.py.
+- Dependencies: require_roles em app/auth/dependencies.py.
+- Contrato em docs/backend_api_contract_etapa3.md, secção 12.
+- A auditoria real será integrada nos outros services quando a BD estiver disponível.
+  Na Etapa 3, usar uma lista estática em memória com eventos representativos dos 7 tipos.
+
+Regras obrigatórias:
+- NÃO criar modelos SQLAlchemy, migrations, SQL, frontend, repositories reais.
+- NÃO alterar schemas.
+
+Criar/alterar os seguintes ficheiros:
+
+1. backend/app/services/auditoria_service.py
+
+   _MOCK_AUDITORIA: list[dict] com 7 eventos estáticos, um por tipo de evento:
+   LOGIN_SUCESSO, LOGIN_FALHA, ACESSO_NEGADO, OS_ESTADO_ALTERADO,
+   STOCK_ENTRADA, STOCK_TRANSFERENCIA, FATURA_EMITIDA.
+
+   Cada evento tem: id, evento (TipoEventoAuditoria), descricao, utilizador_id,
+   utilizador_nome, loja_id, ip_origem, timestamp (datetime UTC), detalhe (dict).
+
+   Função:
+   - listar(evento, utilizador_id, loja_id, data_inicio, data_fim, page, page_size, current_user)
+       -> PaginatedResponse[AuditoriaItemResponse]
+     - ADMINISTRADOR: vê tudo, pode filtrar por loja_id
+     - GERENTE_LOJA: vê só eventos da sua loja_id
+     - Filtros opcionais: evento (exact match em .value), utilizador_id, data_inicio/fim
+     - Paginação manual
+
+2. backend/app/routers/auditoria.py
+
+   Router com prefix="/auditoria", tags=["auditoria"].
+   Perfis autorizados: ADMINISTRADOR, GERENTE_LOJA.
+
+   Endpoint:
+   - GET /auditoria → status 200
+     Query params: evento (TipoEventoAuditoria | None), utilizador_id, loja_id,
+                   data_inicio, data_fim, page, page_size
+   - Passar evento.value (str) ao service, não o enum diretamente.
+
+3. backend/app/main.py
+
+   Adicionar:
+     from app.routers import ..., auditoria
+     app.include_router(auditoria.router, prefix="/api/v1")
+
+No final da resposta, apresenta:
+- Lista de ficheiros criados/alterados com explicação de cada um.
+- Comandos para verificar:
+  python -m compileall backend/app/services/auditoria_service.py backend/app/routers/auditoria.py
+- Tabela de progresso atualizada com ✅ e ❌.
+
+##############################################################################
