@@ -1,0 +1,86 @@
+Atua como um Arquiteto de Soluções Frontend e Especialista em Engenharia de Requisitos.
+
+
+
+O meu objetivo é que me ajudes a criar um prompt detalhado e estruturado para ser usado no **Gemini Code Assist**, um assistente de programação especializado em gerar código de alta qualidade.
+
+
+
+**Contexto do Projeto:**
+
+Estou a iniciar o desenvolvimento do **frontend** para o projeto **DLMCare**, um sistema de gestão de oficinas. O backend em FastAPI já está funcional e a ser desenvolvido por outro colega, que me forneceu a seguinte documentação:
+
+
+
+1.  **Contrato da API (`docs/backend_api_contract_etapa3.md`):** Este é o documento mais importante. Descreve todos os endpoints, schemas de dados (request/response), regras de negócio e o sistema de autenticação (JWT com Bearer Token).
+
+2.  **Setup Inicial (`docs/setup_inicial.txt`):** Este documento confirma a stack tecnológica para o frontend: **Vue.js 3 (com Composition API), Vite, Pinia para gestão de estado, e Axios para chamadas HTTP**.
+
+3.  **Relatório da Etapa 1 (`docs/prompts/etapa1.txt`):** Fornece o contexto de negócio e a visão geral do sistema DLMCare.
+
+
+
+**A Tua Tarefa:**
+
+Com base nos documentos que te vou fornecer, gera um **único prompt completo e otimizado** que eu possa copiar e colar para o Gemini Code Assist. O objetivo desse prompt é pedir a implementação da **estrutura inicial do projeto frontend e do módulo de autenticação**.
+
+
+
+O prompt que gerares deve instruir o Gemini Code Assist a:
+
+1.  **Criar a estrutura de pastas** para um projeto Vue.js escalável (ex: `src/components`, `src/views`, `src/services`, `src/store`, `src/router`, etc.).
+
+2.  **Configurar o Axios:** Criar uma instância centralizada com a `baseURL` apontada para `/api/v1` e um **interceptor** que adicione automaticamente o `Authorization: Bearer <token>` a todos os pedidos, exceto ao de login.
+
+3.  **Configurar o Pinia:** Criar um *store* de autenticação (`auth.js`) para gerir o estado do utilizador (token, dados do utilizador, status de autenticação).
+
+4.  **Configurar o Vue Router:**
+
+    *   Definir a rota `/login`.
+
+    *   Definir uma rota protegida `/dashboard` que só é acessível se o utilizador estiver autenticado (usando *navigation guards*).
+
+    *   Redirecionar utilizadores não autenticados que tentem aceder a rotas protegidas para a página de login.
+
+5.  **Implementar a View de Login (`Login.vue`):**
+
+    *   Criar um formulário com campos para email e password.
+
+    *   Ao submeter, chamar uma ação no *store* Pinia.
+
+    *   A ação do Pinia deve usar o serviço Axios para fazer um `POST` para o endpoint `/auth/login` (conforme o contrato da API).
+
+    *   Em caso de sucesso, guardar o token e os dados do utilizador no *store* e redirecionar para o `/dashboard`.
+
+    *   Em caso de erro (ex: credenciais inválidas), mostrar uma mensagem de erro ao utilizador.
+
+6.  **Criar um componente `Dashboard.vue` simples** como placeholder para a rota protegida, que mostre os dados do utilizador autenticado (lidos do *store* Pinia).
+
+
+
+O prompt final deve ser claro, em inglês (para melhor performance do assistente de código), e seguir o formato "Persona, Objective, Context, Task".
+
+
+
+Agora, lê os ficheiros que te vou fornecer e gera o prompt final para o Gemini Code Assist.
+
+=========================================================================================================================================================================
+
+
+Persona: Act as a Senior Vue.js 3 Frontend Developer and Solutions Architect.Objective: Bootstrap the initial frontend architecture and implement a robust JWT authentication module for the "DLMCare" application.Context:
+DLMCare is a cloud-based management system designed to synchronize data across a network of scooter repair shops. The frontend is being built using Vue.js 3 (Composition API), Vite, Pinia for state management, and Axios for HTTP requests. The backend is a Python FastAPI application. Authentication is handled via JWT Bearer Tokens. The API relies on specific endpoints, such as POST /auth/login which authenticates the user and returns a session token.  Task:Please generate the foundational code and configuration files to set up the following requirements:Project Structure: Define a scalable Vue.js folder structure suitable for a medium-to-large application (e.g., src/components, src/views, src/services, src/store, src/router).Axios Configuration (src/services/api.js):Create a centralized Axios instance with the baseURL set to /api/v1.Implement a request interceptor that automatically injects the Authorization: Bearer <token> header into all outgoing requests, excluding the login route.Pinia Store (src/store/auth.js):Create an authentication store using the Composition API setup syntax.Manage the user's state, including the JWT token, user profile data, and boolean authentication status.Vue Router Configuration (src/router/index.js):Define a public /login route.Define a protected /dashboard route.Implement global navigation guards to ensure only authenticated users can access the /dashboard (and any future protected routes), redirecting unauthenticated users to /login.Login View (src/views/Login.vue):Build a responsive login form with email and password fields.On submit, dispatch an action from the Pinia auth store.The Pinia action must make a POST request to /auth/login to authenticate the user and retrieve the session token.  On success, securely store the token and user data in the Pinia state and push the router to /dashboard.On error (e.g., invalid credentials), catch the exception and display a clear error message to the user.Dashboard View (src/views/Dashboard.vue):Create a simple placeholder component for the protected route.Retrieve and display the authenticated user's data (e.g., name or email) directly from the Pinia store to prove the state persists across routes.Please provide the code block for each specific file, ensuring modern ES6+ syntax and Vue 3 best practices throughout.
+
+
+=========================================================================================================================================================================
+
+
+quanto a componentes, que devo incluir?
+
+
+=========================================================================================================================================================================
+
+
+ok, tendo em conta a backend e a database, achas que é possível retirar algo da frontend? e achas que está tudo coerente?
+
+
+=========================================================================================================================================================================
