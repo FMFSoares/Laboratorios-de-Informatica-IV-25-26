@@ -11,9 +11,17 @@ DataT = TypeVar("DataT")
 
 
 def validate_nif(value: str) -> str:
-    """NIF português: exatamente 9 dígitos numéricos."""
+    """NIF português: validação exata com dígito de controlo (Modulus 11)."""
     if not isinstance(value, str) or not value.isdigit() or len(value) != 9:
         raise ValueError("NIF deve ter exatamente 9 dígitos numéricos.")
+
+    total = sum(int(value[i]) * (9 - i) for i in range(8))
+    resto = total % 11
+    check_digit = 0 if resto < 2 else 11 - resto
+
+    if check_digit != int(value[8]):
+        raise ValueError("NIF inválido (falha no dígito de controlo).")
+
     return value
 
 

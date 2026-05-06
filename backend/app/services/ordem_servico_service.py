@@ -374,7 +374,20 @@ def atualizar_estado(
     if body.novo_estado == E.CONCLUIDA:
         os["data_conclusao"] = datetime.now(timezone.utc)
 
-    # [pendente] auditoria OS_ESTADO_ALTERADO
+    from app.services.auditoria_service import _MOCK_AUDITORIA
+    from app.schemas.auditoria import TipoEventoAuditoria
+
+    _MOCK_AUDITORIA.append({
+        "id": len(_MOCK_AUDITORIA) + 1,
+        "evento": TipoEventoAuditoria.OS_ESTADO_ALTERADO,
+        "descricao": f"OS #{os['id']} alterada de {estado_anterior.value} para {body.novo_estado.value}.",
+        "utilizador_id": current_user.id,
+        "utilizador_nome": current_user.nome,
+        "loja_id": os["loja_id"],
+        "ip_origem": "127.0.0.1",
+        "timestamp": datetime.now(timezone.utc),
+        "detalhe": {"ordem_servico_id": os["id"], "estado_anterior": estado_anterior.value, "estado_novo": body.novo_estado.value},
+    })
 
     return DataResponse[OrdemServicoEstadoUpdateResponse](
         data=OrdemServicoEstadoUpdateResponse(

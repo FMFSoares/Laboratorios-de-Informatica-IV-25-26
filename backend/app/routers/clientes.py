@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_roles
 from app.schemas.auth import CurrentUserResponse
@@ -12,7 +13,9 @@ from app.schemas.cliente import (
 )
 from app.schemas.common import DataResponse, PaginatedResponse
 from app.schemas.utilizador import PerfilUtilizador
-from app.services import cliente_service
+from app.database import get_db
+from app.repositories.cliente_repository import ClienteRepository
+from app.services.cliente_service import ClienteService
 
 router = APIRouter(prefix="/clientes", tags=["clientes"])
 
@@ -28,6 +31,11 @@ _escrita = require_roles(
     PerfilUtilizador.RECECIONISTA,
 )
 
+# Helper de injeção de dependências do FastAPI
+def get_cliente_service(db: Session = Depends(get_db)) -> ClienteService:
+    repo = ClienteRepository(db)
+    return ClienteService(repo)
+
 
 @router.get(
     "",
@@ -39,8 +47,9 @@ def listar(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: CurrentUserResponse = Depends(_todos),
+    service: ClienteService = Depends(get_cliente_service),
 ) -> PaginatedResponse[ClienteResponse]:
-    return cliente_service.listar(query, page, page_size, current_user)
+    return service.listar(query, page, page_size, current_user)
 
 
 @router.post(
@@ -55,8 +64,9 @@ def listar(
 def criar(
     body: ClienteCreate,
     current_user: CurrentUserResponse = Depends(_escrita),
+    service: ClienteService = Depends(get_cliente_service),
 ) -> DataResponse[ClienteResponse]:
-    return cliente_service.criar(body, current_user)
+    return service.criar(body, current_user)
 
 
 @router.get(
@@ -71,8 +81,9 @@ def criar(
 def obter(
     cliente_id: int,
     current_user: CurrentUserResponse = Depends(_todos),
+    service: ClienteService = Depends(get_cliente_service),
 ) -> DataResponse[ClienteDetalheResponse]:
-    return cliente_service.obter(cliente_id, current_user)
+    return service.obter(cliente_id, current_user)
 
 
 @router.get(
@@ -89,5 +100,6 @@ def historico(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: CurrentUserResponse = Depends(_todos),
+    service: ClienteService = Depends(get_cliente_service),
 ) -> PaginatedResponse[ClienteHistoricoItem]:
-    return cliente_service.historico(cliente_id, page, page_size, current_user)
+    return service.historico(cliente_id, page, page_size, current_user)

@@ -30,6 +30,16 @@ class UtilizadorBase(BaseModel):
         ),
     )
     ativo: bool = Field(True, description="Indica se a conta está activa.")
+    comissao: int | None = Field(
+        None, 
+        description="Percentagem de cada serviço. Apenas para o perfil MECANICO."
+    )
+
+
+class UtilizadorCreate(UtilizadorBase):
+    """Schema para a criação de um novo utilizador."""
+
+    password: str = Field(..., min_length=6, description="Palavra-passe em texto simples.")
 
 
 class UtilizadorResponse(UtilizadorBase):

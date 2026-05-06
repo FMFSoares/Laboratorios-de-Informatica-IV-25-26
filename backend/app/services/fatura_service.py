@@ -171,7 +171,20 @@ def emitir(
     os["estado"] = E.FATURADA
     _next_id += 1
 
-    # [pendente] auditoria FATURA_EMITIDA
+    from app.services.auditoria_service import _MOCK_AUDITORIA
+    from app.schemas.auditoria import TipoEventoAuditoria
+
+    _MOCK_AUDITORIA.append({
+        "id": len(_MOCK_AUDITORIA) + 1,
+        "evento": TipoEventoAuditoria.FATURA_EMITIDA,
+        "descricao": f"Fatura {nova['numero']} emitida para OS #{os['id']}.",
+        "utilizador_id": current_user.id,
+        "utilizador_nome": current_user.nome,
+        "loja_id": os["loja_id"],
+        "ip_origem": "127.0.0.1",
+        "timestamp": datetime.now(timezone.utc),
+        "detalhe": {"fatura_id": nova["id"], "ordem_servico_id": os["id"], "valor_final": valor_final},
+    })
 
     return DataResponse[FaturaResponse](
         data=_to_response(nova),
