@@ -1,7 +1,18 @@
 
 -> primeira prompt para gerar relatorio para a etapa 1
 
-ora bem, estou a fazer um google docs para a primeira etapa do trabalho. faz me o docs inteiro. desenvolve extensamente todos os topicos, quero detalhe nas coisas, nada feito a pressa. pesquisa se for necessario sobre o tema para ter boas informações. especial atenção nos requisitos que sao a parte mais importante da primeira etapa, ja que vao ter de ser tidos em conta na implementação. demora o tempo que precisares mostra me uma cena como deve ser 
+Atua como um Consultor Sénior de Engenharia de Software e Especialista em Análise de Requisitos.
+
+Contexto do Projeto: Estou a desenvolver o sistema DLMCare para a unidade curricular de LI4. O objetivo é criar um sistema de gestão para uma oficina de reparação de trotinetes.
+
+Missão: Com base no tema 3 do enunciado de LI4, gera uma Definição do Domínio do Sistema exaustiva que inclua:
+
+    1. Análise de Contexto e Origens: Cria uma narrativa plausível para a "DLMCare" (fundada por David Lopes Machado). Define a sua visão de mercado, o porquê da necessidade deste sistema agora (ex: crescimento da micromobilidade urbana) e como a empresa se posiciona no setor.
+    2. Definição do Domínio: Delimita o que o sistema abrange, desde o registo de clientes e equipamentos até à gestão de stocks de peças e faturação.
+    3. Identificação Elaborada de Stakeholders: Identifica e caracteriza os stakeholders diretos e indiretos (ex: Gerência, Técnicos de Reparação, Clientes Finais, Fornecedores de Peças, Autoridades Tributárias).
+    4. Restrições do Sistema: Lista restrições técnicas (ex: conformidade com normas), operacionais (ex: tempos de resposta, fluxos de trabalho) e de negócio (ex: RGPD para dados de clientes).
+
+Output Esperado: Um documento técnico estruturado, com linguagem profissional, que sirva de base para a criação da Especificação de Requisitos (SRS) seguindo a norma IEEE 830
 
 
 

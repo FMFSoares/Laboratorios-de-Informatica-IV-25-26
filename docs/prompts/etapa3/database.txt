@@ -1,0 +1,42 @@
+Contexto:
+Atua como um Arquiteto de Software e Especialista em base de dados MySQL. Estamos a desenvolver a camada de dados do projeto DLMCare usando FastAPI e SQLAlchemy 2.0.
+
+Já criei todos os schemas Pydantic com validações rigorosas. Podes consultar os ficheiros na pasta @app/schemas/ (auditoria.py, cliente.py, fatura.py, loja.py, ordem_servico.py, peca.py, stock.py, trotinete.py, utilizador.py).
+Lê também o ficheiro @app/database.py.
+
+Objetivo:
+Gera os modelos da base de dados (app/models/) utilizando estritamente a sintaxe moderna do SQLAlchemy 2.0 (Mapped[tipo], mapped_column, e relationship).
+
+Estrutura Exata das Tabelas a Gerar:
+
+1. app/models/loja.py e app/models/utilizador.py:
+
+    Loja (__tablename__ = "lojas"): id (PK), nome, cidade, morada, telefone, email (nullable), ativo. Relacionamentos: utilizadores, clientes, stock, ordens_servico.
+
+    Utilizador (__tablename__ = "utilizadores"): id (PK), nome, email (unique), password_hash, perfil (Enum PerfilUtilizador), loja_id (FK para lojas.id, nullable), ativo (bool), comissao (int, nullable). Relacionamentos: loja, ordens_mecanico, auditorias.
+
+2. app/models/cliente.py e app/models/trotinete.py:
+
+    Cliente (__tablename__ = "clientes"): id (PK), nome, nif (unique), telemovel, email (nullable), morada (nullable), consentimento_rgpd (bool), data_registo (datetime), loja_id (FK). Relacionamentos: loja, trotinetes, ordens_servico.
+
+    Trotinete (__tablename__ = "trotinetes"): id (PK), cliente_id (FK para clientes.id), marca, modelo, numero_serie (unique), ano_compra (int, nullable), cor (nullable), observacoes_tecnicas (nullable), data_registo. Relacionamentos: cliente, ordens_servico.
+
+3. app/models/peca.py e app/models/stock.py:
+
+    Peca (__tablename__ = "pecas"): id (PK), referencia (unique), nome, categoria (Enum CategoriaPeca), descricao (nullable), unidade, preco_custo (float), preco_venda (float), ativo. Relacionamentos: stock_lojas, os_pecas.
+
+    StockLoja (__tablename__ = "stock_lojas"): id (PK), peca_id (FK para pecas.id), loja_id (FK para lojas.id), quantidade (int), limite_minimo (int).
+
+4. app/models/ordem_servico.py:
+
+    OrdemServico (__tablename__ = "ordens_servico"): id (PK), numero (unique), trotinete_id (FK), cliente_id (FK), loja_id (FK), mecanico_id (FK nullable), estado (Enum EstadoOrdemServico), prioridade (Enum PrioridadeOrdemServico), descricao_problema, preco_servico (float), data_entrada, data_conclusao (nullable), tempo_total_minutos (nullable).
+
+    OSPeca (__tablename__ = "os_pecas"): id (PK), ordem_servico_id (FK), peca_id (FK), quantidade (int), preco_venda_unitario (float).
+
+    RegistoTempo (__tablename__ = "registos_tempo"): id (PK), ordem_servico_id (FK), inicio (datetime), fim (datetime, nullable), minutos_esta_sessao (int, nullable), tempo_total_acumulado_minutos (int, nullable).
+
+5. app/models/fatura.py e app/models/auditoria.py:
+
+    Fatura (__tablename__ = "faturas"): id (PK), numero (unique), ordem_servico_id (FK unique, pois é 1:1), data_emissao, estado (Enum EstadoFatura), subtotal_pecas (float), valor_final (float).
+
+    Auditoria (__tablename__ = "auditoria"): id (PK), evento (Enum TipoEventoAuditoria), descricao, utilizador_id (FK nullable), loja_id (FK nullable), ip_origem (nullable), timestamp, detalhe (JSON - usa JSON do SQLAlchemy).

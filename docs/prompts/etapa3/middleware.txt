@@ -1,0 +1,22 @@
+Atua como um Arquiteto de Software Sénior. Estamos na Etapa 3 do projeto DLMCare (FastAPI backend) e não vamos focar-nos em testes agora (isso fica para a Etapa 4).
+
+Já resolvi o tratamento global de erros. Agora preciso de concluir a lógica de negócio conectando os serviços pendentes. Lê os seguintes ficheiros para teres o contexto da minha arquitetura atual: @app/services/fatura_service.py @app/services/ordem_servico_service.py @app/services/auditoria_service.py e o ficheiro de dependências onde faço a verificação de RBAC (@app/auth/dependecies.py).
+
+Objetivo: Gera o código limpo e estruturado para resolver os seguintes 2 pontos, mantendo a abordagem de dados mockados (em memória) nos services por enquanto:
+
+Dinamizar a Auditoria Mockada:
+
+Dá-me o código exato para substituir os comentários # [pendente] auditoria FATURA_EMITIDA (e semelhantes) nos ficheiros fatura_service.py e ordem_servico_service.py.
+
+O código deve importar a lista do auditoria_service.py e fazer um append() de um novo registo sempre que o estado da OS muda ou uma fatura é gerada.
+
+Módulo de Gestão de Utilizadores (CRUD Mockado): De acordo com o meu relatório, temos a hierarquia: Administrador, GerenteLoja, Rececionista e Mecanico. Preciso de poder gerir o staff. Gera os seguintes ficheiros:
+
+app/schemas/utilizador.py: Schemas Pydantic (Base, Create, Response) incluindo o nível de acesso/perfil.
+
+app/services/utilizador_service.py: Lógica com uma lista _MOCK_USERS e métodos criar_utilizador (com verificação de duplicados por email) e listar_utilizadores.
+
+app/routers/utilizadores.py: Endpoints GET /utilizadores e POST /utilizadores. Importante: Estas rotas têm de estar protegidas para que apenas o Administrador lhes consiga aceder (usando o sistema RBAC que já tenho implementado).
+
+Gera o código bloco a bloco, com o nome do ficheiro comentado na primeira linha.
+

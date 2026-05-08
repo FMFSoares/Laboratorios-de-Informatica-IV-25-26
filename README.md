@@ -40,6 +40,10 @@ cd Laboratorios-de-Informatica-IV-25-26
 cp .env.example backend/.env
 # Editar backend/.env com os dados da tua BD local e gerar o JWT_SECRET_KEY:
 python3 -c "import secrets; print(secrets.token_hex(32))"
+
+# Para o frontend, será criado um ficheiro `frontend/.env.local` mais tarde.
+# Este ficheiro é específico do frontend e contém a URL da API.
+# Ver secção "5. Frontend" para mais detalhes.
 ```
 
 ### 3. Backend
@@ -76,6 +80,8 @@ cd ..
 ```bash
 cd frontend
 npm install
+touch .env.local
+echo "VITE_API_BASE_URL=http://localhost:8000/api/v1" > .env.local
 cd ..
 ```
 

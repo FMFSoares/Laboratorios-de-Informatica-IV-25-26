@@ -1,4 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -22,6 +24,18 @@ app.add_middleware(
 )
 
 
+# ── Exception Handlers ───────────────────────────────────────
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Converte os erros 422 do FastAPI para o formato padrão do contrato."""
+    # Extrai a primeira mensagem de erro da lista gerada pelo Pydantic
+    erro_msg = exc.errors()[0].get("msg", "Erro de validação nos dados enviados.")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": erro_msg, "code": "VALIDATION_ERROR"},
+    )
+
+
 # ── Health check ─────────────────────────────────────────────
 @app.get("/health", tags=["sistema"])
 def health():
@@ -33,13 +47,16 @@ def health():
     }
 
 
-# ── Routers (serão adicionados à medida que os módulos forem criados) ──
-# from app.routers import auth, clientes, trotinetes, ordens_servico, stock, faturas, dashboard, auditoria
-# app.include_router(auth.router,           prefix="/api/v1")
-# app.include_router(clientes.router,       prefix="/api/v1")
-# app.include_router(trotinetes.router,     prefix="/api/v1")
-# app.include_router(ordens_servico.router, prefix="/api/v1")
-# app.include_router(stock.router,          prefix="/api/v1")
-# app.include_router(faturas.router,        prefix="/api/v1")
-# app.include_router(dashboard.router,      prefix="/api/v1")
-# app.include_router(auditoria.router,      prefix="/api/v1")
+# ── Routers ───────────────────────────────────────────────────────────────────
+from app.routers import auth, clientes, trotinetes, pecas, stock, ordens_servico, faturas, dashboard, auditoria, utilizadores
+
+app.include_router(auth.router,           prefix="/api/v1")
+app.include_router(clientes.router,       prefix="/api/v1")
+app.include_router(trotinetes.router,     prefix="/api/v1")
+app.include_router(pecas.router,          prefix="/api/v1")
+app.include_router(stock.router,          prefix="/api/v1")
+app.include_router(ordens_servico.router, prefix="/api/v1")
+app.include_router(faturas.router,        prefix="/api/v1")
+app.include_router(dashboard.router,      prefix="/api/v1")
+app.include_router(auditoria.router,      prefix="/api/v1")
+app.include_router(utilizadores.router,   prefix="/api/v1")
