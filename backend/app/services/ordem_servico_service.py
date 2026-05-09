@@ -15,6 +15,8 @@ from app.schemas.ordem_servico import (
     OrdemServicoDetalheResponse,
     OrdemServicoEstadoUpdate,
     OrdemServicoEstadoUpdateResponse,
+    OrdemServicoMecanicoUpdate,
+    OrdemServicoMecanicoUpdateResponse,
     OrdemServicoResponse,
     OrdemServicoResumo,
     PecaAplicadaRequest,
@@ -28,6 +30,7 @@ from app.schemas.ordem_servico import (
     _OSTrotineteInfo,
 )
 from app.schemas.utilizador import PerfilUtilizador as P
+from app.utils.permissions import check_loja_access
 
 # ── Tabela de transições: (estado_atual, novo_estado) → perfis autorizados ────
 
@@ -110,15 +113,6 @@ def get_os_interna(os_id: int) -> dict | None:
     return _find(os_id)
 
 
-def _check_loja(os: dict, current_user: CurrentUserResponse) -> None:
-    if current_user.perfil == P.ADMINISTRADOR:
-        return
-    if os["loja_id"] != current_user.loja_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"detail": "Acesso a dados de outra loja não permitido.", "code": "LOJA_MISMATCH"},
-        )
-
 
 def _404(mensagem: str = "Ordem de serviço não encontrada.") -> None:
     raise HTTPException(
@@ -133,6 +127,34 @@ def _pecas_resumo(pecas: list[dict]) -> list[PecaAplicadaResumo]:
 
 def _subtotal(pecas: list[dict]) -> float:
     return sum(p["subtotal"] for p in pecas)
+
+
+def _media_minutos_reparacao() -> float | None:
+    """Average elapsed calendar minutes across all CONCLUIDA/FATURADA OS."""
+    concluidas = [
+        o for o in _MOCK_OS
+        if o["estado"] in {E.CONCLUIDA, E.FATURADA} and o["data_conclusao"] is not None
+    ]
+    if not concluidas:
+        return None
+    total = sum(
+        (o["data_conclusao"] - o["data_entrada"]).total_seconds() / 60
+        for o in concluidas
+    )
+    return total / len(concluidas)
+
+
+def _atraso(os: dict) -> tuple[bool, int | None]:
+    """Returns (em_atraso, minutos_em_atraso) for an open OS."""
+    if os["estado"] in {E.CONCLUIDA, E.FATURADA, E.CANCELADA}:
+        return False, None
+    media = _media_minutos_reparacao()
+    if media is None:
+        return False, None
+    decorridos = (datetime.now(timezone.utc) - os["data_entrada"]).total_seconds() / 60
+    if decorridos > media:
+        return True, int(decorridos - media)
+    return False, None
 
 
 def _to_response(os: dict) -> OrdemServicoResponse:
@@ -158,11 +180,12 @@ def _to_resumo(os: dict) -> OrdemServicoResumo:
     from app.services.cliente_service import _find as find_cliente
     from app.services.trotinete_service import _find as find_trotinete
     from app.services.auth_service import _MOCK_USERS
-    from app.services.stock_service import _MOCK_LOJAS
+    from app.services.loja_service import get_nome as _get_loja_nome
 
     cliente = find_cliente(os["cliente_id"])
     trotinete = find_trotinete(os["trotinete_id"])
     mecanico = next((u for u in _MOCK_USERS if u["id"] == os["mecanico_id"]), None)
+    em_atraso, minutos_em_atraso = _atraso(os)
 
     return OrdemServicoResumo(
         id=os["id"],
@@ -170,11 +193,13 @@ def _to_resumo(os: dict) -> OrdemServicoResumo:
         estado=os["estado"],
         prioridade=os["prioridade"],
         loja_id=os["loja_id"],
-        loja_nome=_MOCK_LOJAS.get(os["loja_id"]),
-        cliente_nome=cliente["nome"] if cliente else None,
+        loja_nome=_get_loja_nome(os["loja_id"]),
+        cliente_nome=cliente.nome if cliente else None,
         trotinete_numero_serie=trotinete["numero_serie"] if trotinete else None,
         mecanico_nome=mecanico["nome"] if mecanico else None,
         data_entrada=os["data_entrada"],
+        em_atraso=em_atraso,
+        minutos_em_atraso=minutos_em_atraso,
     )
 
 
@@ -182,7 +207,7 @@ def _to_detalhe(os: dict) -> OrdemServicoDetalheResponse:
     from app.services.cliente_service import _find as find_cliente
     from app.services.trotinete_service import _find as find_trotinete
     from app.services.auth_service import _MOCK_USERS
-    from app.services.stock_service import _MOCK_LOJAS
+    from app.services.loja_service import get_nome as _get_loja_nome
 
     cliente = find_cliente(os["cliente_id"])
     trotinete = find_trotinete(os["trotinete_id"])
@@ -192,6 +217,7 @@ def _to_detalhe(os: dict) -> OrdemServicoDetalheResponse:
     )
 
     sub = _subtotal(os["pecas_aplicadas"])
+    em_atraso, minutos_em_atraso = _atraso(os)
 
     return OrdemServicoDetalheResponse(
         id=os["id"],
@@ -199,9 +225,9 @@ def _to_detalhe(os: dict) -> OrdemServicoDetalheResponse:
         estado=os["estado"],
         prioridade=os["prioridade"],
         loja_id=os["loja_id"],
-        loja_nome=_MOCK_LOJAS.get(os["loja_id"]),
+        loja_nome=_get_loja_nome(os["loja_id"]),
         cliente=_OSClienteInfo(
-            id=cliente["id"], nome=cliente["nome"], telemovel=cliente["telemovel"]
+            id=cliente.id, nome=cliente.nome, telemovel=cliente.telemovel
         ),
         trotinete=_OSTrotineteInfo(
             id=trotinete["id"],
@@ -219,6 +245,8 @@ def _to_detalhe(os: dict) -> OrdemServicoDetalheResponse:
         data_entrada=os["data_entrada"],
         data_conclusao=os["data_conclusao"],
         fatura_id=os["fatura_id"],
+        em_atraso=em_atraso,
+        minutos_em_atraso=minutos_em_atraso,
     )
 
 
@@ -240,7 +268,7 @@ def criar(
             detail={"detail": "Trotinete não encontrada.", "code": "RESOURCE_NOT_FOUND"},
         )
 
-    _check_loja({"loja_id": body.loja_id}, current_user)
+    check_loja_access(body.loja_id, current_user)
 
     if trotinete["loja_id"] != body.loja_id:
         raise HTTPException(
@@ -297,6 +325,7 @@ def listar(
     mecanico_id: int | None,
     data_inicio,
     data_fim,
+    em_atraso: bool | None,
     page: int,
     page_size: int,
     current_user: CurrentUserResponse,
@@ -316,6 +345,8 @@ def listar(
         itens = [o for o in itens if o["data_entrada"].date() >= data_inicio]
     if data_fim is not None:
         itens = [o for o in itens if o["data_entrada"].date() <= data_fim]
+    if em_atraso is not None:
+        itens = [o for o in itens if _atraso(o)[0] == em_atraso]
 
     total = len(itens)
     pages = max(1, -(-total // page_size))
@@ -337,7 +368,7 @@ def obter(
     os = _find(os_id)
     if os is None:
         _404()
-    _check_loja(os, current_user)
+    check_loja_access(os["loja_id"], current_user)
     return DataResponse[OrdemServicoDetalheResponse](data=_to_detalhe(os))
 
 
@@ -345,11 +376,12 @@ def atualizar_estado(
     os_id: int,
     body: OrdemServicoEstadoUpdate,
     current_user: CurrentUserResponse,
+    background_tasks=None,
 ) -> DataResponse[OrdemServicoEstadoUpdateResponse]:
     os = _find(os_id)
     if os is None:
         _404()
-    _check_loja(os, current_user)
+    check_loja_access(os["loja_id"], current_user)
 
     chave = (os["estado"], body.novo_estado)
     perfis_permitidos = _TRANSICOES.get(chave)
@@ -373,6 +405,7 @@ def atualizar_estado(
     os["estado"] = body.novo_estado
     if body.novo_estado == E.CONCLUIDA:
         os["data_conclusao"] = datetime.now(timezone.utc)
+        _notificar_cliente_trotinete_pronta(os, background_tasks)
 
     from app.services.auditoria_service import _MOCK_AUDITORIA
     from app.schemas.auditoria import TipoEventoAuditoria
@@ -401,6 +434,86 @@ def atualizar_estado(
     )
 
 
+def _notificar_cliente_trotinete_pronta(os: dict, background_tasks) -> None:
+    from app.services.cliente_service import _find as find_cliente
+    from app.services.loja_service import get_nome as _get_loja_nome
+    from app.utils.email import notificar_trotinete_pronta
+
+    cliente = find_cliente(os["cliente_id"])
+    if not cliente or not cliente.email:
+        return
+
+    from app.services.loja_service import get_telefone as _get_loja_telefone
+    loja_nome = _get_loja_nome(os["loja_id"]) or "DLMCare"
+    loja_telefone = _get_loja_telefone(os["loja_id"]) or "210 000 000"
+
+    if background_tasks is not None:
+        background_tasks.add_task(
+            notificar_trotinete_pronta,
+            cliente_email=cliente.email,
+            cliente_nome=cliente.nome,
+            os_numero=os["numero"],
+            loja_nome=loja_nome,
+            loja_telefone=loja_telefone,
+        )
+    else:
+        notificar_trotinete_pronta(
+            cliente_email=cliente.email,
+            cliente_nome=cliente.nome,
+            os_numero=os["numero"],
+            loja_nome=loja_nome,
+            loja_telefone=loja_telefone,
+        )
+
+
+def atualizar_mecanico(
+    os_id: int,
+    body: OrdemServicoMecanicoUpdate,
+    current_user: CurrentUserResponse,
+) -> DataResponse[OrdemServicoMecanicoUpdateResponse]:
+    from app.services.auth_service import _MOCK_USERS
+
+    os = _find(os_id)
+    if os is None:
+        _404()
+    check_loja_access(os["loja_id"], current_user)
+
+    if os["estado"] in {E.CONCLUIDA, E.FATURADA, E.CANCELADA}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"detail": f"Não é possível reatribuir mecânico a uma OS em estado {os['estado'].value}.", "code": "INVALID_STATE_TRANSITION"},
+        )
+
+    mecanico_nome = None
+    if body.mecanico_id is not None:
+        mecanico = next(
+            (u for u in _MOCK_USERS if u["id"] == body.mecanico_id and u["perfil"] == P.MECANICO),
+            None,
+        )
+        if mecanico is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"detail": "Mecânico não encontrado.", "code": "RESOURCE_NOT_FOUND"},
+            )
+        if mecanico["loja_id"] != os["loja_id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"detail": "Mecânico pertence a outra loja.", "code": "LOJA_MISMATCH"},
+            )
+        mecanico_nome = mecanico["nome"]
+
+    os["mecanico_id"] = body.mecanico_id
+
+    return DataResponse[OrdemServicoMecanicoUpdateResponse](
+        data=OrdemServicoMecanicoUpdateResponse(
+            id=os_id,
+            mecanico_id=body.mecanico_id,
+            mecanico_nome=mecanico_nome,
+        ),
+        message="Mecânico atualizado." if body.mecanico_id else "Mecânico desatribuído.",
+    )
+
+
 def iniciar_tempo(
     os_id: int,
     current_user: CurrentUserResponse,
@@ -408,13 +521,35 @@ def iniciar_tempo(
     os = _find(os_id)
     if os is None:
         _404()
-    _check_loja(os, current_user)
+    check_loja_access(os["loja_id"], current_user)
 
     if os["inicio_tempo_atual"] is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"detail": "Tempo já iniciado. Pare o registo atual primeiro.", "code": "INVALID_STATE_TRANSITION"},
         )
+
+    mecanico_id = os["mecanico_id"]
+    if mecanico_id is not None:
+        conflito = next(
+            (
+                o for o in _MOCK_OS
+                if o["id"] != os_id
+                and o["mecanico_id"] == mecanico_id
+                and o["inicio_tempo_atual"] is not None
+            ),
+            None,
+        )
+        if conflito is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "detail": f"O mecânico já tem um registo de tempo ativo na OS {conflito['numero']}. Pare esse registo antes de iniciar um novo.",
+                    "code": "MECANICO_TIMER_CONFLICT",
+                    "os_conflito_id": conflito["id"],
+                    "os_conflito_numero": conflito["numero"],
+                },
+            )
 
     os["inicio_tempo_atual"] = datetime.now(timezone.utc)
 
@@ -431,7 +566,7 @@ def parar_tempo(
     os = _find(os_id)
     if os is None:
         _404()
-    _check_loja(os, current_user)
+    check_loja_access(os["loja_id"], current_user)
 
     if os["inicio_tempo_atual"] is None:
         raise HTTPException(
@@ -468,7 +603,7 @@ def adicionar_peca(
     os = _find(os_id)
     if os is None:
         _404()
-    _check_loja(os, current_user)
+    check_loja_access(os["loja_id"], current_user)
 
     if os["estado"] in {E.CONCLUIDA, E.FATURADA, E.CANCELADA}:
         raise HTTPException(

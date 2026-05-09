@@ -17,6 +17,7 @@ from app.schemas.stock import (
     StockTransferenciaResponse,
 )
 from app.schemas.utilizador import PerfilUtilizador
+from app.utils.permissions import check_loja_access
 
 # ── Mock data ─────────────────────────────────────────────────────────────────
 
@@ -69,18 +70,6 @@ def _to_item_response(s: dict) -> StockItemResponse:
         alerta=s["quantidade"] <= s["limite_minimo"],
     )
 
-
-def _check_loja_acesso(loja_id: int, current_user: CurrentUserResponse) -> None:
-    if current_user.perfil == PerfilUtilizador.ADMINISTRADOR:
-        return
-    if loja_id != current_user.loja_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "detail": "Acesso a dados de outra loja não permitido.",
-                "code": "LOJA_MISMATCH",
-            },
-        )
 
 
 def get_stock_disponivel(peca_id: int, loja_id: int) -> int:
@@ -141,7 +130,7 @@ def entrada(
 ) -> DataResponse[StockEntradaResponse]:
     from app.services.peca_service import get_peca_interna
 
-    _check_loja_acesso(body.loja_id, current_user)
+    check_loja_access(body.loja_id, current_user)
 
     if body.loja_id not in _MOCK_LOJAS:
         raise HTTPException(
@@ -183,7 +172,7 @@ def transferencia(
     from app.services.peca_service import get_peca_interna
 
     # Não-ADMIN só pode transferir a partir da sua própria loja
-    _check_loja_acesso(body.loja_origem_id, current_user)
+    check_loja_access(body.loja_origem_id, current_user)
 
     for loja_id in (body.loja_origem_id, body.loja_destino_id):
         if loja_id not in _MOCK_LOJAS:

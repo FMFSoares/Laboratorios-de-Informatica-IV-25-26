@@ -200,6 +200,8 @@ class OrdemServicoResumo(BaseModel):
     trotinete_numero_serie: str | None
     mecanico_nome: str | None
     data_entrada: datetime
+    em_atraso: bool = Field(False, description="True se o tempo decorrido supera a média das OS concluídas.")
+    minutos_em_atraso: int | None = Field(None, description="Minutos acima da média, quando em atraso.")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -252,6 +254,8 @@ class OrdemServicoDetalheResponse(BaseModel):
     data_entrada: datetime
     data_conclusao: datetime | None
     fatura_id: int | None = Field(None, description="ID da fatura, quando emitida.")
+    em_atraso: bool = Field(False, description="True se o tempo decorrido supera a média das OS concluídas.")
+    minutos_em_atraso: int | None = Field(None, description="Minutos acima da média, quando em atraso.")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -322,5 +326,31 @@ class TempoParagemResponse(BaseModel):
     fim: datetime
     minutos_esta_sessao: int = Field(..., ge=0)
     tempo_total_acumulado_minutos: int = Field(..., ge=0)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ── Schema de reatribuição de mecânico ───────────────────────────────────────
+
+
+class OrdemServicoMecanicoUpdate(BaseModel):
+    """Body do PATCH /api/v1/ordens-servico/{id}/mecanico."""
+
+    mecanico_id: int | None = Field(
+        ...,
+        description="ID do novo mecânico. Enviar null para desatribuir.",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"mecanico_id": 4}}
+    )
+
+
+class OrdemServicoMecanicoUpdateResponse(BaseModel):
+    """Resposta ao PATCH de mecânico."""
+
+    id: int
+    mecanico_id: int | None
+    mecanico_nome: str | None
 
     model_config = ConfigDict(from_attributes=True)

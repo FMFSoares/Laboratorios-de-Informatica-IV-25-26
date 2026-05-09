@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
 from app.auth.dependencies import get_current_user, require_roles
 from app.schemas.auth import CurrentUserResponse
@@ -13,6 +13,8 @@ from app.schemas.ordem_servico import (
     OrdemServicoDetalheResponse,
     OrdemServicoEstadoUpdate,
     OrdemServicoEstadoUpdateResponse,
+    OrdemServicoMecanicoUpdate,
+    OrdemServicoMecanicoUpdateResponse,
     OrdemServicoResponse,
     OrdemServicoResumo,
     PecaAplicadaRequest,
@@ -71,12 +73,13 @@ def listar(
     mecanico_id: int | None = Query(None, description="Filtrar por mecânico."),
     data_inicio: date | None = Query(None, description="Data de entrada a partir de (ISO 8601)."),
     data_fim: date | None = Query(None, description="Data de entrada até (ISO 8601)."),
+    em_atraso: bool | None = Query(None, description="Se true, devolve apenas OS cujo tempo decorrido supera a média das concluídas (RF17)."),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: CurrentUserResponse = Depends(_todos),
 ) -> PaginatedResponse[OrdemServicoResumo]:
     return ordem_servico_service.listar(
-        loja_id, estado, mecanico_id, data_inicio, data_fim, page, page_size, current_user
+        loja_id, estado, mecanico_id, data_inicio, data_fim, em_atraso, page, page_size, current_user
     )
 
 
@@ -109,17 +112,36 @@ def obter(
 def atualizar_estado(
     os_id: int,
     body: OrdemServicoEstadoUpdate,
+    background_tasks: BackgroundTasks,
     current_user: CurrentUserResponse = Depends(get_current_user),
 ) -> DataResponse[OrdemServicoEstadoUpdateResponse]:
     # RBAC por transição é verificado no service
-    return ordem_servico_service.atualizar_estado(os_id, body, current_user)
+    return ordem_servico_service.atualizar_estado(os_id, body, current_user, background_tasks)
+
+
+@router.patch(
+    "/{os_id}/mecanico",
+    response_model=DataResponse[OrdemServicoMecanicoUpdateResponse],
+    summary="Reatribuir ou desatribuir mecânico",
+    responses={
+        403: {"description": "LOJA_MISMATCH"},
+        404: {"description": "Ordem ou mecânico não encontrado"},
+        409: {"description": "INVALID_STATE_TRANSITION — OS já concluída ou cancelada"},
+    },
+)
+def atualizar_mecanico(
+    os_id: int,
+    body: OrdemServicoMecanicoUpdate,
+    current_user: CurrentUserResponse = Depends(_criacao),
+) -> DataResponse[OrdemServicoMecanicoUpdateResponse]:
+    return ordem_servico_service.atualizar_mecanico(os_id, body, current_user)
 
 
 @router.post(
     "/{os_id}/tempos/iniciar",
     response_model=DataResponse[TempoInicioResponse],
     summary="Iniciar registo de tempo (métricas internas)",
-    responses={409: {"description": "Tempo já iniciado"}},
+    responses={409: {"description": "INVALID_STATE_TRANSITION | MECANICO_TIMER_CONFLICT — inclui os_conflito_id e os_conflito_numero no body para o frontend apresentar diálogo de confirmação"}},
 )
 def iniciar_tempo(
     os_id: int,

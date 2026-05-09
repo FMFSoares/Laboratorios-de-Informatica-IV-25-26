@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     APP_PORT: int = 8000
     ALLOWED_ORIGINS: str = "http://localhost:5173"
 
+    # Email (SMTP)
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    EMAIL_FROM: str = ""
+
     @property
     def origins_list(self) -> list[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",")]

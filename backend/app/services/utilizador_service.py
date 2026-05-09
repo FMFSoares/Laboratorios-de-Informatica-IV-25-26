@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from app.schemas.common import DataResponse, PaginatedResponse
 from app.schemas.utilizador import UtilizadorCreate, UtilizadorResponse
 from app.services.auth_service import _MOCK_USERS
+from app.services.loja_service import get_nome as _get_loja_nome
 from app.core.security import hash_password
 
 _next_id = max((u["id"] for u in _MOCK_USERS), default=0) + 1
@@ -46,7 +47,7 @@ def criar_utilizador(body: UtilizadorCreate) -> DataResponse[UtilizadorResponse]
         "password_hash": hash_password(body.password),
         "perfil": body.perfil,
         "loja_id": body.loja_id,
-        "loja_nome": f"Loja {body.loja_id}" if body.loja_id else None,
+        "loja_nome": _get_loja_nome(body.loja_id) if body.loja_id else None,
         "ativo": body.ativo,
     }
     _MOCK_USERS.append(novo)

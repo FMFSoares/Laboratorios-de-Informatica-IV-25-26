@@ -17,6 +17,7 @@ from app.schemas.trotinete import (
     TrotineteResponse,
 )
 from app.schemas.utilizador import PerfilUtilizador
+from app.utils.permissions import check_loja_access
 
 # ── Mock data ─────────────────────────────────────────────────────────────────
 
@@ -56,18 +57,6 @@ _next_id = 3
 def _find(trotinete_id: int) -> dict | None:
     return next((t for t in _MOCK_TROTINETES if t["id"] == trotinete_id), None)
 
-
-def _check_loja(trotinete: dict, current_user: CurrentUserResponse) -> None:
-    if current_user.perfil == PerfilUtilizador.ADMINISTRADOR:
-        return
-    if trotinete["loja_id"] != current_user.loja_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "detail": "Acesso a dados de outra loja não permitido.",
-                "code": "LOJA_MISMATCH",
-            },
-        )
 
 
 def get_por_cliente(cliente_id: int) -> list[dict]:
@@ -127,7 +116,7 @@ def criar(
         )
 
     # Verifica que o utilizador tem acesso à loja do cliente
-    _check_loja({"loja_id": cliente["loja_id"]}, current_user)
+    check_loja_access(cliente.loja_id, current_user)
 
     if any(t["numero_serie"] == body.numero_serie for t in _MOCK_TROTINETES):
         raise HTTPException(
@@ -141,7 +130,7 @@ def criar(
     nova = {
         "id": _next_id,
         "cliente_id": body.cliente_id,
-        "loja_id": cliente["loja_id"],
+        "loja_id": cliente.loja_id,
         "marca": body.marca,
         "modelo": body.modelo,
         "numero_serie": body.numero_serie,
@@ -171,13 +160,13 @@ def obter(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"detail": "Trotinete não encontrada.", "code": "RESOURCE_NOT_FOUND"},
         )
-    _check_loja(trotinete, current_user)
+    check_loja_access(trotinete["loja_id"], current_user)
 
     cliente = cliente_service._find(trotinete["cliente_id"])
     cliente_resumo = ClienteResumoEmTrotinete(
-        id=cliente["id"],
-        nome=cliente["nome"],
-        telemovel=cliente["telemovel"],
+        id=cliente.id,
+        nome=cliente.nome,
+        telemovel=cliente.telemovel,
     )
 
     from app.services import ordem_servico_service

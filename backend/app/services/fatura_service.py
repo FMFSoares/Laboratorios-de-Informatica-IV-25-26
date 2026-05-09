@@ -20,6 +20,7 @@ from app.schemas.fatura import (
     FaturaTrotineteInfo,
 )
 from app.schemas.utilizador import PerfilUtilizador as P
+from app.utils.permissions import check_loja_access
 
 # ── Dados de lojas (morada e telefone para imprimir na fatura) ────────────────
 
@@ -40,15 +41,6 @@ _next_id = 1
 def _find(fatura_id: int) -> dict | None:
     return next((f for f in _MOCK_FATURAS if f["id"] == fatura_id), None)
 
-
-def _check_loja(fatura: dict, current_user: CurrentUserResponse) -> None:
-    if current_user.perfil == P.ADMINISTRADOR:
-        return
-    if fatura["loja_id"] != current_user.loja_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"detail": "Acesso a dados de outra loja não permitido.", "code": "LOJA_MISMATCH"},
-        )
 
 
 def _to_response(f: dict) -> FaturaResponse:
@@ -104,7 +96,7 @@ def emitir(
             detail={"detail": "Ordem de serviço não encontrada.", "code": "RESOURCE_NOT_FOUND"},
         )
 
-    _check_loja({"loja_id": os["loja_id"]}, current_user)
+    check_loja_access(os["loja_id"], current_user)
 
     if os["fatura_id"] is not None:
         raise HTTPException(
@@ -147,10 +139,10 @@ def emitir(
         "data_emissao": datetime.now(timezone.utc),
         "estado": EstadoFatura.EMITIDA,
         "cliente": {
-            "id": cliente["id"],
-            "nome": cliente["nome"],
-            "nif": cliente["nif"],
-            "morada": cliente.get("morada"),
+            "id": cliente.id,
+            "nome": cliente.nome,
+            "nif": cliente.nif,
+            "morada": cliente.morada,
         },
         "trotinete": {
             "marca": trotinete["marca"],
@@ -202,7 +194,7 @@ def obter(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"detail": "Fatura não encontrada.", "code": "RESOURCE_NOT_FOUND"},
         )
-    _check_loja(fatura, current_user)
+    check_loja_access(fatura["loja_id"], current_user)
     return DataResponse[FaturaResponse](data=_to_response(fatura))
 
 
