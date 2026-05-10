@@ -15,6 +15,8 @@ from app.schemas.ordem_servico import (
     OrdemServicoEstadoUpdateResponse,
     OrdemServicoMecanicoUpdate,
     OrdemServicoMecanicoUpdateResponse,
+    OrdemServicoObservacaoCreate,
+    OrdemServicoObservacaoResponse,
     OrdemServicoResponse,
     OrdemServicoResumo,
     PecaAplicadaRequest,
@@ -180,3 +182,22 @@ def adicionar_peca(
     current_user: CurrentUserResponse = Depends(_tecnicos),
 ) -> DataResponse[PecaAplicadaResponse]:
     return ordem_servico_service.adicionar_peca(os_id, body, current_user)
+
+
+@router.post(
+    "/{os_id}/observacoes",
+    response_model=DataResponse[OrdemServicoObservacaoResponse],
+    status_code=201,
+    summary="Adicionar observação interna à ordem de serviço",
+    responses={
+        403: {"description": "LOJA_MISMATCH"},
+        404: {"description": "Ordem não encontrada"},
+        409: {"description": "OS cancelada"},
+    },
+)
+def adicionar_observacao(
+    os_id: int,
+    body: OrdemServicoObservacaoCreate,
+    current_user: CurrentUserResponse = Depends(_tecnicos),
+) -> DataResponse[OrdemServicoObservacaoResponse]:
+    return ordem_servico_service.adicionar_observacao(os_id, body, current_user)

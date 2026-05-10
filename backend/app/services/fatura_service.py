@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-# [pendente de integração com BD]
-# Faturas em memória para a Etapa 3.
-
-from datetime import datetime, timezone
-
 from fastapi import HTTPException, status
 
+from app.repositories.fatura_repository import MockFaturaRepository, Fatura
+from app.repositories.loja_repository import MockLojaRepository
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.common import DataResponse, PaginatedResponse
 from app.schemas.fatura import (
@@ -22,72 +19,52 @@ from app.schemas.fatura import (
 from app.schemas.utilizador import PerfilUtilizador as P
 from app.utils.permissions import check_loja_access
 
-# ── Dados de lojas (morada e telefone para imprimir na fatura) ────────────────
-
-_MOCK_LOJAS_INFO: dict[int, dict] = {
-    1: {"nome": "DLMCare Porto",   "morada": "Rua de Santa Catarina 100, 4000-447 Porto",  "telefone": "222000001"},
-    2: {"nome": "DLMCare Lisboa",  "morada": "Av. da Liberdade 100, 1250-096 Lisboa",       "telefone": "213000001"},
-}
-
-# ── Mock data ─────────────────────────────────────────────────────────────────
-
-_MOCK_FATURAS: list[dict] = []
-_next_id = 1
+_repo = MockFaturaRepository()
+_loja_repo = MockLojaRepository()
 
 
-# ── Helpers internos ──────────────────────────────────────────────────────────
-
-
-def _find(fatura_id: int) -> dict | None:
-    return next((f for f in _MOCK_FATURAS if f["id"] == fatura_id), None)
-
-
-
-def _to_response(f: dict) -> FaturaResponse:
-    loja_info = _MOCK_LOJAS_INFO.get(f["loja_id"], {"nome": "Desconhecida", "morada": "", "telefone": ""})
+def _to_response(f: Fatura) -> FaturaResponse:
+    loja_info = _loja_repo.as_dict(f.loja_id) or {"nome": "Desconhecida", "morada": "", "telefone": ""}
     return FaturaResponse(
-        id=f["id"],
-        numero=f["numero"],
-        ordem_servico_id=f["ordem_servico_id"],
-        data_emissao=f["data_emissao"],
-        estado=f["estado"],
-        cliente=FaturaClienteInfo(**f["cliente"]),
-        trotinete=FaturaTrotineteInfo(**f["trotinete"]),
-        servico=FaturaServicoInfo(**f["servico"]),
-        pecas_aplicadas=[FaturaPecaAplicada(**p) for p in f["pecas_aplicadas"]],
-        subtotal_pecas=f["subtotal_pecas"],
-        valor_final=f["valor_final"],
+        id=f.id,
+        numero=f.numero,
+        ordem_servico_id=f.ordem_servico_id,
+        data_emissao=f.data_emissao,
+        estado=f.estado,
+        cliente=FaturaClienteInfo(**f.cliente),
+        trotinete=FaturaTrotineteInfo(**f.trotinete),
+        servico=FaturaServicoInfo(**f.servico),
+        pecas_aplicadas=[FaturaPecaAplicada(**p) for p in f.pecas_aplicadas],
+        subtotal_pecas=f.subtotal_pecas,
+        valor_final=f.valor_final,
         loja=FaturaLojaInfo(**loja_info),
     )
 
 
-def _to_resumo(f: dict) -> FaturaResumo:
+def _to_resumo(f: Fatura) -> FaturaResumo:
     return FaturaResumo(
-        id=f["id"],
-        numero=f["numero"],
-        ordem_servico_id=f["ordem_servico_id"],
-        cliente_nome=f["cliente"]["nome"],
-        cliente_nif=f["cliente"]["nif"],
-        valor_final=f["valor_final"],
-        data_emissao=f["data_emissao"],
-        estado=f["estado"],
+        id=f.id,
+        numero=f.numero,
+        ordem_servico_id=f.ordem_servico_id,
+        cliente_nome=f.cliente["nome"],
+        cliente_nif=f.cliente["nif"],
+        valor_final=f.valor_final,
+        data_emissao=f.data_emissao,
+        estado=f.estado,
     )
-
-
-# ── Casos de uso ──────────────────────────────────────────────────────────────
 
 
 def emitir(
     ordem_servico_id: int,
     current_user: CurrentUserResponse,
 ) -> DataResponse[FaturaResponse]:
-    global _next_id
-
     from app.services.ordem_servico_service import get_os_interna
     from app.services.cliente_service import _find as find_cliente
     from app.services.trotinete_service import _find as find_trotinete
     from app.services.peca_service import get_peca_interna
     from app.schemas.ordem_servico import EstadoOrdemServico as E
+    from app.repositories.auditoria_repository import MockAuditoriaRepository
+    from app.schemas.auditoria import TipoEventoAuditoria
 
     os = get_os_interna(ordem_servico_id)
     if os is None:
@@ -96,30 +73,30 @@ def emitir(
             detail={"detail": "Ordem de serviço não encontrada.", "code": "RESOURCE_NOT_FOUND"},
         )
 
-    check_loja_access(os["loja_id"], current_user)
+    check_loja_access(os.loja_id, current_user)
 
-    if os["fatura_id"] is not None:
+    if os.fatura_id is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"detail": "Já existe uma fatura para esta ordem de serviço.", "code": "ORDER_ALREADY_INVOICED"},
         )
 
-    if os["estado"] != E.CONCLUIDA:
+    if os.estado != E.CONCLUIDA:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
-                "detail": f"A OS está em estado {os['estado'].value}. Só é possível faturar OS no estado CONCLUIDA.",
+                "detail": f"A OS está em estado {os.estado.value}. Só é possível faturar OS no estado CONCLUIDA.",
                 "code": "ORDER_NOT_CONCLUDED",
             },
         )
 
-    cliente = find_cliente(os["cliente_id"])
-    trotinete = find_trotinete(os["trotinete_id"])
+    cliente = find_cliente(os.cliente_id)
+    trotinete = find_trotinete(os.trotinete_id)
 
     pecas_linha: list[dict] = []
-    for p in os["pecas_aplicadas"]:
+    for p in os.pecas_aplicadas:
         peca = get_peca_interna(p["peca_id"])
-        referencia = peca["referencia"] if peca else f"PEC-{p['peca_id']:03d}"
+        referencia = peca.referencia if peca else f"PEC-{p['peca_id']:03d}"
         pecas_linha.append({
             "peca_referencia": referencia,
             "peca_nome": p["peca_nome"],
@@ -129,72 +106,54 @@ def emitir(
         })
 
     subtotal_pecas = round(sum(p["subtotal"] for p in pecas_linha), 2)
-    valor_final = round(os["preco_servico"] + subtotal_pecas, 2)
+    valor_final = round(os.preco_servico + subtotal_pecas, 2)
 
-    nova = {
-        "id": _next_id,
-        "numero": f"FAT-2026-{_next_id:04d}",
-        "ordem_servico_id": ordem_servico_id,
-        "loja_id": os["loja_id"],
-        "data_emissao": datetime.now(timezone.utc),
-        "estado": EstadoFatura.EMITIDA,
-        "cliente": {
+    nova = _repo.create(
+        ordem_servico_id=ordem_servico_id,
+        loja_id=os.loja_id,
+        cliente={
             "id": cliente.id,
             "nome": cliente.nome,
             "nif": cliente.nif,
             "morada": cliente.morada,
         },
-        "trotinete": {
-            "marca": trotinete["marca"],
-            "modelo": trotinete["modelo"],
-            "numero_serie": trotinete["numero_serie"],
+        trotinete={
+            "marca": trotinete.marca,
+            "modelo": trotinete.modelo,
+            "numero_serie": trotinete.numero_serie,
         },
-        "servico": {
-            "descricao": os["descricao_problema"],
-            "preco_servico": os["preco_servico"],
+        servico={
+            "descricao": os.descricao_problema,
+            "preco_servico": os.preco_servico,
         },
-        "pecas_aplicadas": pecas_linha,
-        "subtotal_pecas": subtotal_pecas,
-        "valor_final": valor_final,
-    }
-
-    _MOCK_FATURAS.append(nova)
-    os["fatura_id"] = _next_id
-    os["estado"] = E.FATURADA
-    _next_id += 1
-
-    from app.services.auditoria_service import _MOCK_AUDITORIA
-    from app.schemas.auditoria import TipoEventoAuditoria
-
-    _MOCK_AUDITORIA.append({
-        "id": len(_MOCK_AUDITORIA) + 1,
-        "evento": TipoEventoAuditoria.FATURA_EMITIDA,
-        "descricao": f"Fatura {nova['numero']} emitida para OS #{os['id']}.",
-        "utilizador_id": current_user.id,
-        "utilizador_nome": current_user.nome,
-        "loja_id": os["loja_id"],
-        "ip_origem": "127.0.0.1",
-        "timestamp": datetime.now(timezone.utc),
-        "detalhe": {"fatura_id": nova["id"], "ordem_servico_id": os["id"], "valor_final": valor_final},
-    })
-
-    return DataResponse[FaturaResponse](
-        data=_to_response(nova),
-        message="Fatura emitida com sucesso.",
+        pecas_aplicadas=pecas_linha,
+        subtotal_pecas=subtotal_pecas,
+        valor_final=valor_final,
     )
 
+    os.fatura_id = nova.id
+    os.estado = E.FATURADA
 
-def obter(
-    fatura_id: int,
-    current_user: CurrentUserResponse,
-) -> DataResponse[FaturaResponse]:
-    fatura = _find(fatura_id)
+    MockAuditoriaRepository().registar(
+        evento=TipoEventoAuditoria.FATURA_EMITIDA,
+        descricao=f"Fatura {nova.numero} emitida para OS #{os.id}.",
+        utilizador_id=current_user.id,
+        utilizador_nome=current_user.nome,
+        loja_id=os.loja_id,
+        detalhe={"fatura_id": nova.id, "ordem_servico_id": os.id, "valor_final": valor_final},
+    )
+
+    return DataResponse[FaturaResponse](data=_to_response(nova), message="Fatura emitida com sucesso.")
+
+
+def obter(fatura_id: int, current_user: CurrentUserResponse) -> DataResponse[FaturaResponse]:
+    fatura = _repo.get_by_id(fatura_id)
     if fatura is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"detail": "Fatura não encontrada.", "code": "RESOURCE_NOT_FOUND"},
         )
-    check_loja_access(fatura["loja_id"], current_user)
+    check_loja_access(fatura.loja_id, current_user)
     return DataResponse[FaturaResponse](data=_to_response(fatura))
 
 
@@ -207,26 +166,12 @@ def listar(
     page_size: int,
     current_user: CurrentUserResponse,
 ) -> PaginatedResponse[FaturaResumo]:
-    itens = list(_MOCK_FATURAS)
-
-    if current_user.perfil != P.ADMINISTRADOR:
-        itens = [f for f in itens if f["loja_id"] == current_user.loja_id]
-    elif loja_id is not None:
-        itens = [f for f in itens if f["loja_id"] == loja_id]
-
-    if ordem_servico_id is not None:
-        itens = [f for f in itens if f["ordem_servico_id"] == ordem_servico_id]
-    if data_inicio is not None:
-        itens = [f for f in itens if f["data_emissao"].date() >= data_inicio]
-    if data_fim is not None:
-        itens = [f for f in itens if f["data_emissao"].date() <= data_fim]
-
-    total = len(itens)
+    effective_loja = loja_id if current_user.perfil == P.ADMINISTRADOR else current_user.loja_id
+    itens, total = _repo.list(effective_loja, ordem_servico_id, data_inicio, data_fim, page, page_size)
     pages = max(1, -(-total // page_size))
-    start = (page - 1) * page_size
 
     return PaginatedResponse[FaturaResumo](
-        data=[_to_resumo(f) for f in itens[start : start + page_size]],
+        data=[_to_resumo(f) for f in itens],
         total=total,
         page=page,
         page_size=page_size,

@@ -1,0 +1,99 @@
+IDEA — Mechanic Dual View (Browser vs App/Tablet)
+===================================================
+
+CONCEPT
+-------
+A mechanic should have two different interfaces depending on how they access the system:
+- Desktop browser → standard management view (same layout as the rest of the app)
+- Tablet / installed PWA → touch-optimized view with large buttons, minimal interactions
+
+This maps directly to RNF02.1 (max 3 interactions for mechanic actions on tablet).
+The two views already exist as separate routes: /ordens-servico and /oficina.
+
+HOW DETECTION WORKS
+--------------------
+No native app or extra build needed. We use a composable (useDeviceMode.js) that checks:
+
+  1. PWA standalone mode — detects if the app was installed to the home screen:
+       window.matchMedia('(display-mode: standalone)').matches
+
+  2. Touch + screen width fallback — for tablets that haven't installed the PWA:
+       navigator.maxTouchPoints > 0 && window.innerWidth < 1200
+
+Combined:
+  const isApp = isStandalone || isTouch
+
+BEHAVIOUR
+---------
+- If isApp is true AND the logged-in user is a MECANICO → auto-redirect to /oficina
+- If isApp is false (normal browser) → mechanic sees the standard view
+- All other roles are unaffected
+
+MECHANIC WORKFLOW
+-----------------
+1. Mechanic opens the URL on their tablet in the browser
+2. Browser prompts "Add to Home Screen" (PWA install)
+3. From then on, opening the icon always lands in app mode → /oficina view
+4. /oficina is designed for touch: large buttons, status changes in max 3 taps, timer controls
+
+IMPLEMENTATION COST
+-------------------
+- 1 new composable: src/composables/useDeviceMode.js (~10 lines)
+- 1 guard added to AppLayout.vue (redirect logic)
+- The /oficina views still need to be built (Phase 2 of frontend)
+
+NEEDS GROUP APPROVAL BEFORE IMPLEMENTATION
+
+
+---
+
+
+IDEA — Switch from Polling to Server-Sent Events (SSE) for Real-time Updates
+=============================================================================
+
+CURRENT APPROACH
+----------------
+All views that need to stay in sync (OS list, OS detail, mechanic list, active OS) use
+setInterval polling — every 15–30 seconds they re-fetch the same REST endpoint.
+
+WHY POLLING WAS USED
+---------------------
+- Zero backend changes needed — just a setInterval on existing endpoints
+- The backend is a mock in-memory store with no event infrastructure to subscribe to
+- For a handful of concurrent users, 30-second lag is operationally fine
+
+THE PROBLEM WITH POLLING
+-------------------------
+It fires a request on every interval regardless of whether anything changed.
+Fine at this scale. At high concurrency it becomes self-inflicted load.
+
+WHY SSE AND NOT WEBSOCKETS
+---------------------------
+WebSockets are bidirectional — overkill here. We only need the server to push
+notifications to the client, not the other way around. SSE fits exactly:
+- Unidirectional (server → client)
+- Native browser support with automatic reconnect
+- Much simpler to implement than WebSockets
+- FastAPI supports it natively via StreamingResponse
+
+HOW IT WOULD WORK (FastAPI)
+----------------------------
+1. Module-level asyncio.Queue per subscriber (or a broadcast helper)
+2. GET /events endpoint streams newline-delimited JSON events to connected clients
+3. When any OS state changes in the service, it puts an event on all queues
+4. Frontend replaces setInterval with new EventSource('/api/v1/events') and
+   reacts to incoming events by re-fetching or patching local state
+
+WHEN TO DO THIS
+---------------
+Not now. The mock backend makes it awkward — the event bus has to live in memory
+alongside the mock repos, and if the server restarts all subscribers are gone.
+When moving to a real database, hook into DB-level change events or a Redis
+pub/sub channel instead. That's the clean moment to make the switch.
+
+SHORT-TERM ALTERNATIVE
+-----------------------
+If 30-second lag becomes a problem during testing, just lower the interval to
+5–10 seconds. No backend changes, still fine at this scale.
+
+NEEDS GROUP APPROVAL BEFORE IMPLEMENTATION

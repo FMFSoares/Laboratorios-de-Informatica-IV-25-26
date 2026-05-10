@@ -1,0 +1,18 @@
+REPORT CORRECTIONS — Client vs Rececionista
+============================================
+
+The system is INTERNAL to the workshop. Clients never log in and never use the app.
+
+WRONG in report:
+- "Client logs in" — clients have no account, no credentials, no session
+- "Client registers OS" — clients cannot create service orders
+
+CORRECT:
+- System users are: Administrador, Gerente de Loja, Rececionista, Mecânico
+- The Rececionista registers the client in the system (if not already there)
+- The Rececionista creates the OS when the client walks in with their scooter
+- The client is a passive data entity, not a system actor
+- The only outbound interaction with the client is the email notification when the scooter is ready (sent automatically by the system)
+
+Fix all use cases and user stories that have "Cliente" as an actor performing system actions.
+The client only appears as an external entity that triggers interactions by walking into the shop.

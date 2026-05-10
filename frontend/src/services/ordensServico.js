@@ -1,0 +1,12 @@
+import api from './api.js'
+
+export const getOrdensServico = (params) => api.get('/ordens-servico', { params })
+export const getOrdemServico = (id) => api.get(`/ordens-servico/${id}`)
+export const createOrdemServico = (body) => api.post('/ordens-servico', body)
+export const atualizarEstado = (id, body) => api.patch(`/ordens-servico/${id}/estado`, body)
+export const atualizarMecanico = (id, body) => api.patch(`/ordens-servico/${id}/mecanico`, body)
+export const adicionarPeca = (id, body) => api.post(`/ordens-servico/${id}/pecas`, body)
+export const removerPeca = (id, pecaId) => api.delete(`/ordens-servico/${id}/pecas/${pecaId}`)
+export const iniciarTempo = (id) => api.post(`/ordens-servico/${id}/tempos/iniciar`)
+export const pararTempo = (id) => api.post(`/ordens-servico/${id}/tempos/parar`)
+export const adicionarObservacao = (id, body) => api.post(`/ordens-servico/${id}/observacoes`, body)

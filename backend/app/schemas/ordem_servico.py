@@ -202,6 +202,32 @@ class OrdemServicoResumo(BaseModel):
     data_entrada: datetime
     em_atraso: bool = Field(False, description="True se o tempo decorrido supera a média das OS concluídas.")
     minutos_em_atraso: int | None = Field(None, description="Minutos acima da média, quando em atraso.")
+    tem_timer_ativo: bool = Field(False, description="True se o mecânico tem um registo de tempo em curso nesta OS.")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ── Schemas de observações internas ──────────────────────────────────────────
+
+
+class OrdemServicoObservacaoCreate(BaseModel):
+    """Body do POST /api/v1/ordens-servico/{id}/observacoes."""
+
+    texto: str = Field(..., min_length=1, max_length=1000, description="Texto da observação interna.")
+
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"texto": "Necessita peça do fabricante Xiaomi — encomendar antes de avançar."}}
+    )
+
+
+class OrdemServicoObservacaoResponse(BaseModel):
+    """Observação interna devolvida na lista e na resposta de criação."""
+
+    id: int
+    texto: str
+    autor_id: int
+    autor_nome: str
+    criado_em: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -256,6 +282,8 @@ class OrdemServicoDetalheResponse(BaseModel):
     fatura_id: int | None = Field(None, description="ID da fatura, quando emitida.")
     em_atraso: bool = Field(False, description="True se o tempo decorrido supera a média das OS concluídas.")
     minutos_em_atraso: int | None = Field(None, description="Minutos acima da média, quando em atraso.")
+    inicio_tempo_atual: datetime | None = Field(None, description="Timestamp de início da sessão de tempo activa, ou null se não há timer a correr.")
+    observacoes: list[OrdemServicoObservacaoResponse] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -3,9 +3,9 @@ import api from '../services/api';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    token: localStorage.getItem('access_token') || null,
-    user: JSON.parse(localStorage.getItem('user_data')) || null,
-    isAuthenticated: !!localStorage.getItem('access_token'),
+    token: sessionStorage.getItem('access_token') || null,
+    user: JSON.parse(sessionStorage.getItem('user_data')) || null,
+    isAuthenticated: !!sessionStorage.getItem('access_token'),
   }),
 
   getters: {
@@ -33,9 +33,9 @@ export const useAuthStore = defineStore('auth', {
         this.user = user;
         this.isAuthenticated = true;
 
-        // Armazena o token e os dados do utilizador no localStorage para persistência
-        localStorage.setItem('access_token', access_token);
-        localStorage.setItem('user_data', JSON.stringify(user));
+        // Armazena o token e os dados do utilizador no sessionStorage para persistência
+        sessionStorage.setItem('access_token', access_token);
+        sessionStorage.setItem('user_data', JSON.stringify(user));
 
         return response.data;
       } catch (error) {
@@ -45,19 +45,19 @@ export const useAuthStore = defineStore('auth', {
     },
 
     /**
-     * Limpa o estado de autenticação e remove os dados do localStorage.
+     * Limpa o estado de autenticação e remove os dados do sessionStorage.
      */
     logout() {
       this.token = null;
       this.user = null;
       this.isAuthenticated = false;
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('user_data');
+      sessionStorage.removeItem('access_token');
+      sessionStorage.removeItem('user_data');
     },
 
     /**
      * Inicializa o estado de autenticação ao carregar a aplicação.
-     * Verifica se existe um token no localStorage.
+     * Verifica se existe um token no sessionStorage.
      */
     initializeAuth() {
       this.isAuthenticated = !!this.token;

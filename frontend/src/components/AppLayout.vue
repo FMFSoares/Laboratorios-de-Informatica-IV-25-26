@@ -1,6 +1,9 @@
 <script setup>
-import AppHeader from './AppHeader.vue';
-import AppSidebar from './AppSidebar.vue';
+import AppHeader from './AppHeader.vue'
+import AppSidebar from './AppSidebar.vue'
+import { useSessionTimeout } from '../composables/useSessionTimeout.js'
+
+useSessionTimeout()
 </script>
 
 <template>
@@ -26,12 +29,12 @@ import AppSidebar from './AppSidebar.vue';
 .app-container {
   display: flex;
   flex-grow: 1;
-  overflow: hidden; /* Previne que o conteúdo principal transborde o layout */
+  overflow: hidden;
 }
 
 .main-content {
   flex-grow: 1;
   padding: 2rem;
-  overflow-y: auto; /* Permite scroll dentro da área de conteúdo principal */
+  overflow-y: auto;
 }
 </style>
