@@ -14,14 +14,42 @@ _HARDCODED_CLIENTES = [
         nif="123456789",
         telemovel="987654321",
         email="pedrorf.gmr@gmail.com",
-        morada=None,
+        morada="Rua das Flores 10, Porto",
         consentimento_rgpd=True,
         data_registo=datetime(2026, 1, 15, 10, 0, tzinfo=timezone.utc),
+        loja_id=1,
+        trotinetes=[
+            SimpleNamespace(id=1, marca="Xiaomi", modelo="Mi Electric Scooter 3", numero_serie="XM2024ABC123"),
+        ],
+    ),
+    SimpleNamespace(
+        id=2,
+        nome="Maria Santos",
+        nif="987654321",
+        telemovel="912345678",
+        email="maria.santos@email.com",
+        morada="Avenida da Boavista 200, Porto",
+        consentimento_rgpd=True,
+        data_registo=datetime(2026, 2, 1, 9, 0, tzinfo=timezone.utc),
+        loja_id=1,
+        trotinetes=[
+            SimpleNamespace(id=2, marca="Ninebot", modelo="E45E", numero_serie="NB2023XYZ456"),
+        ],
+    ),
+    SimpleNamespace(
+        id=3,
+        nome="Carlos Oliveira",
+        nif="111222333",
+        telemovel="934567890",
+        email="carlos.oliveira@email.com",
+        morada=None,
+        consentimento_rgpd=True,
+        data_registo=datetime(2026, 3, 10, 14, 0, tzinfo=timezone.utc),
         loja_id=1,
         trotinetes=[],
     ),
 ]
-_next_hardcoded_id = 2
+_next_hardcoded_id = 4
 
 
 class ClienteRepository:

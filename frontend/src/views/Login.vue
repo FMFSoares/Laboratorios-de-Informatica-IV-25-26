@@ -1,132 +1,127 @@
 <script setup>
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
-import { useAuthStore } from '../store/auth';
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '../store/auth'
 
-const email = ref('');
-const password = ref('');
-const errorMessage = ref('');
-const isLoading = ref(false);
+const email = ref('')
+const password = ref('')
+const errorMessage = ref('')
+const isLoading = ref(false)
 
-const authStore = useAuthStore();
-const router = useRouter();
+const authStore = useAuthStore()
+const router = useRouter()
 
-const handleLogin = async () => {
-  errorMessage.value = '';
-  isLoading.value = true;
+async function handleLogin() {
+  errorMessage.value = ''
+  isLoading.value = true
   try {
-    await authStore.login(email.value, password.value);
-    router.push({ name: 'Dashboard' });
+    await authStore.login(email.value, password.value)
+    router.push({ name: 'Dashboard' })
   } catch (error) {
-    console.error('Login failed:', error);
-    // O backend contract indica que erros têm um campo 'detail'
-    errorMessage.value = error.response?.data?.detail || 'Erro ao fazer login. Verifique as suas credenciais.';
+    errorMessage.value = error.response?.data?.detail || 'Credenciais inválidas. Tente novamente.'
   } finally {
-    isLoading.value = false;
+    isLoading.value = false
   }
-};
+}
 </script>
 
 <template>
-  <div class="login-container">
-    <form @submit.prevent="handleLogin" class="login-form">
-      <h2>Login DLMCare</h2>
-      <div class="form-group">
-        <label for="email">Email:</label>
-        <input
-          type="email"
-          id="email"
-          v-model="email"
-          required
-          autocomplete="username"
-        />
-      </div>
-      <div class="form-group">
-        <label for="password">Password:</label>
-        <input
-          type="password"
-          id="password"
-          v-model="password"
-          required
-          autocomplete="current-password"
-        />
-      </div>
-      <button type="submit" :disabled="isLoading">
-        {{ isLoading ? 'A entrar...' : 'Entrar' }}
-      </button>
-      <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
-    </form>
+  <div class="login-page">
+    <div class="login-box">
+      <div class="brand">DLMCare</div>
+      <p class="brand-sub">Gestão de oficina de trotinetes</p>
+
+      <form @submit.prevent="handleLogin" class="form">
+        <div class="field">
+          <label for="email">Email</label>
+          <input
+            id="email"
+            type="email"
+            v-model="email"
+            required
+            autocomplete="username"
+            placeholder="exemplo@dlmcare.pt"
+          />
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <input
+            id="password"
+            type="password"
+            v-model="password"
+            required
+            autocomplete="current-password"
+            placeholder="••••••••"
+          />
+        </div>
+
+        <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
+
+        <button type="submit" class="btn-submit" :disabled="isLoading">
+          {{ isLoading ? 'A entrar...' : 'Entrar' }}
+        </button>
+      </form>
+    </div>
   </div>
 </template>
 
 <style scoped>
-/* Adicione estilos básicos para o formulário de login aqui */
-/* Exemplo: */
-.login-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+.login-page {
   min-height: 100vh;
-  background-color: #f0f2f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f4f7f6;
+  padding: 1rem;
 }
 
-.login-form {
-  background: white;
-  padding: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+.login-box {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  padding: 2.5rem 2rem;
   width: 100%;
-  max-width: 400px;
+  max-width: 380px;
 }
 
-.login-form h2 {
+.brand {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #1abc9c;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.25rem;
+}
+.brand-sub {
+  font-size: 0.825rem;
+  color: #9ca3af;
+  margin-bottom: 2rem;
+}
+
+.form { display: flex; flex-direction: column; gap: 1rem; }
+
+.field { display: flex; flex-direction: column; }
+
+.error {
+  color: #dc2626;
+  font-size: 0.85rem;
   text-align: center;
-  margin-bottom: 1.5rem;
-  color: #333;
+  margin: 0;
 }
 
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #555;
-}
-
-.form-group input {
+.btn-submit {
   width: 100%;
   padding: 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  box-sizing: border-box; /* Garante que padding não aumenta a largura total */
-}
-
-button {
-  width: 100%;
-  padding: 0.75rem;
-  background-color: #007bff;
-  color: white;
+  background: #1abc9c;
+  color: #fff;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
   cursor: pointer;
-  font-size: 1rem;
-  transition: background-color 0.2s;
+  transition: opacity 0.15s;
+  margin-top: 0.5rem;
 }
-
-button:hover:not(:disabled) {
-  background-color: #0056b3;
-}
-
-button:disabled {
-  background-color: #cccccc;
-  cursor: not-allowed;
-}
-
-.error-message {
-  color: #dc3545;
-  text-align: center;
-  margin-top: 1rem;
-}
+.btn-submit:hover:not(:disabled) { opacity: 0.88; }
+.btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

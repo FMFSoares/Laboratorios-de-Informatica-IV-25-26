@@ -1,5 +1,4 @@
 <script setup>
-import AppHeader from './AppHeader.vue'
 import AppSidebar from './AppSidebar.vue'
 import { useSessionTimeout } from '../composables/useSessionTimeout.js'
 
@@ -8,33 +7,22 @@ useSessionTimeout()
 
 <template>
   <div class="app-layout">
-    <AppHeader />
-    <div class="app-container">
-      <AppSidebar />
-      <main class="main-content">
-        <router-view />
-      </main>
-    </div>
+    <AppSidebar />
+    <main class="main-content">
+      <router-view />
+    </main>
   </div>
 </template>
 
 <style scoped>
 .app-layout {
   display: flex;
-  flex-direction: column;
   height: 100vh;
-  background-color: #f4f7f6;
-}
-
-.app-container {
-  display: flex;
-  flex-grow: 1;
-  overflow: hidden;
+  background: #f4f7f6;
 }
 
 .main-content {
-  flex-grow: 1;
-  padding: 2rem;
+  flex: 1;
   overflow-y: auto;
 }
 </style>

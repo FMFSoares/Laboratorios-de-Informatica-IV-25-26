@@ -28,6 +28,9 @@ const transitionObs = ref('')
 const stateLoading = ref(false)
 const stateError = ref('')
 
+// Pause
+const pauseLoading = ref(false)
+
 // Parts
 const pecaSearch = ref('')
 const pecaResults = ref([])
@@ -60,11 +63,27 @@ const TRANSICOES = {
 // States where the timer runs automatically
 const ESTADOS_AUTO_START = ['EM_DIAGNOSTICO', 'EM_REPARACAO']
 const ESTADOS_AUTO_STOP  = ['AGUARDA_APROVACAO', 'AGUARDA_PECAS', 'CONCLUIDA', 'CANCELADA']
-const ESTADOS_TRABALHO   = ['EM_DIAGNOSTICO', 'EM_REPARACAO', 'AGUARDA_PECAS']
+const ESTADOS_TRABALHO   = ['EM_REPARACAO', 'AGUARDA_PECAS']
+
+const ESTADO_LABELS = {
+  PENDENTE: 'Pendente',
+  EM_DIAGNOSTICO: 'Em Diagnóstico',
+  AGUARDA_APROVACAO: 'Aguarda Aprovação',
+  EM_REPARACAO: 'Em Reparação',
+  AGUARDA_PECAS: 'Aguarda Peças',
+  CONCLUIDA: 'Concluída',
+  FATURADA: 'Faturada',
+  CANCELADA: 'Cancelada',
+}
 
 const availableActions = computed(() => TRANSICOES[os.value?.estado] ?? [])
 const timerAtivo = computed(() => !!os.value?.inicio_tempo_atual)
 const canAddParts = computed(() => os.value && ESTADOS_TRABALHO.includes(os.value.estado))
+const canResume = computed(() =>
+  os.value &&
+  ESTADOS_AUTO_START.includes(os.value.estado) &&
+  !timerAtivo.value
+)
 
 async function load() {
   loading.value = true
@@ -102,6 +121,26 @@ async function handleAutoTimer(novoEstado) {
   } else if (ESTADOS_AUTO_STOP.includes(novoEstado) && timerAtivo.value) {
     try { await pararTempo(os.value.id) } catch { /* ignore */ }
   }
+}
+
+async function pause() {
+  pauseLoading.value = true
+  try { await pararTempo(os.value.id) } catch { /* ignore */ }
+  pauseLoading.value = false
+  await load()
+}
+
+async function resumeWork() {
+  try {
+    await iniciarTempo(os.value.id)
+  } catch (e) {
+    if (e.response?.data?.detail?.code === 'MECANICO_TIMER_CONFLICT') {
+      const conflito_id = e.response.data.detail.os_conflito_id
+      try { await pararTempo(conflito_id) } catch { /* ignore */ }
+      try { await iniciarTempo(os.value.id) } catch { /* ignore */ }
+    }
+  }
+  await load()
 }
 
 // State transitions
@@ -217,6 +256,9 @@ function fmtDateTime(dt) {
           <h1 class="mono">{{ os.numero }}</h1>
           <StatusBadge :estado="os.estado" />
           <span v-if="os.em_atraso" class="atraso-badge">⚠ +{{ os.minutos_em_atraso }}min em atraso</span>
+          <button v-if="timerAtivo" class="btn btn--pause btn--sm" :disabled="pauseLoading" @click="pause">
+            {{ pauseLoading ? '...' : '⏸ Pausar' }}
+          </button>
         </div>
         <p class="sub">
           {{ os.cliente.nome }} · <span class="mono">{{ os.trotinete.numero_serie }}</span> ·
@@ -242,13 +284,21 @@ function fmtDateTime(dt) {
           </div>
 
           <!-- State actions -->
-          <div class="card" v-if="availableActions.length > 0">
+          <div class="card" v-if="canResume || availableActions.length > 0">
             <div class="card-title">Próxima Ação</div>
             <div class="action-list">
               <button
+                v-if="canResume"
+                class="btn btn--primary btn--action"
+                @click="resumeWork"
+              >
+                {{ os.estado === 'EM_DIAGNOSTICO' ? '▶ Retomar Avaliação' : '▶ Retomar Reparação' }}
+              </button>
+              <button
                 v-for="action in availableActions"
                 :key="action.estado"
-                class="btn btn--primary btn--action"
+                class="btn btn--action"
+                :class="canResume ? 'btn--secondary' : 'btn--primary'"
                 @click="startTransition(action)"
               >
                 {{ action.label }}
@@ -316,15 +366,6 @@ function fmtDateTime(dt) {
             </div>
           </div>
 
-          <!-- Cost summary -->
-          <div class="card">
-            <div class="card-title">Custo Estimado</div>
-            <div class="price-rows">
-              <div class="price-row"><span>Serviço</span><span>{{ os.preco_servico.toFixed(2) }} €</span></div>
-              <div class="price-row"><span>Peças</span><span>{{ os.subtotal_pecas.toFixed(2) }} €</span></div>
-              <div class="price-row price-row--total"><span>Total</span><span>{{ os.valor_estimado_total.toFixed(2) }} €</span></div>
-            </div>
-          </div>
         </div>
 
         <!-- Right column -->
@@ -364,7 +405,9 @@ function fmtDateTime(dt) {
     <div v-if="showEstadoModal" class="overlay" @click.self="showEstadoModal = false">
       <div class="dialog">
         <h2>{{ pendingTransition?.label }}</h2>
-        <p class="dialog-sub">{{ os?.estado }} → <strong>{{ pendingTransition?.estado }}</strong></p>
+        <p class="dialog-sub">
+          {{ ESTADO_LABELS[os?.estado] }} → <strong>{{ ESTADO_LABELS[pendingTransition?.estado] }}</strong>
+        </p>
         <div class="field" style="margin-top: 1rem">
           <label>Nota (opcional)</label>
           <textarea v-model="transitionObs" rows="3" placeholder="Observação sobre esta alteração..." />
@@ -468,6 +511,7 @@ function fmtDateTime(dt) {
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn--primary { background: #1abc9c; color: #fff; }
 .btn--secondary { background: #e5e7eb; color: #374151; }
+.btn--pause { background: #d97706; color: #fff; }
 .btn--sm { padding: 0.4rem 0.8rem; font-size: 0.825rem; }
 
 .mono { font-family: 'Courier New', monospace; }

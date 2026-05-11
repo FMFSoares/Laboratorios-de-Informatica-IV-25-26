@@ -29,7 +29,7 @@ const authStore = useAuthStore();
 
 <style scoped>
 .dashboard-container {
-  /* O padding já é dado pelo .main-content no AppLayout */
+  padding: 2rem;
 }
 
 .dashboard-container h1 {

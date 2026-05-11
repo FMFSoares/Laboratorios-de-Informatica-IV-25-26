@@ -309,6 +309,29 @@ def atualizar_estado(
     estado_anterior = os.estado
     os.estado = body.novo_estado
 
+    _ESTADOS_INICIO_TIMER = {E.EM_DIAGNOSTICO, E.EM_REPARACAO}
+    _ESTADOS_PARAGEM_TIMER = {E.AGUARDA_APROVACAO, E.AGUARDA_PECAS, E.CONCLUIDA, E.CANCELADA}
+
+    if current_user.perfil == P.MECANICO:
+        if os.mecanico_id is None:
+            os.mecanico_id = current_user.id
+
+        if body.novo_estado in _ESTADOS_INICIO_TIMER:
+            for other in _repo.list_by_mecanico(os.mecanico_id):
+                if other.id != os_id and other.inicio_tempo_atual is not None:
+                    fim = datetime.now(timezone.utc)
+                    mins = max(0, int((fim - other.inicio_tempo_atual).total_seconds() / 60))
+                    other.tempo_total_minutos = (other.tempo_total_minutos or 0) + mins
+                    other.inicio_tempo_atual = None
+            if os.inicio_tempo_atual is None:
+                os.inicio_tempo_atual = datetime.now(timezone.utc)
+
+        elif body.novo_estado in _ESTADOS_PARAGEM_TIMER and os.inicio_tempo_atual is not None:
+            fim = datetime.now(timezone.utc)
+            mins = max(0, int((fim - os.inicio_tempo_atual).total_seconds() / 60))
+            os.tempo_total_minutos = (os.tempo_total_minutos or 0) + mins
+            os.inicio_tempo_atual = None
+
     if body.novo_estado == E.CONCLUIDA:
         os.data_conclusao = datetime.now(timezone.utc)
         _notificar_cliente_trotinete_pronta(os, background_tasks)

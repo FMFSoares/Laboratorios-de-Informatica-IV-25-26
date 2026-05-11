@@ -15,12 +15,16 @@ const routes = [
     path: '/',
     component: AppLayout,
     meta: { requiresAuth: true },
-    redirect: '/dashboard',
+    redirect: () => {
+      const auth = useAuthStore()
+      return auth.getCurrentUser?.perfil === 'MECANICO' ? '/oficina/ativa' : '/dashboard'
+    },
     children: [
       {
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('../views/Dashboard.vue'),
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
       },
 
       // ── Clientes ───────────────────────────────────────────
@@ -109,7 +113,10 @@ const routes = [
       },
     ],
   },
-  { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
+  { path: '/:pathMatch(.*)*', redirect: () => {
+    const auth = useAuthStore()
+    return auth.getCurrentUser?.perfil === 'MECANICO' ? '/oficina/ativa' : '/dashboard'
+  }},
 ]
 
 const router = createRouter({
@@ -123,7 +130,7 @@ router.beforeEach((to, from, next) => {
   if (to.meta.requiresAuth === false) {
     // Public route — redirect authenticated users away from login
     if (to.name === 'Login' && authStore.getIsAuthenticated) {
-      return next({ name: 'Dashboard' })
+      return next(authStore.getCurrentUser?.perfil === 'MECANICO' ? '/oficina/ativa' : '/dashboard')
     }
     return next()
   }
@@ -137,7 +144,7 @@ router.beforeEach((to, from, next) => {
   if (to.meta.roles) {
     const perfil = authStore.getCurrentUser?.perfil
     if (!to.meta.roles.includes(perfil)) {
-      return next(perfil === 'MECANICO' ? '/oficina' : '/dashboard')
+      return next(perfil === 'MECANICO' ? '/oficina/ativa' : '/dashboard')
     }
   }
 

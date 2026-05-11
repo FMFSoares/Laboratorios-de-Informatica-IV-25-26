@@ -183,6 +183,17 @@ async function doEmitirFatura() {
   }
 }
 
+const ESTADO_LABELS = {
+  PENDENTE: 'Pendente',
+  EM_DIAGNOSTICO: 'Em Diagnóstico',
+  AGUARDA_APROVACAO: 'Aguarda Aprovação',
+  EM_REPARACAO: 'Em Reparação',
+  AGUARDA_PECAS: 'Aguarda Peças',
+  CONCLUIDA: 'Concluída',
+  FATURADA: 'Faturada',
+  CANCELADA: 'Cancelada',
+}
+
 function fmt(dt) {
   return dt ? new Date(dt).toLocaleDateString('pt-PT') : '—'
 }
@@ -377,8 +388,7 @@ function fmtDateTime(dt) {
       <div class="dialog">
         <h2 class="dialog-title">{{ pendingTransition?.label }}</h2>
         <p class="dialog-sub">
-          Transição: <strong>{{ os?.estado }}</strong> →
-          <strong>{{ pendingTransition?.estado }}</strong>
+          {{ ESTADO_LABELS[os?.estado] }} → <strong>{{ ESTADO_LABELS[pendingTransition?.estado] }}</strong>
         </p>
         <div class="field" style="margin-top: 1rem">
           <label>Observação (opcional)</label>
