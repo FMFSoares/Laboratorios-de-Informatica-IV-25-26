@@ -21,3 +21,4 @@ python-multipart==0.0.20
 
 # ── Utilitários ──────────────────────────────────────────────
 python-dotenv==1.1.0
+fpdf2==2.8.3

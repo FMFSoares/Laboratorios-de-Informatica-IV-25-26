@@ -3,17 +3,18 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   getOrdemServico,
+  getOrdensServico,
   atualizarEstado,
   iniciarTempo,
   pararTempo,
   adicionarPeca,
-  adicionarObservacao,
 } from '../../services/ordensServico.js'
 import { getPecas } from '../../services/pecas.js'
 import { useAuthStore } from '../../store/auth.js'
 import { useWorkshopStore } from '../../store/workshop.js'
 import StatusBadge from '../../components/ui/StatusBadge.vue'
 import LoadingSpinner from '../../components/ui/LoadingSpinner.vue'
+import OsObservacoes from '../../components/OsObservacoes.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,6 +34,11 @@ const stateError = ref('')
 // Pause
 const pauseLoading = ref(false)
 
+// Timer-conflict modal (when starting work while another OS timer is active)
+const showConflict = ref(false)
+const conflictActiveOS = ref(null)
+const conflictSwitching = ref(false)
+
 // Parts
 const pecaSearch = ref('')
 const pecaResults = ref([])
@@ -43,9 +49,6 @@ const pecaLoading = ref(false)
 const pecaError = ref('')
 let pecaSearchTimer
 
-// Observations
-const novaObs = ref('')
-const obsLoading = ref(false)
 
 // Mechanic-only state machine
 const TRANSICOES = {
@@ -83,8 +86,8 @@ const availableActions = computed(() => TRANSICOES[os.value?.estado] ?? [])
 // The right-column "milestone" button — modal-confirmed, moves the OS to the next major phase
 const rightColumnAction = computed(() => {
   if (!os.value) return null
-  if (os.value.estado === 'EM_DIAGNOSTICO') return { estado: 'EM_REPARACAO', label: 'Concluir Reparação' }
-  if (os.value.estado === 'EM_REPARACAO')   return { estado: 'CONCLUIDA',    label: 'Marcar como Concluída' }
+  if (os.value.estado === 'EM_DIAGNOSTICO') return { estado: 'EM_REPARACAO', label: 'Concluir Diagnóstico' }
+  if (os.value.estado === 'EM_REPARACAO')   return { estado: 'CONCLUIDA',    label: 'Concluir Reparação' }
   return null
 })
 
@@ -121,20 +124,40 @@ onMounted(() => {
 })
 onUnmounted(() => clearInterval(pollInterval))
 
+async function findConflictingOS() {
+  try {
+    const { data } = await getOrdensServico({ page_size: 100 })
+    return data.data.find(o => o.tem_timer_ativo && o.id !== os.value.id) ?? null
+  } catch { return null }
+}
+
+async function doStartTimer() {
+  try { await iniciarTempo(os.value.id); workshop.set(true) } catch { /* ignore */ }
+}
+
+async function confirmConflict() {
+  conflictSwitching.value = true
+  try { await pararTempo(conflictActiveOS.value.id); workshop.set(false) } catch { /* ignore */ }
+  await doStartTimer()
+  conflictSwitching.value = false
+  showConflict.value = false
+  conflictActiveOS.value = null
+  await load()
+}
+
+function cancelConflict() {
+  showConflict.value = false
+  conflictActiveOS.value = null
+}
+
 // Timer is fully automatic — starts/stops with state transitions
 async function handleAutoTimer(novoEstado) {
   if (ESTADOS_AUTO_START.includes(novoEstado) && !timerAtivo.value) {
-    try {
-      await iniciarTempo(os.value.id)
-      workshop.set(true)
-    } catch (e) {
-      // Another OS has a running timer — stop it first, then start here
-      if (e.response?.data?.detail?.code === 'MECANICO_TIMER_CONFLICT') {
-        const conflito_id = e.response.data.detail.os_conflito_id
-        try { await pararTempo(conflito_id) } catch { /* ignore */ }
-        try { await iniciarTempo(os.value.id); workshop.set(true) } catch { /* ignore */ }
-      }
+    if (workshop.hasActiveOS) {
+      const active = await findConflictingOS()
+      if (active) { conflictActiveOS.value = active; showConflict.value = true; return }
     }
+    await doStartTimer()
   } else if (ESTADOS_AUTO_STOP.includes(novoEstado) && timerAtivo.value) {
     try { await pararTempo(os.value.id) } catch { /* ignore */ }
     workshop.set(false)
@@ -150,16 +173,11 @@ async function pause() {
 }
 
 async function resumeWork() {
-  try {
-    await iniciarTempo(os.value.id)
-    workshop.set(true)
-  } catch (e) {
-    if (e.response?.data?.detail?.code === 'MECANICO_TIMER_CONFLICT') {
-      const conflito_id = e.response.data.detail.os_conflito_id
-      try { await pararTempo(conflito_id) } catch { /* ignore */ }
-      try { await iniciarTempo(os.value.id); workshop.set(true) } catch { /* ignore */ }
-    }
+  if (workshop.hasActiveOS) {
+    const active = await findConflictingOS()
+    if (active) { conflictActiveOS.value = active; showConflict.value = true; return }
   }
+  await doStartTimer()
   await load()
 }
 
@@ -251,18 +269,9 @@ async function submitPeca() {
   }
 }
 
-// Observations
-async function submitObs() {
-  if (!novaObs.value.trim()) return
-  obsLoading.value = true
-  try {
-    await adicionarObservacao(os.value.id, { texto: novaObs.value.trim() })
-    novaObs.value = ''
-    await load()
-  } catch {
-  } finally {
-    obsLoading.value = false
-  }
+function goBack() {
+  if (window.history.length > 1) router.back()
+  else router.push('/oficina')
 }
 
 function fmt(dt) {
@@ -278,7 +287,7 @@ function fmtDateTime(dt) {
 <template>
   <div class="page">
     <div class="back-row">
-      <button class="btn-back" @click="router.push('/oficina')">← Oficina</button>
+      <button class="btn-back" @click="goBack">← Voltar</button>
     </div>
 
     <LoadingSpinner v-if="loading" />
@@ -413,35 +422,22 @@ function fmtDateTime(dt) {
           <div class="card card--conclude" v-if="rightColumnAction">
             <button
               class="btn btn--primary btn--action"
+              :disabled="rightColumnAction.estado === 'CONCLUIDA' && !timerAtivo"
               @click="startTransition(rightColumnAction)"
             >
               ✓ {{ rightColumnAction.label }}
             </button>
+            <p v-if="rightColumnAction.estado === 'CONCLUIDA' && !timerAtivo" class="conclude-hint">
+              O timer tem de estar activo para concluir a OS.
+            </p>
           </div>
 
-          <div class="card">
-            <div class="card-title">Observações Internas</div>
-            <div v-if="os.observacoes.length === 0" class="empty-msg">Sem observações.</div>
-            <div class="obs-list">
-              <div v-for="obs in os.observacoes" :key="obs.id" class="obs-item">
-                <div class="obs-header">
-                  <span class="obs-autor">{{ obs.autor_nome }}</span>
-                  <span class="obs-date">{{ fmtDateTime(obs.criado_em) }}</span>
-                </div>
-                <p class="obs-text">{{ obs.texto }}</p>
-              </div>
-            </div>
-            <div v-if="os.estado !== 'CANCELADA'" class="obs-form">
-              <textarea v-model="novaObs" rows="3" placeholder="Adicionar observação..." />
-              <button
-                class="btn btn--primary btn--sm"
-                :disabled="obsLoading || !novaObs.trim()"
-                @click="submitObs"
-              >
-                {{ obsLoading ? 'A guardar...' : 'Adicionar' }}
-              </button>
-            </div>
-          </div>
+          <OsObservacoes
+            :observacoes="os.observacoes"
+            :os-id="os.id"
+            :can-add="os.estado !== 'CANCELADA'"
+            @refresh="load"
+          />
         </div>
       </div>
     </template>
@@ -466,6 +462,28 @@ function fmtDateTime(dt) {
           <button class="btn btn--secondary" :disabled="stateLoading" @click="showEstadoModal = false">Cancelar</button>
           <button class="btn btn--primary" :disabled="stateLoading" @click="confirmTransition">
             {{ stateLoading ? 'A processar...' : 'Confirmar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Timer-conflict modal -->
+  <Teleport to="body">
+    <div v-if="showConflict" class="overlay" @click.self="cancelConflict">
+      <div class="dialog">
+        <p class="dialog-label">Timer activo</p>
+        <h2 class="dialog-title">Mudar de ordem de serviço?</h2>
+        <div class="dialog-os-info" v-if="conflictActiveOS">
+          <span class="os-num">{{ conflictActiveOS.numero }}</span>
+          <span class="os-detail">{{ conflictActiveOS.cliente_nome || '—' }}</span>
+          <span class="os-detail mono">{{ conflictActiveOS.trotinete_numero_serie || '—' }}</span>
+        </div>
+        <p class="dialog-body">Atualmente a trabalhar nesta OS. Parar o timer e começar aqui?</p>
+        <div class="dialog-actions">
+          <button class="btn btn--secondary" :disabled="conflictSwitching" @click="cancelConflict">Não</button>
+          <button class="btn btn--danger" :disabled="conflictSwitching" @click="confirmConflict">
+            {{ conflictSwitching ? 'A parar...' : 'Sim, mudar' }}
           </button>
         </div>
       </div>
@@ -539,13 +557,6 @@ function fmtDateTime(dt) {
 .price-row { display: flex; justify-content: space-between; font-size: 0.9rem; color: #374151; }
 .price-row--total { border-top: 1px solid #e5e7eb; padding-top: 0.6rem; font-weight: 700; color: #111827; }
 
-.obs-list { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 0.75rem; }
-.obs-item { background: #f9fafb; border-radius: 6px; padding: 0.7rem; }
-.obs-header { display: flex; justify-content: space-between; margin-bottom: 0.3rem; }
-.obs-autor { font-size: 0.82rem; font-weight: 600; color: #374151; }
-.obs-date { font-size: 0.75rem; color: #9ca3af; }
-.obs-text { font-size: 0.875rem; color: #374151; line-height: 1.5; margin: 0; }
-.obs-form { display: flex; flex-direction: column; gap: 0.5rem; }
 
 .empty-msg { color: #6b7280; font-size: 0.875rem; }
 .form-error { color: #dc2626; font-size: 0.85rem; }
@@ -564,6 +575,7 @@ function fmtDateTime(dt) {
 .btn--sm { padding: 0.4rem 0.8rem; font-size: 0.825rem; }
 
 .card--conclude { padding: 1rem 1.5rem; }
+.conclude-hint { margin-top: 0.6rem; font-size: 0.8rem; color: #9ca3af; text-align: center; }
 
 .mono { font-family: 'Courier New', monospace; }
 
@@ -572,4 +584,11 @@ function fmtDateTime(dt) {
 .dialog-sub { font-size: 0.875rem; color: #6b7280; margin-top: 0.3rem; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem; }
 .field { display: flex; flex-direction: column; }
+
+.dialog-label { font-size: 0.72rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.35rem; }
+.dialog-title { font-size: 1.1rem; font-weight: 700; color: #111827; margin-bottom: 1rem; }
+.dialog-os-info { background: #f9fafb; border-radius: 8px; padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.2rem; margin-bottom: 1rem; }
+.os-num { font-family: 'Courier New', monospace; font-size: 0.85rem; font-weight: 700; color: #1abc9c; }
+.os-detail { font-size: 0.82rem; color: #6b7280; }
+.dialog-body { font-size: 0.9rem; color: #374151; margin-bottom: 1.5rem; line-height: 1.5; }
 </style>

@@ -1,11 +1,13 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getOrdemServico, atualizarEstado, adicionarObservacao } from '../../services/ordensServico.js'
+import { getOrdemServico, atualizarEstado } from '../../services/ordensServico.js'
 import { emitirFatura } from '../../services/faturas.js'
 import { useAuthStore } from '../../store/auth.js'
 import StatusBadge from '../../components/ui/StatusBadge.vue'
 import LoadingSpinner from '../../components/ui/LoadingSpinner.vue'
+import FaturaPreviewModal from '../../components/FaturaPreviewModal.vue'
+import OsObservacoes from '../../components/OsObservacoes.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,12 +18,12 @@ const loading = ref(true)
 const actionLoading = ref(false)
 const actionError = ref('')
 
-const novaObs = ref('')
-const obsLoading = ref(false)
-
 const showEstadoModal = ref(false)
 const pendingTransition = ref(null)
 const transitionObs = ref('')
+
+const showFaturaModal = ref(false)
+const faturaModalId = ref(null)
 
 const perfil = computed(() => auth.getCurrentUser?.perfil)
 
@@ -157,30 +159,23 @@ async function confirmTransition() {
   }
 }
 
-async function submitObs() {
-  if (!novaObs.value.trim()) return
-  obsLoading.value = true
-  try {
-    await adicionarObservacao(os.value.id, { texto: novaObs.value.trim() })
-    novaObs.value = ''
-    await loadOS()
-  } catch {
-    // silently
-  } finally {
-    obsLoading.value = false
-  }
-}
-
 async function doEmitirFatura() {
   actionLoading.value = true
   try {
     const { data } = await emitirFatura({ ordem_servico_id: os.value.id })
-    router.push(`/faturas/${data.data.id}`)
+    await loadOS()
+    faturaModalId.value = data.data.id
+    showFaturaModal.value = true
   } catch (e) {
     actionError.value = e.response?.data?.detail?.detail || 'Erro ao emitir fatura.'
   } finally {
     actionLoading.value = false
   }
+}
+
+function openFaturaModal() {
+  faturaModalId.value = os.value.fatura_id
+  showFaturaModal.value = true
 }
 
 const ESTADO_LABELS = {
@@ -192,6 +187,11 @@ const ESTADO_LABELS = {
   CONCLUIDA: 'Concluída',
   FATURADA: 'Faturada',
   CANCELADA: 'Cancelada',
+}
+
+function goBack() {
+  if (window.history.length > 1) router.back()
+  else router.push('/ordens-servico')
 }
 
 function fmt(dt) {
@@ -207,7 +207,7 @@ function fmtDateTime(dt) {
 <template>
   <div class="page">
     <div class="back-row">
-      <button class="btn-back" @click="router.push('/ordens-servico')">← Ordens de Serviço</button>
+      <button class="btn-back" @click="goBack">← Voltar</button>
     </div>
 
     <LoadingSpinner v-if="loading" />
@@ -340,47 +340,31 @@ function fmtDateTime(dt) {
           <!-- Fatura emitida -->
           <div class="card" v-if="os.fatura_id">
             <h3 class="card-title">Fatura</h3>
-            <button class="btn btn--ghost" @click="router.push(`/faturas/${os.fatura_id}`)">
-              Ver Fatura #{{ os.fatura_id }} →
+            <button class="btn btn--ghost" @click="openFaturaModal">
+              Ver Fatura →
             </button>
           </div>
 
           <!-- Observações -->
-          <div class="card">
-            <h3 class="card-title">Observações Internas</h3>
-            <div v-if="os.observacoes.length === 0 && !canAddObservacao" class="empty-msg">
-              Sem observações.
-            </div>
-            <div class="obs-list">
-              <div v-for="obs in os.observacoes" :key="obs.id" class="obs-item">
-                <div class="obs-header">
-                  <span class="obs-autor">{{ obs.autor_nome }}</span>
-                  <span class="obs-date">{{ fmtDateTime(obs.criado_em) }}</span>
-                </div>
-                <p class="obs-text">{{ obs.texto }}</p>
-              </div>
-            </div>
-            <div v-if="canAddObservacao" class="obs-form">
-              <textarea
-                v-model="novaObs"
-                rows="3"
-                placeholder="Adicionar observação interna..."
-              />
-              <button
-                class="btn btn--primary btn--sm"
-                :disabled="obsLoading || !novaObs.trim()"
-                @click="submitObs"
-              >
-                {{ obsLoading ? 'A guardar...' : 'Adicionar' }}
-              </button>
-            </div>
-          </div>
+          <OsObservacoes
+            :observacoes="os.observacoes"
+            :os-id="os.id"
+            :can-add="canAddObservacao"
+            @refresh="loadOS"
+          />
         </div>
       </div>
     </template>
 
     <div v-else class="empty-msg">Ordem de serviço não encontrada.</div>
   </div>
+
+  <!-- Fatura preview modal -->
+  <FaturaPreviewModal
+    v-if="showFaturaModal && faturaModalId"
+    :fatura-id="faturaModalId"
+    @close="showFaturaModal = false"
+  />
 
   <!-- Estado transition modal -->
   <Teleport to="body">
@@ -495,20 +479,6 @@ function fmtDateTime(dt) {
 /* Actions */
 .action-buttons { display: flex; flex-direction: column; gap: 0.6rem; }
 .btn--action { width: 100%; justify-content: center; }
-
-/* Observations */
-.obs-list { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 0.75rem; }
-.obs-item {
-  background: #f9fafb;
-  border-radius: 6px;
-  padding: 0.75rem;
-}
-.obs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; }
-.obs-autor { font-size: 0.82rem; font-weight: 600; color: #374151; }
-.obs-date { font-size: 0.75rem; color: #9ca3af; }
-.obs-text { font-size: 0.875rem; color: #374151; line-height: 1.5; margin: 0; }
-.obs-form { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
-.obs-form textarea { resize: vertical; }
 
 .empty-msg { color: #6b7280; font-size: 0.9rem; }
 .form-error { color: #dc2626; font-size: 0.85rem; }

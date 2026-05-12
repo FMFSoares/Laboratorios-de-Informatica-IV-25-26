@@ -148,6 +148,7 @@ def _to_resumo(os: OrdemServico) -> OrdemServicoResumo:
         trotinete_numero_serie=trotinete.numero_serie if trotinete else None,
         mecanico_nome=mecanico.nome if mecanico else None,
         data_entrada=os.data_entrada,
+        data_conclusao=os.data_conclusao,
         em_atraso=em_atraso,
         minutos_em_atraso=minutos_em_atraso,
         tem_timer_ativo=os.inicio_tempo_atual is not None,
@@ -335,6 +336,18 @@ def atualizar_estado(
     if body.novo_estado == E.CONCLUIDA:
         os.data_conclusao = datetime.now(timezone.utc)
         _notificar_cliente_trotinete_pronta(os, background_tasks)
+    elif body.novo_estado == E.CANCELADA:
+        _notificar_cliente_os_cancelada(os, background_tasks)
+
+    if body.observacao:
+        _TRANSITION_LABELS = {
+            E.EM_REPARACAO:  "Conclusão do Diagnóstico",
+            E.CONCLUIDA:     "Conclusão da Reparação",
+            E.CANCELADA:     "Cancelamento",
+        }
+        label = _TRANSITION_LABELS.get(body.novo_estado)
+        texto = f"[{label}] {body.observacao}" if label else body.observacao
+        _repo.adicionar_observacao(os_id, texto, current_user.id, current_user.nome)
 
     _auditoria_repo.registar(
         evento=TipoEventoAuditoria.OS_ESTADO_ALTERADO,
@@ -379,6 +392,36 @@ def _notificar_cliente_trotinete_pronta(os: OrdemServico, background_tasks) -> N
         )
     else:
         notificar_trotinete_pronta(
+            cliente_email=cliente.email,
+            cliente_nome=cliente.nome,
+            os_numero=os.numero,
+            loja_nome=loja_nome,
+            loja_telefone=loja_telefone,
+        )
+
+
+def _notificar_cliente_os_cancelada(os: OrdemServico, background_tasks) -> None:
+    from app.services.cliente_service import _find as find_cliente
+    from app.utils.email import notificar_os_cancelada
+
+    cliente = find_cliente(os.cliente_id)
+    if not cliente or not cliente.email:
+        return
+
+    loja_nome = _loja_repo.get_nome(os.loja_id) or "DLMCare"
+    loja_telefone = _loja_repo.get_telefone(os.loja_id) or "210 000 000"
+
+    if background_tasks is not None:
+        background_tasks.add_task(
+            notificar_os_cancelada,
+            cliente_email=cliente.email,
+            cliente_nome=cliente.nome,
+            os_numero=os.numero,
+            loja_nome=loja_nome,
+            loja_telefone=loja_telefone,
+        )
+    else:
+        notificar_os_cancelada(
             cliente_email=cliente.email,
             cliente_nome=cliente.nome,
             os_numero=os.numero,

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getOrdensServico } from '../../services/ordensServico.js'
 import DataTable from '../../components/ui/DataTable.vue'
@@ -8,14 +8,16 @@ import StatusBadge from '../../components/ui/StatusBadge.vue'
 const router = useRouter()
 
 const ordens = ref([])
-const total = ref(0)
-const page = ref(1)
 const loading = ref(false)
 
 const filtroEstado = ref('')
 const filtroAtraso = ref(false)
 const filtroDataInicio = ref('')
 const filtroDataFim = ref('')
+const search = ref('')
+
+const sortKey = ref('numero')
+const sortDir = ref('asc')
 
 const ESTADOS = [
   { value: '', label: 'Todos os estados' },
@@ -29,34 +31,70 @@ const ESTADOS = [
   { value: 'CANCELADA', label: 'Cancelada' },
 ]
 
+const PRIORIDADE_ORDER = { BAIXA: 0, NORMAL: 1, ALTA: 2, URGENTE: 3 }
+
 const columns = [
-  { key: 'numero', label: 'Número' },
-  { key: 'cliente_nome', label: 'Cliente' },
-  { key: 'trotinete_numero_serie', label: 'Trotinete' },
-  { key: 'estado', label: 'Estado' },
-  { key: 'prioridade', label: 'Prioridade' },
-  { key: 'data_entrada', label: 'Entrada' },
-  { key: 'em_atraso', label: 'Atraso' },
+  { key: 'numero',                label: 'Número',    sortable: true },
+  { key: 'cliente_nome',          label: 'Cliente',   sortable: true },
+  { key: 'trotinete_numero_serie',label: 'Trotinete', sortable: true },
+  { key: 'estado',                label: 'Estado',    sortable: true },
+  { key: 'prioridade',            label: 'Prioridade',sortable: true },
+  { key: 'data_entrada',          label: 'Entrada',   sortable: true },
+  { key: 'em_atraso',             label: 'Atraso',    sortable: true },
 ]
 
 const PRIORIDADE_LABELS = {
-  BAIXA: { label: 'Baixa', color: '#6b7280' },
-  NORMAL: { label: 'Normal', color: '#374151' },
-  ALTA: { label: 'Alta', color: '#d97706' },
+  BAIXA:   { label: 'Baixa',   color: '#6b7280' },
+  NORMAL:  { label: 'Normal',  color: '#374151' },
+  ALTA:    { label: 'Alta',    color: '#d97706' },
   URGENTE: { label: 'Urgente', color: '#dc2626' },
+}
+
+function sortValue(item, key) {
+  if (key === 'prioridade') return PRIORIDADE_ORDER[item.prioridade] ?? 0
+  if (key === 'em_atraso')  return item.minutos_em_atraso ?? 0
+  if (key === 'data_entrada') return new Date(item.data_entrada || 0).getTime()
+  return (item[key] ?? '').toString().toLowerCase()
+}
+
+const filteredOrdens = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  const base = q
+    ? ordens.value.filter(o =>
+        (o.numero || '').toLowerCase().includes(q) ||
+        (o.cliente_nome || '').toLowerCase().includes(q) ||
+        (o.trotinete_numero_serie || '').toLowerCase().includes(q)
+      )
+    : ordens.value
+
+  return [...base].sort((a, b) => {
+    const va = sortValue(a, sortKey.value)
+    const vb = sortValue(b, sortKey.value)
+    if (va < vb) return sortDir.value === 'asc' ? -1 : 1
+    if (va > vb) return sortDir.value === 'asc' ? 1 : -1
+    return 0
+  })
+})
+
+function handleSort(key) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'asc'
+  }
 }
 
 async function fetch() {
   loading.value = true
   try {
-    const params = { page: page.value, page_size: 20 }
-    if (filtroEstado.value) params.estado = filtroEstado.value
-    if (filtroAtraso.value) params.em_atraso = true
+    const params = { page: 1, page_size: 100 }
+    if (filtroEstado.value)     params.estado     = filtroEstado.value
+    if (filtroAtraso.value)     params.em_atraso  = true
     if (filtroDataInicio.value) params.data_inicio = filtroDataInicio.value
-    if (filtroDataFim.value) params.data_fim = filtroDataFim.value
+    if (filtroDataFim.value)    params.data_fim    = filtroDataFim.value
     const { data } = await getOrdensServico(params)
     ordens.value = data.data
-    total.value = data.total
   } catch {
     ordens.value = []
   } finally {
@@ -64,8 +102,7 @@ async function fetch() {
   }
 }
 
-function applyFilters() { page.value = 1; fetch() }
-watch(page, fetch)
+function applyFilters() { fetch() }
 
 let pollInterval
 onMounted(() => {
@@ -83,7 +120,9 @@ function resetFilters() {
   filtroAtraso.value = false
   filtroDataInicio.value = ''
   filtroDataFim.value = ''
-  page.value = 1
+  search.value = ''
+  sortKey.value = 'numero'
+  sortDir.value = 'asc'
   fetch()
 }
 </script>
@@ -97,6 +136,12 @@ function resetFilters() {
 
     <!-- Filters -->
     <div class="filter-bar">
+      <input
+        v-model="search"
+        class="search-input"
+        type="search"
+        placeholder="Pesquisar por número, cliente ou trotinete…"
+      />
       <select v-model="filtroEstado" @change="applyFilters">
         <option v-for="e in ESTADOS" :key="e.value" :value="e.value">{{ e.label }}</option>
       </select>
@@ -111,16 +156,18 @@ function resetFilters() {
 
     <DataTable
       :columns="columns"
-      :rows="ordens"
+      :rows="filteredOrdens"
       :loading="loading"
-      :total="total"
-      :page="page"
-      :page-size="20"
+      :total="filteredOrdens.length"
+      :page="1"
+      :page-size="filteredOrdens.length || 1"
       :clickable="true"
+      :sort-key="sortKey"
+      :sort-dir="sortDir"
       row-key="id"
       empty-title="Nenhuma ordem de serviço"
       empty-message="Ajuste os filtros ou crie uma nova ordem de serviço."
-      @update:page="page = $event"
+      @sort="handleSort"
       @row-click="router.push(`/ordens-servico/${$event.id}`)"
     >
       <template #cell-numero="{ value }">
@@ -169,6 +216,21 @@ function resetFilters() {
 .filter-bar select,
 .filter-bar input[type="date"] {
   width: auto;
+}
+
+.search-input {
+  padding: 0.55rem 0.9rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #374151;
+  background: #fff;
+  outline: none;
+  min-width: 240px;
+}
+.search-input:focus {
+  border-color: #1abc9c;
+  box-shadow: 0 0 0 3px rgba(26,188,156,0.15);
 }
 
 .atraso-check {

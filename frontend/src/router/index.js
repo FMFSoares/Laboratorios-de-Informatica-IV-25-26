@@ -75,9 +75,15 @@ const routes = [
         meta: { roles: ['MECANICO', 'ADMINISTRADOR'] },
       },
       {
+        path: 'oficina/historico',
+        name: 'OficinaHistorico',
+        component: () => import('../views/oficina/Historico.vue'),
+        meta: { roles: ['MECANICO', 'ADMINISTRADOR'] },
+      },
+      {
         path: 'oficina/:id',
         name: 'OficinaDetalhe',
-        component: () => import('../views/oficina/Detalhe.vue'),
+        component: () => import('../views/oficina/Detail.vue'),
         meta: { roles: ['MECANICO', 'ADMINISTRADOR'] },
       },
 
@@ -94,6 +100,12 @@ const routes = [
         path: 'faturas',
         name: 'Faturas',
         component: () => import('../views/faturas/Index.vue'),
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+      },
+      {
+        path: 'faturas/:id',
+        name: 'FaturaDetalhe',
+        component: () => import('../views/faturas/Detail.vue'),
         meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
       },
 

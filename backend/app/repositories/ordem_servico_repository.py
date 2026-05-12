@@ -104,6 +104,9 @@ class MockOrdemServicoRepository:
     def list_by_mecanico(self, mecanico_id: int) -> list[OrdemServico]:
         return [o for o in self._data if o.mecanico_id == mecanico_id]
 
+    def list_by_cliente(self, cliente_id: int) -> list[OrdemServico]:
+        return [o for o in self._data if o.cliente_id == cliente_id]
+
     def count_by_trotinete(self, trotinete_id: int) -> int:
         return sum(1 for o in self._data if o.trotinete_id == trotinete_id)
 

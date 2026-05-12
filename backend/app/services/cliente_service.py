@@ -76,6 +76,10 @@ class ClienteService:
         )
 
     def historico(self, cliente_id: int, page: int, page_size: int, current_user: CurrentUserResponse) -> PaginatedResponse[ClienteHistoricoItem]:
+        from app.repositories.ordem_servico_repository import MockOrdemServicoRepository
+        from app.repositories.trotinete_repository import MockTrotineteRepository
+        from app.repositories.fatura_repository import MockFaturaRepository
+
         cliente = self.repo.get_by_id(cliente_id)
         if not cliente:
             raise HTTPException(
@@ -84,11 +88,38 @@ class ClienteService:
             )
         check_loja_access(cliente.loja_id, current_user)
 
-        # Futuramente substituir por queries às ordens de serviço do cliente
+        os_repo = MockOrdemServicoRepository()
+        trot_repo = MockTrotineteRepository()
+        fat_repo = MockFaturaRepository()
+
+        oss = os_repo.list_by_cliente(cliente_id)
+        oss.sort(key=lambda o: o.data_entrada, reverse=True)
+
+        items: list[ClienteHistoricoItem] = []
+        for os in oss:
+            trot = trot_repo.get_by_id(os.trotinete_id)
+            valor_final = None
+            if os.fatura_id is not None:
+                fat = fat_repo.get_by_id(os.fatura_id)
+                if fat:
+                    valor_final = fat.valor_final
+            items.append(ClienteHistoricoItem(
+                id=os.id,
+                trotinete_numero_serie=trot.numero_serie if trot else "—",
+                descricao=os.descricao_problema,
+                estado=os.estado.value,
+                data_entrada=os.data_entrada,
+                data_conclusao=os.data_conclusao,
+                valor_final=valor_final,
+            ))
+
+        total = len(items)
+        start = (page - 1) * page_size
+        pages = max(1, -(-total // page_size))
         return PaginatedResponse[ClienteHistoricoItem](
-            data=[],
-            total=0,
+            data=items[start : start + page_size],
+            total=total,
             page=page,
             page_size=page_size,
-            pages=1,
+            pages=pages,
         )

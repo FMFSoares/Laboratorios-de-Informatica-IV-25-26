@@ -200,6 +200,7 @@ class OrdemServicoResumo(BaseModel):
     trotinete_numero_serie: str | None
     mecanico_nome: str | None
     data_entrada: datetime
+    data_conclusao: datetime | None = None
     em_atraso: bool = Field(False, description="True se o tempo decorrido supera a média das OS concluídas.")
     minutos_em_atraso: int | None = Field(None, description="Minutos acima da média, quando em atraso.")
     tem_timer_ativo: bool = Field(False, description="True se o mecânico tem um registo de tempo em curso nesta OS.")

@@ -41,9 +41,10 @@ const ALL_NAV = [
   { label: 'Utilizadores',       to: '/utilizadores',    roles: ['ADMINISTRADOR'] },
 
   // ── Mecânico ──────────────────────────────────────────────
-  { label: 'OS Activa',          to: '/oficina/ativa',   roles: ['MECANICO'] },
-  { label: 'Ordens de Serviço',  to: '/oficina',         roles: ['MECANICO'] },
-  { label: 'Inventário',         to: '/stock',           roles: ['MECANICO'] },
+  { label: 'OS Activa',          to: '/oficina/ativa',      roles: ['MECANICO'] },
+  { label: 'Ordens de Serviço',  to: '/oficina',            roles: ['MECANICO'] },
+  { label: 'Histórico',          to: '/oficina/historico',  roles: ['MECANICO'] },
+  { label: 'Inventário',         to: '/stock',              roles: ['MECANICO'] },
 ]
 
 const navItems = computed(() => {

@@ -9,6 +9,7 @@ from app.schemas.common import DataResponse, PaginatedResponse
 from app.schemas.fatura import (
     EstadoFatura,
     FaturaClienteInfo,
+    FaturaEnviarEmailRequest,
     FaturaLojaInfo,
     FaturaPecaAplicada,
     FaturaResumo,
@@ -116,6 +117,7 @@ def emitir(
             "nome": cliente.nome,
             "nif": cliente.nif,
             "morada": cliente.morada,
+            "email": cliente.email,
         },
         trotinete={
             "marca": trotinete.marca,
@@ -155,6 +157,59 @@ def obter(fatura_id: int, current_user: CurrentUserResponse) -> DataResponse[Fat
         )
     check_loja_access(fatura.loja_id, current_user)
     return DataResponse[FaturaResponse](data=_to_response(fatura))
+
+
+def descarregar_pdf(fatura_id: int, current_user: CurrentUserResponse) -> bytes:
+    from app.utils.pdf import gerar_pdf_fatura
+
+    fatura = _repo.get_by_id(fatura_id)
+    if fatura is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": "Fatura não encontrada.", "code": "RESOURCE_NOT_FOUND"},
+        )
+    check_loja_access(fatura.loja_id, current_user)
+    return gerar_pdf_fatura(_to_response(fatura))
+
+
+def enviar_email(
+    fatura_id: int,
+    body: FaturaEnviarEmailRequest,
+    current_user: CurrentUserResponse,
+) -> dict:
+    from fastapi import BackgroundTasks
+    from app.utils.pdf import gerar_pdf_fatura
+    from app.utils.email import enviar_fatura_email
+
+    fatura = _repo.get_by_id(fatura_id)
+    if fatura is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": "Fatura não encontrada.", "code": "RESOURCE_NOT_FOUND"},
+        )
+    check_loja_access(fatura.loja_id, current_user)
+
+    email_destino = body.email or fatura.cliente.get("email")
+    if not email_destino:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"detail": "Sem email disponível. Forneça um email no pedido.", "code": "NO_EMAIL"},
+        )
+
+    fatura_response = _to_response(fatura)
+    pdf_bytes = gerar_pdf_fatura(fatura_response)
+    loja_info = _loja_repo.as_dict(fatura.loja_id) or {}
+
+    enviar_fatura_email(
+        cliente_email=email_destino,
+        cliente_nome=fatura.cliente.get("nome", ""),
+        fatura_numero=fatura.numero,
+        loja_nome=loja_info.get("nome", ""),
+        loja_telefone=loja_info.get("telefone", ""),
+        pdf_bytes=pdf_bytes,
+    )
+
+    return {"message": "Email enviado com sucesso.", "email": email_destino}
 
 
 def listar(

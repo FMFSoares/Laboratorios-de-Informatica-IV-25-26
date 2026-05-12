@@ -12,6 +12,8 @@ const LABELS = {
   CONCLUIDA: 'Concluída',
   FATURADA: 'Faturada',
   CANCELADA: 'Cancelada',
+  EMITIDA: 'Emitida',
+  ANULADA: 'Anulada',
 }
 
 const COLORS = {
@@ -23,6 +25,8 @@ const COLORS = {
   CONCLUIDA: 'badge--green',
   FATURADA: 'badge--teal',
   CANCELADA: 'badge--red',
+  EMITIDA: 'badge--teal',
+  ANULADA: 'badge--red',
 }
 </script>
 

@@ -24,6 +24,7 @@ class FaturaClienteInfo(BaseModel):
     nome: str
     nif: str
     morada: str | None
+    email: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -92,6 +93,12 @@ class FaturaLojaInfo(BaseModel):
 
 
 # ── Request: criar fatura ─────────────────────────────────────────────────────
+
+
+class FaturaEnviarEmailRequest(BaseModel):
+    """Body do POST /api/v1/faturas/{id}/enviar-email."""
+
+    email: str | None = Field(None, description="Email de destino. Se omitido, usa o email registado no cliente.")
 
 
 class FaturaCreateRequest(BaseModel):

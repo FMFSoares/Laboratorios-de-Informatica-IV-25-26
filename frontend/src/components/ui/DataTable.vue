@@ -18,9 +18,11 @@ const props = defineProps({
   emptyMessage: { type: String, default: null },
   rowKey: { type: String, default: 'id' },
   clickable: { type: Boolean, default: false },
+  sortKey: { type: String, default: null },
+  sortDir: { type: String, default: 'asc' },
 })
 
-const emit = defineEmits(['update:page', 'row-click'])
+const emit = defineEmits(['update:page', 'row-click', 'sort'])
 
 const totalPages = computed(() => Math.max(1, Math.ceil(props.total / props.pageSize)))
 
@@ -41,7 +43,17 @@ const getValue = (row, key) => {
       <table v-else class="data-table">
         <thead>
           <tr>
-            <th v-for="col in columns" :key="col.key">{{ col.label }}</th>
+            <th
+              v-for="col in columns"
+              :key="col.key"
+              :class="{ 'th--sortable': col.sortable, 'th--sorted': sortKey === col.key }"
+              @click="col.sortable && emit('sort', col.key)"
+            >
+              {{ col.label }}
+              <span v-if="col.sortable" class="sort-icon">
+                {{ sortKey === col.key ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}
+              </span>
+            </th>
             <th v-if="$slots['actions']" class="col-actions">Ações</th>
           </tr>
         </thead>
@@ -99,6 +111,24 @@ const getValue = (row, key) => {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   border-bottom: 1px solid #e5e7eb;
+  user-select: none;
+}
+
+.th--sortable {
+  cursor: pointer;
+}
+.th--sortable:hover {
+  background: #f0fdf4;
+  color: #374151;
+}
+.th--sorted {
+  color: #1abc9c;
+}
+
+.sort-icon {
+  margin-left: 0.3rem;
+  font-size: 0.75rem;
+  opacity: 0.7;
 }
 
 .data-table td {
