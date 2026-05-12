@@ -11,12 +11,14 @@ import {
 } from '../../services/ordensServico.js'
 import { getPecas } from '../../services/pecas.js'
 import { useAuthStore } from '../../store/auth.js'
+import { useWorkshopStore } from '../../store/workshop.js'
 import StatusBadge from '../../components/ui/StatusBadge.vue'
 import LoadingSpinner from '../../components/ui/LoadingSpinner.vue'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const workshop = useWorkshopStore()
 
 const os = ref(null)
 const loading = ref(true)
@@ -77,6 +79,20 @@ const ESTADO_LABELS = {
 }
 
 const availableActions = computed(() => TRANSICOES[os.value?.estado] ?? [])
+
+// The right-column "milestone" button — modal-confirmed, moves the OS to the next major phase
+const rightColumnAction = computed(() => {
+  if (!os.value) return null
+  if (os.value.estado === 'EM_DIAGNOSTICO') return { estado: 'EM_REPARACAO', label: 'Concluir Reparação' }
+  if (os.value.estado === 'EM_REPARACAO')   return { estado: 'CONCLUIDA',    label: 'Marcar como Concluída' }
+  return null
+})
+
+// Remaining transitions for the left column — executed directly, no modal
+const mainActions = computed(() => {
+  const rightTarget = rightColumnAction.value?.estado
+  return availableActions.value.filter(a => a.estado !== rightTarget)
+})
 const timerAtivo = computed(() => !!os.value?.inicio_tempo_atual)
 const canAddParts = computed(() => os.value && ESTADOS_TRABALHO.includes(os.value.estado))
 const canResume = computed(() =>
@@ -110,22 +126,25 @@ async function handleAutoTimer(novoEstado) {
   if (ESTADOS_AUTO_START.includes(novoEstado) && !timerAtivo.value) {
     try {
       await iniciarTempo(os.value.id)
+      workshop.set(true)
     } catch (e) {
       // Another OS has a running timer — stop it first, then start here
       if (e.response?.data?.detail?.code === 'MECANICO_TIMER_CONFLICT') {
         const conflito_id = e.response.data.detail.os_conflito_id
         try { await pararTempo(conflito_id) } catch { /* ignore */ }
-        try { await iniciarTempo(os.value.id) } catch { /* ignore */ }
+        try { await iniciarTempo(os.value.id); workshop.set(true) } catch { /* ignore */ }
       }
     }
   } else if (ESTADOS_AUTO_STOP.includes(novoEstado) && timerAtivo.value) {
     try { await pararTempo(os.value.id) } catch { /* ignore */ }
+    workshop.set(false)
   }
 }
 
 async function pause() {
   pauseLoading.value = true
   try { await pararTempo(os.value.id) } catch { /* ignore */ }
+  workshop.set(false)
   pauseLoading.value = false
   await load()
 }
@@ -133,17 +152,32 @@ async function pause() {
 async function resumeWork() {
   try {
     await iniciarTempo(os.value.id)
+    workshop.set(true)
   } catch (e) {
     if (e.response?.data?.detail?.code === 'MECANICO_TIMER_CONFLICT') {
       const conflito_id = e.response.data.detail.os_conflito_id
       try { await pararTempo(conflito_id) } catch { /* ignore */ }
-      try { await iniciarTempo(os.value.id) } catch { /* ignore */ }
+      try { await iniciarTempo(os.value.id); workshop.set(true) } catch { /* ignore */ }
     }
   }
   await load()
 }
 
 // State transitions
+async function directTransition(action) {
+  stateLoading.value = true
+  stateError.value = ''
+  try {
+    await atualizarEstado(os.value.id, { novo_estado: action.estado, observacao: null })
+    await handleAutoTimer(action.estado)
+  } catch (e) {
+    stateError.value = e.response?.data?.detail?.detail || 'Erro ao atualizar estado.'
+  } finally {
+    stateLoading.value = false
+    await load()
+  }
+}
+
 function startTransition(action) {
   pendingTransition.value = action
   transitionObs.value = ''
@@ -256,9 +290,6 @@ function fmtDateTime(dt) {
           <h1 class="mono">{{ os.numero }}</h1>
           <StatusBadge :estado="os.estado" />
           <span v-if="os.em_atraso" class="atraso-badge">⚠ +{{ os.minutos_em_atraso }}min em atraso</span>
-          <button v-if="timerAtivo" class="btn btn--pause btn--sm" :disabled="pauseLoading" @click="pause">
-            {{ pauseLoading ? '...' : '⏸ Pausar' }}
-          </button>
         </div>
         <p class="sub">
           {{ os.cliente.nome }} · <span class="mono">{{ os.trotinete.numero_serie }}</span> ·
@@ -284,9 +315,17 @@ function fmtDateTime(dt) {
           </div>
 
           <!-- State actions -->
-          <div class="card" v-if="canResume || availableActions.length > 0">
+          <div class="card" v-if="timerAtivo || canResume || mainActions.length > 0">
             <div class="card-title">Próxima Ação</div>
             <div class="action-list">
+              <button
+                v-if="timerAtivo"
+                class="btn btn--danger btn--action"
+                :disabled="pauseLoading"
+                @click="pause"
+              >
+                {{ pauseLoading ? '...' : '⏹ Parar' }}
+              </button>
               <button
                 v-if="canResume"
                 class="btn btn--primary btn--action"
@@ -295,11 +334,11 @@ function fmtDateTime(dt) {
                 {{ os.estado === 'EM_DIAGNOSTICO' ? '▶ Retomar Avaliação' : '▶ Retomar Reparação' }}
               </button>
               <button
-                v-for="action in availableActions"
+                v-for="action in mainActions"
                 :key="action.estado"
                 class="btn btn--action"
-                :class="canResume ? 'btn--secondary' : 'btn--primary'"
-                @click="startTransition(action)"
+                :class="canResume || timerAtivo ? 'btn--secondary' : 'btn--primary'"
+                @click="directTransition(action)"
               >
                 {{ action.label }}
               </button>
@@ -307,7 +346,7 @@ function fmtDateTime(dt) {
           </div>
 
           <!-- Peças aplicadas -->
-          <div class="card">
+          <div class="card" v-if="os.estado !== 'EM_DIAGNOSTICO'">
             <div class="card-title">Peças Aplicadas</div>
             <div v-if="os.pecas_aplicadas.length === 0" class="empty-msg">Nenhuma peça associada.</div>
             <table v-else class="table">
@@ -370,6 +409,16 @@ function fmtDateTime(dt) {
 
         <!-- Right column -->
         <div class="right">
+          <!-- Right-column milestone action -->
+          <div class="card card--conclude" v-if="rightColumnAction">
+            <button
+              class="btn btn--primary btn--action"
+              @click="startTransition(rightColumnAction)"
+            >
+              ✓ {{ rightColumnAction.label }}
+            </button>
+          </div>
+
           <div class="card">
             <div class="card-title">Observações Internas</div>
             <div v-if="os.observacoes.length === 0" class="empty-msg">Sem observações.</div>
@@ -511,8 +560,10 @@ function fmtDateTime(dt) {
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn--primary { background: #1abc9c; color: #fff; }
 .btn--secondary { background: #e5e7eb; color: #374151; }
-.btn--pause { background: #d97706; color: #fff; }
+.btn--danger { background: #dc2626; color: #fff; }
 .btn--sm { padding: 0.4rem 0.8rem; font-size: 0.825rem; }
+
+.card--conclude { padding: 1rem 1.5rem; }
 
 .mono { font-family: 'Courier New', monospace; }
 

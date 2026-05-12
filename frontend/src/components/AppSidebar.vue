@@ -1,13 +1,12 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth.js'
-import { getOrdensServico } from '../services/ordensServico.js'
+import { useWorkshopStore } from '../store/workshop.js'
 
 const authStore = useAuthStore()
 const router = useRouter()
-
-const hasActiveOS = ref(false)
+const workshop = useWorkshopStore()
 
 const PERFIL_LABEL = {
   ADMINISTRADOR: 'Administrador',
@@ -16,21 +15,16 @@ const PERFIL_LABEL = {
   MECANICO: 'Mecânico',
 }
 
-async function checkActiveOS() {
-  const user = authStore.getCurrentUser
-  if (user?.perfil !== 'MECANICO') return
-  try {
-    const { data } = await getOrdensServico({ mecanico_id: user.id, page_size: 100 })
-    hasActiveOS.value = data.data.some(o => o.tem_timer_ativo)
-  } catch { /* ignore */ }
-}
-
+// Background sync — keeps the dot accurate if the user opened another tab
+// or if some other session changed the timer state
 let pollInterval
 onMounted(() => {
-  checkActiveOS()
-  pollInterval = setInterval(checkActiveOS, 30000)
+  workshop.refresh()
+  pollInterval = setInterval(workshop.refresh, 30000)
 })
 onUnmounted(() => clearInterval(pollInterval))
+
+const hasActiveOS = computed(() => workshop.hasActiveOS)
 
 function logout() {
   authStore.logout()

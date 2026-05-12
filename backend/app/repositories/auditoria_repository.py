@@ -103,7 +103,7 @@ class MockAuditoriaRepository:
         self,
         evento: E,
         descricao: str,
-        ip_origem: str,
+        ip_origem: str | None = None,
         utilizador_id: int | None = None,
         utilizador_nome: str | None = None,
         loja_id: int | None = None,
