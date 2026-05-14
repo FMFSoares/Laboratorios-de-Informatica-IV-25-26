@@ -114,6 +114,18 @@ def gerar_pdf_fatura(fatura: FaturaResponse) -> bytes:
         pdf.cell(40, 6, "Pecas", **CNT)
         pdf.cell(25, 6, f"{fatura.subtotal_pecas:.2f} EUR", align="R", **NL)
 
+    if fatura.valor_desconto and fatura.valor_desconto > 0:
+        label = (
+            f"Desconto ({fatura.desconto_valor:.0f}%)"
+            if fatura.desconto_tipo and fatura.desconto_tipo.value == "PERCENTUAL"
+            else "Desconto"
+        )
+        pdf.set_x(right_x)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(220, 50, 50)
+        pdf.cell(40, 6, label, **CNT)
+        pdf.cell(25, 6, f"-{fatura.valor_desconto:.2f} EUR", align="R", **NL)
+
     pdf.set_x(right_x)
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(20, 20, 20)
@@ -121,7 +133,8 @@ def gerar_pdf_fatura(fatura: FaturaResponse) -> bytes:
     pdf.cell(25, 8, f"{fatura.valor_final:.2f} EUR", align="R", **NL)
 
     # ── Footer ────────────────────────────────────────────────────
-    pdf.set_y(-20)
+    pdf.set_auto_page_break(False)
+    pdf.set_y(-15)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(160, 160, 160)
     pdf.cell(0, 5, f"Documento gerado automaticamente - OS #{fatura.ordem_servico_id}", align="C", **NL)

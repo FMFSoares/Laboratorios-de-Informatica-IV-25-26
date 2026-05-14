@@ -7,6 +7,7 @@ from app.repositories.loja_repository import MockLojaRepository
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.common import DataResponse, PaginatedResponse
 from app.schemas.fatura import (
+    DescontoTipo,
     EstadoFatura,
     FaturaClienteInfo,
     FaturaEnviarEmailRequest,
@@ -37,6 +38,9 @@ def _to_response(f: Fatura) -> FaturaResponse:
         servico=FaturaServicoInfo(**f.servico),
         pecas_aplicadas=[FaturaPecaAplicada(**p) for p in f.pecas_aplicadas],
         subtotal_pecas=f.subtotal_pecas,
+        desconto_tipo=f.desconto_tipo,
+        desconto_valor=f.desconto_valor,
+        valor_desconto=f.valor_desconto,
         valor_final=f.valor_final,
         loja=FaturaLojaInfo(**loja_info),
     )
@@ -58,6 +62,8 @@ def _to_resumo(f: Fatura) -> FaturaResumo:
 def emitir(
     ordem_servico_id: int,
     current_user: CurrentUserResponse,
+    desconto_tipo: DescontoTipo | None = None,
+    desconto_valor: float = 0.0,
 ) -> DataResponse[FaturaResponse]:
     from app.services.ordem_servico_service import get_os_interna
     from app.services.cliente_service import _find as find_cliente
@@ -107,7 +113,16 @@ def emitir(
         })
 
     subtotal_pecas = round(sum(p["subtotal"] for p in pecas_linha), 2)
-    valor_final = round(os.preco_servico + subtotal_pecas, 2)
+    subtotal_bruto = round(os.preco_servico + subtotal_pecas, 2)
+
+    if desconto_tipo == DescontoTipo.PERCENTUAL:
+        valor_desconto = round(subtotal_bruto * min(desconto_valor, 100.0) / 100.0, 2)
+    elif desconto_tipo == DescontoTipo.FIXO:
+        valor_desconto = round(min(desconto_valor, subtotal_bruto), 2)
+    else:
+        valor_desconto = 0.0
+
+    valor_final = round(subtotal_bruto - valor_desconto, 2)
 
     nova = _repo.create(
         ordem_servico_id=ordem_servico_id,
@@ -130,6 +145,9 @@ def emitir(
         },
         pecas_aplicadas=pecas_linha,
         subtotal_pecas=subtotal_pecas,
+        desconto_tipo=desconto_tipo,
+        desconto_valor=desconto_valor,
+        valor_desconto=valor_desconto,
         valor_final=valor_final,
     )
 

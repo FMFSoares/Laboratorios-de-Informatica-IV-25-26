@@ -53,7 +53,7 @@ def listar(
     page_size: int,
     current_user: CurrentUserResponse,
 ) -> PaginatedResponse[StockItemResponse]:
-    if current_user.perfil != PerfilUtilizador.ADMINISTRADOR:
+    if current_user.perfil not in (PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA):
         loja_id = current_user.loja_id
 
     itens, total = _repo.list(loja_id, apenas_alertas, page, page_size)
@@ -65,6 +65,32 @@ def listar(
         page=page,
         page_size=page_size,
         pages=pages,
+    )
+
+
+def atualizar_minimo(
+    peca_id: int,
+    loja_id: int,
+    limite_minimo: int,
+    current_user: CurrentUserResponse,
+) -> DataResponse[StockItemResponse]:
+    check_loja_access(loja_id, current_user)
+
+    if not _loja_repo.exists(loja_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": "Loja não encontrada.", "code": "RESOURCE_NOT_FOUND"},
+        )
+    if _peca_repo.get_by_id(peca_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": "Peça não encontrada.", "code": "RESOURCE_NOT_FOUND"},
+        )
+
+    item = _repo.atualizar_minimo(peca_id, loja_id, limite_minimo)
+    return DataResponse[StockItemResponse](
+        data=_to_item_response(item),
+        message="Limite mínimo atualizado.",
     )
 
 

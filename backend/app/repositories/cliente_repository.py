@@ -114,6 +114,24 @@ class ClienteRepository:
         except Exception:
             return len(self.get_all(loja_id=loja_id, query_str=query_str))
 
+    def update(self, cliente_id: int, data: dict):
+        try:
+            obj = self.db.query(Cliente).filter(Cliente.id == cliente_id).first()
+            if not obj:
+                return None
+            for k, v in data.items():
+                setattr(obj, k, v)
+            self.db.commit()
+            self.db.refresh(obj)
+            return obj
+        except Exception:
+            obj = next((c for c in _HARDCODED_CLIENTES if c.id == cliente_id), None)
+            if not obj:
+                return None
+            for k, v in data.items():
+                setattr(obj, k, v)
+            return obj
+
     def create(self, cliente_in: ClienteCreate, loja_id: int):
         try:
             db_obj = Cliente(**cliente_in.model_dump(), loja_id=loja_id, data_registo=datetime.now(timezone.utc))

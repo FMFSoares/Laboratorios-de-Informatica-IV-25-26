@@ -1,13 +1,16 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getCliente, getClienteHistorico } from '../../services/clientes.js'
+import { getCliente, getClienteHistorico, updateCliente } from '../../services/clientes.js'
 import { createTrotinete } from '../../services/trotinetes.js'
+import { useAuthStore } from '../../store/auth.js'
 import StatusBadge from '../../components/ui/StatusBadge.vue'
 import LoadingSpinner from '../../components/ui/LoadingSpinner.vue'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
+const isGestao = computed(() => ['ADMINISTRADOR', 'GERENTE_LOJA'].includes(auth.getCurrentUser?.perfil))
 
 const cliente = ref(null)
 const historico = ref([])
@@ -39,6 +42,48 @@ async function fetchAll() {
 }
 
 onMounted(fetchAll)
+
+// ── Edit ─────────────────────────────────────────────────────────────────────
+const editing     = ref(false)
+const editForm    = ref({})
+const editLoading = ref(false)
+const editError   = ref('')
+
+function startEdit() {
+  editForm.value = {
+    nome:      cliente.value.nome,
+    telemovel: cliente.value.telemovel,
+    email:     cliente.value.email ?? '',
+    morada:    cliente.value.morada ?? '',
+  }
+  editError.value = ''
+  editing.value = true
+}
+
+function cancelEdit() {
+  editing.value = false
+  editError.value = ''
+}
+
+async function submitEdit() {
+  editError.value = ''
+  editLoading.value = true
+  try {
+    const body = {
+      nome:      editForm.value.nome,
+      telemovel: editForm.value.telemovel,
+      email:     editForm.value.email  || null,
+      morada:    editForm.value.morada || null,
+    }
+    const res = await updateCliente(route.params.id, body)
+    cliente.value = { ...cliente.value, ...res.data.data }
+    editing.value = false
+  } catch (e) {
+    editError.value = e?.response?.data?.detail?.detail ?? 'Erro ao atualizar cliente.'
+  } finally {
+    editLoading.value = false
+  }
+}
 
 function fmt(dt) {
   return dt ? new Date(dt).toLocaleDateString('pt-PT') : '—'
@@ -97,31 +142,72 @@ async function submitTrot() {
       </div>
 
       <!-- Info card -->
-      <div class="card info-grid">
-        <div class="info-item">
-          <span class="info-label">NIF</span>
-          <span class="info-value">{{ cliente.nif }}</span>
+      <div class="card info-card">
+        <div class="info-card-header">
+          <span class="info-card-title">Informações</span>
+          <button v-if="isGestao && !editing" class="btn btn--ghost btn--sm" @click="startEdit">Editar</button>
         </div>
-        <div class="info-item">
-          <span class="info-label">Telemóvel</span>
-          <span class="info-value">{{ cliente.telemovel }}</span>
+
+        <!-- Read mode -->
+        <div v-if="!editing" class="info-grid">
+          <div class="info-item">
+            <span class="info-label">Nome</span>
+            <span class="info-value">{{ cliente.nome }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">NIF</span>
+            <span class="info-value">{{ cliente.nif }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Telemóvel</span>
+            <span class="info-value">{{ cliente.telemovel }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Email</span>
+            <span class="info-value">{{ cliente.email || '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Morada</span>
+            <span class="info-value">{{ cliente.morada || '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">RGPD</span>
+            <span class="info-value">{{ cliente.consentimento_rgpd ? 'Autorizado' : 'Não autorizado' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Loja</span>
+            <span class="info-value">#{{ cliente.loja_id }}</span>
+          </div>
         </div>
-        <div class="info-item">
-          <span class="info-label">Email</span>
-          <span class="info-value">{{ cliente.email || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="info-label">Morada</span>
-          <span class="info-value">{{ cliente.morada || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="info-label">RGPD</span>
-          <span class="info-value">{{ cliente.consentimento_rgpd ? 'Autorizado' : 'Não autorizado' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="info-label">Loja</span>
-          <span class="info-value">#{{ cliente.loja_id }}</span>
-        </div>
+
+        <!-- Edit mode -->
+        <form v-else class="edit-form" @submit.prevent="submitEdit">
+          <div class="edit-grid">
+            <div class="field">
+              <label>Nome *</label>
+              <input v-model="editForm.nome" required placeholder="Nome completo" />
+            </div>
+            <div class="field">
+              <label>Telemóvel *</label>
+              <input v-model="editForm.telemovel" required placeholder="9XXXXXXXX" />
+            </div>
+            <div class="field">
+              <label>Email</label>
+              <input v-model="editForm.email" type="email" placeholder="email@exemplo.com" />
+            </div>
+            <div class="field field--full">
+              <label>Morada</label>
+              <input v-model="editForm.morada" placeholder="Rua, número, cidade" />
+            </div>
+          </div>
+          <p v-if="editError" class="edit-error">{{ editError }}</p>
+          <div class="edit-actions">
+            <button type="button" class="btn btn--ghost" @click="cancelEdit">Cancelar</button>
+            <button type="submit" class="btn btn--primary" :disabled="editLoading">
+              {{ editLoading ? 'A guardar…' : 'Guardar Alterações' }}
+            </button>
+          </div>
+        </form>
       </div>
 
       <!-- Trotinetes -->
@@ -268,17 +354,46 @@ async function submitTrot() {
   margin-bottom: 1.5rem;
 }
 
+.info-card { padding: 1.5rem; margin-bottom: 1.5rem; }
+
+.info-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+.info-card-title { font-size: 0.75rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
+
 .info-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 1.25rem;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
 }
 
 .info-item { display: flex; flex-direction: column; gap: 0.2rem; }
 .info-label { font-size: 0.78rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
 .info-value { font-size: 0.95rem; color: #111827; font-weight: 500; }
+
+.edit-form { display: flex; flex-direction: column; gap: 1rem; }
+.edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+}
+.field { display: flex; flex-direction: column; gap: 0.3rem; }
+.field--full { grid-column: 1 / -1; }
+.field label { font-size: 0.78rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.04em; }
+.field input {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #111827;
+  outline: none;
+}
+.field input:focus { border-color: #1abc9c; box-shadow: 0 0 0 3px rgba(26,188,156,0.15); }
+.edit-error { color: #dc2626; font-size: 0.85rem; margin: 0; }
+.edit-actions { display: flex; justify-content: flex-end; gap: 0.75rem; padding-top: 0.25rem; }
 
 .section { margin-bottom: 2rem; }
 
@@ -334,8 +449,9 @@ async function submitTrot() {
 }
 .btn:hover { opacity: 0.85; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn--primary { background: #1abc9c; color: #fff; }
+.btn--primary   { background: #1abc9c; color: #fff; }
 .btn--secondary { background: #e5e7eb; color: #374151; }
+.btn--ghost     { background: transparent; border: 1px solid #d1d5db; color: #374151; }
 .btn--sm { padding: 0.4rem 0.8rem; font-size: 0.825rem; }
 
 .overlay {

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import ClassVar
 
-from app.schemas.fatura import EstadoFatura
+from app.schemas.fatura import DescontoTipo, EstadoFatura
 
 
 @dataclass
@@ -19,8 +19,11 @@ class Fatura:
     trotinete: dict
     servico: dict
     subtotal_pecas: float
+    valor_desconto: float
     valor_final: float
     pecas_aplicadas: list = field(default_factory=list)
+    desconto_tipo: DescontoTipo | None = None
+    desconto_valor: float = 0.0
 
 
 class MockFaturaRepository:
@@ -64,6 +67,9 @@ class MockFaturaRepository:
         servico: dict,
         pecas_aplicadas: list,
         subtotal_pecas: float,
+        desconto_tipo: DescontoTipo | None,
+        desconto_valor: float,
+        valor_desconto: float,
         valor_final: float,
     ) -> Fatura:
         nova = Fatura(
@@ -78,6 +84,9 @@ class MockFaturaRepository:
             servico=servico,
             pecas_aplicadas=pecas_aplicadas,
             subtotal_pecas=subtotal_pecas,
+            desconto_tipo=desconto_tipo,
+            desconto_valor=desconto_valor,
+            valor_desconto=valor_desconto,
             valor_final=valor_final,
         )
         self._data.append(nova)

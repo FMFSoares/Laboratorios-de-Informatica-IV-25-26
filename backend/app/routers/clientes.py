@@ -7,6 +7,7 @@ from app.auth.dependencies import get_current_user, require_roles
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.cliente import (
     ClienteCreate,
+    ClienteUpdate,
     ClienteDetalheResponse,
     ClienteHistoricoItem,
     ClienteResponse,
@@ -84,6 +85,24 @@ def obter(
     service: ClienteService = Depends(get_cliente_service),
 ) -> DataResponse[ClienteDetalheResponse]:
     return service.obter(cliente_id, current_user)
+
+
+@router.patch(
+    "/{cliente_id}",
+    response_model=DataResponse[ClienteResponse],
+    summary="Atualizar dados do cliente",
+    responses={
+        403: {"description": "LOJA_MISMATCH"},
+        404: {"description": "Cliente não encontrado"},
+    },
+)
+def atualizar(
+    cliente_id: int,
+    body: ClienteUpdate,
+    current_user: CurrentUserResponse = Depends(_escrita),
+    service: ClienteService = Depends(get_cliente_service),
+) -> DataResponse[ClienteResponse]:
+    return service.atualizar(cliente_id, body, current_user)
 
 
 @router.get(

@@ -595,6 +595,36 @@ def adicionar_peca(
     )
 
 
+def remover_peca(
+    os_id: int,
+    peca_id: int,
+    current_user: CurrentUserResponse,
+) -> None:
+    from app.services.stock_service import get_stock_disponivel
+    from app.repositories.stock_repository import MockStockRepository
+
+    os = _repo.get_by_id(os_id)
+    if os is None:
+        _404()
+    check_loja_access(os.loja_id, current_user)
+
+    if os.estado in {E.CONCLUIDA, E.FATURADA, E.CANCELADA}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"detail": f"Não é possível remover peças de uma OS em estado {os.estado.value}.", "code": "INVALID_STATE_TRANSITION"},
+        )
+
+    entrada = next((p for p in os.pecas_aplicadas if p["peca_id"] == peca_id), None)
+    if entrada is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": "Peça não encontrada nesta OS.", "code": "RESOURCE_NOT_FOUND"},
+        )
+
+    MockStockRepository().adicionar(peca_id, os.loja_id, entrada["quantidade"])
+    os.pecas_aplicadas = [p for p in os.pecas_aplicadas if p["peca_id"] != peca_id]
+
+
 def adicionar_observacao(
     os_id: int,
     body: OrdemServicoObservacaoCreate,

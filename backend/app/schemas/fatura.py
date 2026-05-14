@@ -14,6 +14,11 @@ class EstadoFatura(str, Enum):
     ANULADA = "ANULADA"
 
 
+class DescontoTipo(str, Enum):
+    PERCENTUAL = "PERCENTUAL"
+    FIXO = "FIXO"
+
+
 # ── Schemas de info aninhada na fatura ────────────────────────────────────────
 
 
@@ -114,9 +119,15 @@ class FaturaCreateRequest(BaseModel):
     ordem_servico_id: int = Field(
         ..., gt=0, description="ID da ordem de serviço concluída a faturar."
     )
+    desconto_tipo: DescontoTipo | None = Field(
+        None, description="Tipo de desconto: PERCENTUAL (%) ou FIXO (€). Null se sem desconto."
+    )
+    desconto_valor: float = Field(
+        0.0, ge=0.0, description="Valor do desconto (percentagem ou montante fixo)."
+    )
 
     model_config = ConfigDict(
-        json_schema_extra={"example": {"ordem_servico_id": 10}}
+        json_schema_extra={"example": {"ordem_servico_id": 10, "desconto_tipo": "PERCENTUAL", "desconto_valor": 4.0}}
     )
 
 
@@ -150,10 +161,13 @@ class FaturaResponse(BaseModel):
         ge=0.0,
         description="Σ (quantidade × preco_venda_unitario) de todas as peças aplicadas.",
     )
+    desconto_tipo: DescontoTipo | None = Field(None, description="Tipo de desconto aplicado, ou null.")
+    desconto_valor: float = Field(0.0, ge=0.0, description="Valor do desconto (% ou €).")
+    valor_desconto: float = Field(0.0, ge=0.0, description="Montante descontado em €.")
     valor_final: float = Field(
         ...,
         ge=0.0,
-        description="preco_servico + subtotal_pecas. Calculado pelo service.",
+        description="preco_servico + subtotal_pecas - valor_desconto. Calculado pelo service.",
     )
     loja: FaturaLojaInfo
 

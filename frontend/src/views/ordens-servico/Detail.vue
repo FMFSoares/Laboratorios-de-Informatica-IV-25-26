@@ -2,11 +2,12 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getOrdemServico, atualizarEstado } from '../../services/ordensServico.js'
-import { emitirFatura } from '../../services/faturas.js'
+import { getCliente } from '../../services/clientes.js'
 import { useAuthStore } from '../../store/auth.js'
 import StatusBadge from '../../components/ui/StatusBadge.vue'
 import LoadingSpinner from '../../components/ui/LoadingSpinner.vue'
 import FaturaPreviewModal from '../../components/FaturaPreviewModal.vue'
+import FaturaEmitirModal from '../../components/FaturaEmitirModal.vue'
 import OsObservacoes from '../../components/OsObservacoes.vue'
 
 const route = useRoute()
@@ -24,6 +25,10 @@ const transitionObs = ref('')
 
 const showFaturaModal = ref(false)
 const faturaModalId = ref(null)
+
+const showEmitirModal = ref(false)
+const nivelFidelizacao = ref(0)
+const descontoSugerido = ref(0)
 
 const perfil = computed(() => auth.getCurrentUser?.perfil)
 
@@ -159,18 +164,21 @@ async function confirmTransition() {
   }
 }
 
-async function doEmitirFatura() {
-  actionLoading.value = true
+async function openEmitirModal() {
+  actionError.value = ''
+  nivelFidelizacao.value = 0
+  descontoSugerido.value = 0
   try {
-    const { data } = await emitirFatura({ ordem_servico_id: os.value.id })
-    await loadOS()
-    faturaModalId.value = data.data.id
-    showFaturaModal.value = true
-  } catch (e) {
-    actionError.value = e.response?.data?.detail?.detail || 'Erro ao emitir fatura.'
-  } finally {
-    actionLoading.value = false
-  }
+    const { data } = await getCliente(os.value.cliente_id)
+    nivelFidelizacao.value = data.data.nivel_fidelizacao ?? 0
+    descontoSugerido.value = data.data.desconto_sugerido_pct ?? 0
+  } catch { /* open modal anyway without pre-fill */ }
+  showEmitirModal.value = true
+}
+
+async function onFaturaEmitida(faturaId) {
+  await loadOS()
+  faturaModalId.value = faturaId
 }
 
 function openFaturaModal() {
@@ -329,7 +337,7 @@ function fmtDateTime(dt) {
                 v-if="canEmitirFatura"
                 class="btn btn--action btn--primary"
                 :disabled="actionLoading"
-                @click="doEmitirFatura"
+                @click="openEmitirModal"
               >
                 Emitir Fatura
               </button>
@@ -359,11 +367,21 @@ function fmtDateTime(dt) {
     <div v-else class="empty-msg">Ordem de serviço não encontrada.</div>
   </div>
 
-  <!-- Fatura preview modal -->
+  <!-- Ver fatura already emitted -->
   <FaturaPreviewModal
-    v-if="showFaturaModal && faturaModalId"
+    v-if="showFaturaModal && faturaModalId && !showEmitirModal"
     :fatura-id="faturaModalId"
     @close="showFaturaModal = false"
+  />
+
+  <!-- Emitir fatura (draft preview + emission) -->
+  <FaturaEmitirModal
+    v-if="showEmitirModal && os"
+    :os="os"
+    :nivel-fidelizacao="nivelFidelizacao"
+    :desconto-sugerido="descontoSugerido"
+    @close="showEmitirModal = false"
+    @emitida="onFaturaEmitida"
   />
 
   <!-- Estado transition modal -->

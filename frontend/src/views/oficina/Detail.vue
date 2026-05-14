@@ -8,6 +8,7 @@ import {
   iniciarTempo,
   pararTempo,
   adicionarPeca,
+  removerPeca,
 } from '../../services/ordensServico.js'
 import { getPecas } from '../../services/pecas.js'
 import { useAuthStore } from '../../store/auth.js'
@@ -98,6 +99,16 @@ const mainActions = computed(() => {
 })
 const timerAtivo = computed(() => !!os.value?.inicio_tempo_atual)
 const canAddParts = computed(() => os.value && ESTADOS_TRABALHO.includes(os.value.estado))
+
+// Live elapsed minutes — ticks every 30s while timer is active
+const now = ref(Date.now())
+let clockInterval = null
+const minutosTrabalhadosLive = computed(() => {
+  const base = os.value?.tempo_total_minutos ?? 0
+  if (!os.value?.inicio_tempo_atual) return base
+  const sessao = Math.max(0, Math.floor((now.value - new Date(os.value.inicio_tempo_atual).getTime()) / 60000))
+  return base + sessao
+})
 const canResume = computed(() =>
   os.value &&
   ESTADOS_AUTO_START.includes(os.value.estado) &&
@@ -121,8 +132,12 @@ let pollInterval
 onMounted(() => {
   load()
   pollInterval = setInterval(() => { if (!showEstadoModal.value) load() }, 30000)
+  clockInterval = setInterval(() => { now.value = Date.now() }, 30000)
 })
-onUnmounted(() => clearInterval(pollInterval))
+onUnmounted(() => {
+  clearInterval(pollInterval)
+  clearInterval(clockInterval)
+})
 
 async function findConflictingOS() {
   try {
@@ -269,6 +284,20 @@ async function submitPeca() {
   }
 }
 
+const removingPecaId = ref(null)
+
+async function removePeca(pecaId) {
+  removingPecaId.value = pecaId
+  try {
+    await removerPeca(os.value.id, pecaId)
+    await load()
+  } catch (e) {
+    pecaError.value = e.response?.data?.detail?.detail || 'Erro ao remover peça.'
+  } finally {
+    removingPecaId.value = null
+  }
+}
+
 function goBack() {
   if (window.history.length > 1) router.back()
   else router.push('/oficina')
@@ -319,7 +348,7 @@ function fmtDateTime(dt) {
               <span>Prioridade: <strong :class="`prio-${os.prioridade.toLowerCase()}`">{{ os.prioridade }}</strong></span>
               <span>Entrada: {{ fmt(os.data_entrada) }}</span>
               <span v-if="os.data_conclusao">Conclusão: {{ fmt(os.data_conclusao) }}</span>
-              <span class="minutos-label">⏱ {{ os.tempo_total_minutos || 0 }} min trabalhados</span>
+              <span class="minutos-label">⏱ {{ minutosTrabalhadosLive }} min trabalhados</span>
             </div>
           </div>
 
@@ -363,16 +392,21 @@ function fmtDateTime(dt) {
                 <tr>
                   <th>Peça</th>
                   <th class="col-right">Qtd</th>
-                  <th class="col-right">P. Unit.</th>
-                  <th class="col-right">Subtotal</th>
+                  <th v-if="canAddParts"></th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="p in os.pecas_aplicadas" :key="p.peca_id">
                   <td>{{ p.peca_nome }}</td>
                   <td class="col-right">{{ p.quantidade }}</td>
-                  <td class="col-right">{{ p.preco_venda_unitario.toFixed(2) }} €</td>
-                  <td class="col-right">{{ p.subtotal.toFixed(2) }} €</td>
+                  <td v-if="canAddParts" class="col-remove">
+                    <button
+                      class="btn-remove"
+                      :disabled="removingPecaId === p.peca_id"
+                      @click="removePeca(p.peca_id)"
+                      title="Remover peça"
+                    >✕</button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -395,7 +429,7 @@ function fmtDateTime(dt) {
                     @mousedown.prevent="selectPeca(p)"
                   >
                     <span class="peca-nome">{{ p.nome }}</span>
-                    <span class="peca-ref">{{ p.referencia }} · {{ p.preco_venda.toFixed(2) }} €</span>
+                    <span class="peca-ref">{{ p.referencia }}</span>
                   </div>
                 </div>
                 <LoadingSpinner v-if="pecaSearchLoading" />
@@ -531,6 +565,10 @@ function fmtDateTime(dt) {
 .table td { padding: 0.6rem 0; border-bottom: 1px solid #f3f4f6; }
 .table tbody tr:last-child td { border-bottom: none; }
 .col-right { text-align: right; }
+.col-remove { text-align: right; width: 2rem; }
+.btn-remove { background: none; border: none; color: #9ca3af; font-size: 0.85rem; cursor: pointer; padding: 0.2rem 0.4rem; border-radius: 4px; transition: color 0.1s, background 0.1s; }
+.btn-remove:hover:not(:disabled) { color: #dc2626; background: #fef2f2; }
+.btn-remove:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .add-peca { border-top: 1px solid #f3f4f6; margin-top: 1rem; padding-top: 1rem; }
 .peca-search-wrap { position: relative; margin-bottom: 0.5rem; }

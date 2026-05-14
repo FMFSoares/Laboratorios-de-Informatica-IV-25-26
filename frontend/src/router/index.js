@@ -94,6 +94,12 @@ const routes = [
         component: () => import('../views/stock/Index.vue'),
         meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'MECANICO'] },
       },
+      {
+        path: 'pecas/:id',
+        name: 'PecaDetalhe',
+        component: () => import('../views/pecas/Detail.vue'),
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'MECANICO'] },
+      },
 
       // ── Faturas ─────────────────────────────────────────────
       {

@@ -52,6 +52,16 @@ class StockItemResponse(BaseModel):
     )
 
 
+# ── Schema de atualização de mínimo ──────────────────────────────────────────
+
+
+class StockMinimoUpdate(BaseModel):
+    """Body do PATCH /api/v1/stock/{peca_id}/minimo."""
+
+    loja_id: int = Field(..., gt=0)
+    limite_minimo: int = Field(..., ge=0)
+
+
 # ── Schema de entrada de stock ────────────────────────────────────────────────
 
 

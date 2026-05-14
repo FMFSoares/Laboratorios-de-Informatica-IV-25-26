@@ -7,6 +7,25 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from app.schemas.common import validate_nif, validate_telemovel
 
 
+# ── Schema de atualização ────────────────────────────────────────────────────
+
+
+class ClienteUpdate(BaseModel):
+    """Body do PATCH /api/v1/clientes/{id}. Todos os campos são opcionais."""
+
+    nome: str | None = Field(None, min_length=1)
+    telemovel: str | None = None
+    email: EmailStr | None = None
+    morada: str | None = None
+
+    @field_validator("telemovel")
+    @classmethod
+    def telemovel_valido(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return validate_telemovel(v)
+
+
 # ── Schema de criação ─────────────────────────────────────────────────────────
 
 
@@ -72,6 +91,8 @@ class ClienteResponse(BaseModel):
     consentimento_rgpd: bool
     data_registo: datetime
     loja_id: int
+    nivel_fidelizacao: int = Field(0, ge=0, le=5, description="Nível de fidelização (0–5) calculado do histórico de OS.")
+    desconto_sugerido_pct: float = Field(0.0, ge=0.0, le=10.0, description="Desconto sugerido em % (nivel * 2, max 10%).")
 
     model_config = ConfigDict(
         from_attributes=True,

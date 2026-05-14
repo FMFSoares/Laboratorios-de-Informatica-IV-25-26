@@ -8,6 +8,7 @@ from app.repositories.cliente_repository import ClienteRepository
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.cliente import (
     ClienteCreate,
+    ClienteUpdate,
     ClienteDetalheResponse,
     ClienteHistoricoItem,
     ClienteResponse,
@@ -15,6 +16,16 @@ from app.schemas.cliente import (
 from app.schemas.common import DataResponse, PaginatedResponse
 from app.schemas.utilizador import PerfilUtilizador
 from app.utils.permissions import check_loja_access
+
+
+def _calcular_fidelizacao(cliente_id: int) -> tuple[int, float]:
+    """Returns (nivel, desconto_pct). nivel = floor(log2(n_concluidas+1)), capped at 5."""
+    from math import floor, log2
+    from app.repositories.ordem_servico_repository import MockOrdemServicoRepository
+    oss = MockOrdemServicoRepository().list_by_cliente(cliente_id)
+    n = sum(1 for o in oss if o.estado.value in ("CONCLUIDA", "FATURADA"))
+    nivel = min(5, int(floor(log2(n + 1))))
+    return nivel, float(nivel * 2)
 
 
 def _find(cliente_id: int) -> Cliente | None:
@@ -38,8 +49,12 @@ class ClienteService:
         clientes_db = self.repo.get_all(skip=skip, limit=page_size, loja_id=loja_id, query_str=query)
         pages = max(1, -(-total // page_size))
 
+        def _enrich(c) -> ClienteResponse:
+            nivel, desconto = _calcular_fidelizacao(c.id)
+            return ClienteResponse.model_validate(c).model_copy(update={"nivel_fidelizacao": nivel, "desconto_sugerido_pct": desconto})
+
         return PaginatedResponse[ClienteResponse](
-            data=[ClienteResponse.model_validate(c) for c in clientes_db],
+            data=[_enrich(c) for c in clientes_db],
             total=total,
             page=page,
             page_size=page_size,
@@ -70,10 +85,28 @@ class ClienteService:
             )
         check_loja_access(cliente.loja_id, current_user)
 
-        # O SQLAlchemy relation mapeia automaticamente a "lista de trotinetes" atráves do Pydantic
-        return DataResponse[ClienteDetalheResponse](
-            data=ClienteDetalheResponse.model_validate(cliente),
+        nivel, desconto = _calcular_fidelizacao(cliente_id)
+        resp = ClienteDetalheResponse.model_validate(cliente).model_copy(
+            update={"nivel_fidelizacao": nivel, "desconto_sugerido_pct": desconto}
         )
+        return DataResponse[ClienteDetalheResponse](data=resp)
+
+    def atualizar(self, cliente_id: int, body: ClienteUpdate, current_user: CurrentUserResponse) -> DataResponse[ClienteResponse]:
+        cliente = self.repo.get_by_id(cliente_id)
+        if not cliente:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"detail": "Cliente não encontrado.", "code": "RESOURCE_NOT_FOUND"},
+            )
+        check_loja_access(cliente.loja_id, current_user)
+
+        data = body.model_dump(exclude_unset=True)
+        updated = self.repo.update(cliente_id, data)
+        nivel, desconto = _calcular_fidelizacao(cliente_id)
+        resp = ClienteResponse.model_validate(updated).model_copy(
+            update={"nivel_fidelizacao": nivel, "desconto_sugerido_pct": desconto}
+        )
+        return DataResponse[ClienteResponse](data=resp, message="Cliente atualizado com sucesso.")
 
     def historico(self, cliente_id: int, page: int, page_size: int, current_user: CurrentUserResponse) -> PaginatedResponse[ClienteHistoricoItem]:
         from app.repositories.ordem_servico_repository import MockOrdemServicoRepository

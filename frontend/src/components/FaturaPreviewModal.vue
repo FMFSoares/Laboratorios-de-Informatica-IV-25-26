@@ -190,6 +190,13 @@ function fmtEur(v) {
                 <span>Peças</span>
                 <span>{{ fmtEur(fatura.subtotal_pecas) }}</span>
               </div>
+              <div v-if="fatura.valor_desconto > 0" class="totals-row totals-row--desconto">
+                <span>
+                  Desconto
+                  <template v-if="fatura.desconto_tipo === 'PERCENTUAL'"> ({{ fatura.desconto_valor }}%)</template>
+                </span>
+                <span>-{{ fmtEur(fatura.valor_desconto) }}</span>
+              </div>
               <div class="totals-row totals-row--total">
                 <span>Total</span>
                 <span>{{ fmtEur(fatura.valor_final) }}</span>
@@ -403,6 +410,7 @@ function fmtEur(v) {
 .totals-row { display: flex; gap: 2.5rem; font-size: 0.85rem; color: #374151; min-width: 200px; justify-content: space-between; }
 .totals-row span:last-child { font-variant-numeric: tabular-nums; }
 .totals-row--total { border-top: 2px solid #111827; padding-top: 0.35rem; margin-top: 0.15rem; font-size: 0.95rem; font-weight: 700; color: #111827; }
+.totals-row--desconto { color: #dc2626; font-weight: 500; }
 
 .inv-footer { margin-top: 1.5rem; font-size: 0.75rem; color: #9ca3af; text-align: center; }
 

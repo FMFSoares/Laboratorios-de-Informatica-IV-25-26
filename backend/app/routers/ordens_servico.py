@@ -184,6 +184,24 @@ def adicionar_peca(
     return ordem_servico_service.adicionar_peca(os_id, body, current_user)
 
 
+@router.delete(
+    "/{os_id}/pecas/{peca_id}",
+    response_model=DataResponse[None],
+    summary="Remover peça da ordem de serviço",
+    responses={
+        404: {"description": "OS ou peça não encontrada"},
+        409: {"description": "OS em estado que não permite remover peças"},
+    },
+)
+def remover_peca(
+    os_id: int,
+    peca_id: int,
+    current_user: CurrentUserResponse = Depends(_tecnicos),
+) -> DataResponse[None]:
+    ordem_servico_service.remover_peca(os_id, peca_id, current_user)
+    return DataResponse[None](data=None, message="Peça removida da ordem de serviço.")
+
+
 @router.post(
     "/{os_id}/observacoes",
     response_model=DataResponse[OrdemServicoObservacaoResponse],

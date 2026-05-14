@@ -21,52 +21,20 @@ class Peca:
 
 class MockPecaRepository:
     _data: ClassVar[list[Peca]] = [
-        Peca(
-            id=1,
-            referencia="PEC-BAT-001",
-            nome="Bateria 36V 7.5Ah Xiaomi",
-            categoria=CategoriaPeca.BATERIA,
-            descricao="Bateria de substituição compatível com Xiaomi M365 e Pro.",
-            unidade="unidade",
-            preco_custo=42.00,
-            preco_venda=89.90,
-            ativo=True,
-        ),
-        Peca(
-            id=2,
-            referencia="PEC-PNE-001",
-            nome="Pneu Traseiro 8.5x2 Xiaomi",
-            categoria=CategoriaPeca.PNEU,
-            descricao="Pneu anti-furo para trotinetes Xiaomi e compatíveis.",
-            unidade="unidade",
-            preco_custo=8.50,
-            preco_venda=18.90,
-            ativo=True,
-        ),
-        Peca(
-            id=3,
-            referencia="PEC-TRA-001",
-            nome="Pastilhas de Travão Ninebot",
-            categoria=CategoriaPeca.TRAVAO,
-            descricao="Kit de pastilhas para travões de disco Ninebot.",
-            unidade="par",
-            preco_custo=5.00,
-            preco_venda=12.50,
-            ativo=True,
-        ),
-        Peca(
-            id=4,
-            referencia="PEC-MOT-001",
-            nome="Motor Hub 250W",
-            categoria=CategoriaPeca.MOTOR,
-            descricao="Motor de substituição 250W compatível com múltiplas marcas.",
-            unidade="unidade",
-            preco_custo=95.00,
-            preco_venda=195.00,
-            ativo=True,
-        ),
+        Peca(id=1,  referencia="PEC-BAT-001", nome="Bateria 36V 7.5Ah Xiaomi",          categoria=CategoriaPeca.BATERIA,      unidade="unidade", preco_custo=42.00, preco_venda=89.90,  ativo=True,  descricao="Bateria de substituição compatível com Xiaomi M365 e Pro."),
+        Peca(id=2,  referencia="PEC-BAT-002", nome="Bateria 48V 10Ah Ninebot",           categoria=CategoriaPeca.BATERIA,      unidade="unidade", preco_custo=58.00, preco_venda=119.90, ativo=True,  descricao="Bateria de alta capacidade para Ninebot Max G30."),
+        Peca(id=3,  referencia="PEC-PNE-001", nome="Pneu Traseiro 8.5x2 Xiaomi",        categoria=CategoriaPeca.PNEU,         unidade="unidade", preco_custo=8.50,  preco_venda=18.90,  ativo=True,  descricao="Pneu anti-furo para trotinetes Xiaomi e compatíveis."),
+        Peca(id=4,  referencia="PEC-PNE-002", nome="Pneu Dianteiro 10x2.5 Ninebot",     categoria=CategoriaPeca.PNEU,         unidade="unidade", preco_custo=11.00, preco_venda=24.90,  ativo=True,  descricao="Pneu pneumático dianteiro para Ninebot Max."),
+        Peca(id=5,  referencia="PEC-TRA-001", nome="Pastilhas de Travão Ninebot",        categoria=CategoriaPeca.TRAVAO,       unidade="par",     preco_custo=5.00,  preco_venda=12.50,  ativo=True,  descricao="Kit de pastilhas para travões de disco Ninebot."),
+        Peca(id=6,  referencia="PEC-TRA-002", nome="Cabo de Travão Universal",           categoria=CategoriaPeca.TRAVAO,       unidade="unidade", preco_custo=3.50,  preco_venda=8.90,   ativo=True,  descricao="Cabo de travão dianteiro/traseiro compatível com a maioria das marcas."),
+        Peca(id=7,  referencia="PEC-MOT-001", nome="Motor Hub 250W",                     categoria=CategoriaPeca.MOTOR,        unidade="unidade", preco_custo=95.00, preco_venda=195.00, ativo=True,  descricao="Motor de substituição 250W compatível com múltiplas marcas."),
+        Peca(id=8,  referencia="PEC-CTR-001", nome="Controlador ESC Xiaomi M365",        categoria=CategoriaPeca.CONTROLADOR,  unidade="unidade", preco_custo=28.00, preco_venda=59.90,  ativo=True,  descricao="Placa controladora (ESC) de substituição para Xiaomi M365."),
+        Peca(id=9,  referencia="PEC-CTR-002", nome="Display BLE Ninebot G30",            categoria=CategoriaPeca.CONTROLADOR,  unidade="unidade", preco_custo=22.00, preco_venda=44.90,  ativo=True,  descricao="Painel de controlo com conectividade Bluetooth para Ninebot G30."),
+        Peca(id=10, referencia="PEC-LUZ-001", nome="Farol Dianteiro LED 5W",             categoria=CategoriaPeca.LUZ,          unidade="unidade", preco_custo=6.00,  preco_venda=14.90,  ativo=True,  descricao="Farol LED de substituição, compatível com Xiaomi e Ninebot."),
+        Peca(id=11, referencia="PEC-ACS-001", nome="Suporte de Telemóvel Universal",     categoria=CategoriaPeca.ACESSORIO,    unidade="unidade", preco_custo=4.00,  preco_venda=9.90,   ativo=True,  descricao="Suporte articulado compatível com guiadores de 22-26mm."),
+        Peca(id=12, referencia="PEC-OUT-001", nome="Kit Parafusos M4 (50 unid.)",        categoria=CategoriaPeca.OUTRO,        unidade="kit",     preco_custo=2.50,  preco_venda=6.50,   ativo=True,  descricao="Conjunto de parafusos M4 inox para reparações gerais."),
     ]
-    _next_id: ClassVar[int] = 5
+    _next_id: ClassVar[int] = 13
 
     def get_by_id(self, peca_id: int) -> Peca | None:
         return next((p for p in self._data if p.id == peca_id), None)

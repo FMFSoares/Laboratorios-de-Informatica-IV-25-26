@@ -16,12 +16,45 @@ class StockItem:
 
 class MockStockRepository:
     _data: ClassVar[list[StockItem]] = [
-        StockItem(peca_id=1, loja_id=1, quantidade=3,  limite_minimo=5),
-        StockItem(peca_id=2, loja_id=1, quantidade=12, limite_minimo=3),
-        StockItem(peca_id=3, loja_id=1, quantidade=8,  limite_minimo=2),
-        StockItem(peca_id=4, loja_id=1, quantidade=2,  limite_minimo=2),
-        StockItem(peca_id=1, loja_id=2, quantidade=0,  limite_minimo=3),
-        StockItem(peca_id=2, loja_id=2, quantidade=5,  limite_minimo=2),
+        # ── Porto (loja 1) ─────────────────────────────────────────────────────
+        # Baterias: bat Xiaomi abaixo do mínimo, bat Ninebot OK
+        StockItem(peca_id=1,  loja_id=1, quantidade=2,  limite_minimo=5),   # ALERTA
+        StockItem(peca_id=2,  loja_id=1, quantidade=8,  limite_minimo=3),
+        # Pneus: dianteiro esgotado, traseiro OK
+        StockItem(peca_id=3,  loja_id=1, quantidade=14, limite_minimo=4),
+        StockItem(peca_id=4,  loja_id=1, quantidade=0,  limite_minimo=3),   # ESGOTADO
+        # Travões: pastilhas OK, cabo abaixo do mínimo
+        StockItem(peca_id=5,  loja_id=1, quantidade=10, limite_minimo=4),
+        StockItem(peca_id=6,  loja_id=1, quantidade=2,  limite_minimo=5),   # ALERTA
+        # Motor: stock baixo
+        StockItem(peca_id=7,  loja_id=1, quantidade=1,  limite_minimo=2),   # ALERTA
+        # Controladores: ESC OK, display esgotado
+        StockItem(peca_id=8,  loja_id=1, quantidade=5,  limite_minimo=2),
+        StockItem(peca_id=9,  loja_id=1, quantidade=0,  limite_minimo=2),   # ESGOTADO
+        # Luzes e acessórios: ambos OK
+        StockItem(peca_id=10, loja_id=1, quantidade=9,  limite_minimo=3),
+        StockItem(peca_id=11, loja_id=1, quantidade=12, limite_minimo=5),
+        StockItem(peca_id=12, loja_id=1, quantidade=6,  limite_minimo=3),
+
+        # ── Lisboa (loja 2) ────────────────────────────────────────────────────
+        # Baterias: Xiaomi esgotada (situação inversa ao Porto), Ninebot excedente
+        StockItem(peca_id=1,  loja_id=2, quantidade=0,  limite_minimo=5),   # ESGOTADO
+        StockItem(peca_id=2,  loja_id=2, quantidade=15, limite_minimo=3),
+        # Pneus: traseiro alerta, dianteiro OK
+        StockItem(peca_id=3,  loja_id=2, quantidade=3,  limite_minimo=4),   # ALERTA
+        StockItem(peca_id=4,  loja_id=2, quantidade=7,  limite_minimo=3),
+        # Travões: pastilhas alerta, cabo OK
+        StockItem(peca_id=5,  loja_id=2, quantidade=3,  limite_minimo=4),   # ALERTA
+        StockItem(peca_id=6,  loja_id=2, quantidade=8,  limite_minimo=5),
+        # Motor: excedente em Lisboa
+        StockItem(peca_id=7,  loja_id=2, quantidade=5,  limite_minimo=2),
+        # Controladores: ESC alerta, display OK
+        StockItem(peca_id=8,  loja_id=2, quantidade=1,  limite_minimo=2),   # ALERTA
+        StockItem(peca_id=9,  loja_id=2, quantidade=4,  limite_minimo=2),
+        # Luzes e acessórios
+        StockItem(peca_id=10, loja_id=2, quantidade=6,  limite_minimo=3),
+        StockItem(peca_id=11, loja_id=2, quantidade=3,  limite_minimo=5),   # ALERTA
+        StockItem(peca_id=12, loja_id=2, quantidade=10, limite_minimo=3),
     ]
 
     def get(self, peca_id: int, loja_id: int) -> StockItem | None:
@@ -68,6 +101,11 @@ class MockStockRepository:
                 detail={"detail": "Stock insuficiente.", "code": "INSUFFICIENT_STOCK"},
             )
         item.quantidade -= quantidade
+
+    def atualizar_minimo(self, peca_id: int, loja_id: int, limite_minimo: int) -> StockItem:
+        item = self.get_or_create(peca_id, loja_id)
+        item.limite_minimo = limite_minimo
+        return item
 
     def adicionar(self, peca_id: int, loja_id: int, quantidade: int) -> StockItem:
         item = self.get_or_create(peca_id, loja_id)

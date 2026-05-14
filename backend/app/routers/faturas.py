@@ -37,7 +37,7 @@ def emitir(
     body: FaturaCreateRequest,
     current_user: CurrentUserResponse = Depends(_autorizados),
 ) -> DataResponse[FaturaResponse]:
-    return fatura_service.emitir(body.ordem_servico_id, current_user)
+    return fatura_service.emitir(body.ordem_servico_id, current_user, body.desconto_tipo, body.desconto_valor)
 
 
 @router.post(

@@ -9,6 +9,7 @@ from app.schemas.stock import (
     StockEntradaRequest,
     StockEntradaResponse,
     StockItemResponse,
+    StockMinimoUpdate,
     StockTransferenciaRequest,
     StockTransferenciaResponse,
 )
@@ -42,6 +43,23 @@ def listar(
     current_user: CurrentUserResponse = Depends(_todos),
 ) -> PaginatedResponse[StockItemResponse]:
     return stock_service.listar(loja_id, alerta, page, page_size, current_user)
+
+
+@router.patch(
+    "/{peca_id}/minimo",
+    response_model=DataResponse[StockItemResponse],
+    summary="Atualizar limite mínimo de stock de uma peça numa loja",
+    responses={
+        403: {"description": "LOJA_MISMATCH"},
+        404: {"description": "Peça ou loja não encontrada"},
+    },
+)
+def atualizar_minimo(
+    peca_id: int,
+    body: StockMinimoUpdate,
+    current_user: CurrentUserResponse = Depends(_gestao),
+) -> DataResponse[StockItemResponse]:
+    return stock_service.atualizar_minimo(peca_id, body.loja_id, body.limite_minimo, current_user)
 
 
 @router.post(
