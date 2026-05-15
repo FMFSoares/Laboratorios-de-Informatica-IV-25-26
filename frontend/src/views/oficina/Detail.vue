@@ -456,13 +456,17 @@ function fmtDateTime(dt) {
           <div class="card card--conclude" v-if="rightColumnAction">
             <button
               class="btn btn--primary btn--action"
-              :disabled="rightColumnAction.estado === 'CONCLUIDA' && !timerAtivo"
               @click="startTransition(rightColumnAction)"
             >
               ✓ {{ rightColumnAction.label }}
             </button>
-            <p v-if="rightColumnAction.estado === 'CONCLUIDA' && !timerAtivo" class="conclude-hint">
-              O timer tem de estar activo para concluir a OS.
+          </div>
+
+          <!-- Waiting for approval notice -->
+          <div class="card card--info" v-if="os.estado === 'AGUARDA_APROVACAO'">
+            <div class="card-title">A aguardar aprovação</div>
+            <p class="info-text">
+              O diagnóstico foi concluído. Esta ordem está a aguardar aprovação do gerente para iniciar a reparação.
             </p>
           </div>
 
@@ -613,7 +617,8 @@ function fmtDateTime(dt) {
 .btn--sm { padding: 0.4rem 0.8rem; font-size: 0.825rem; }
 
 .card--conclude { padding: 1rem 1.5rem; }
-.conclude-hint { margin-top: 0.6rem; font-size: 0.8rem; color: #9ca3af; text-align: center; }
+.card--info { background: #fffbeb; border: 1px solid #fde68a; }
+.info-text { font-size: 0.875rem; color: #92400e; line-height: 1.6; margin: 0; }
 
 .mono { font-family: 'Courier New', monospace; }
 

@@ -48,12 +48,12 @@ function matchSearch(o) {
 }
 
 const avaliacao = computed(() => {
-  const filtered = ordens.value.filter(o => ESTADOS_AVALIACAO.includes(o.estado) && !o.tem_timer_ativo && matchSearch(o))
+  const filtered = ordens.value.filter(o => ESTADOS_AVALIACAO.includes(o.estado) && matchSearch(o))
   return applySort(filtered, avalSort.value)
 })
 
 const reparacao = computed(() => {
-  const filtered = ordens.value.filter(o => ESTADOS_REPARACAO.includes(o.estado) && !o.tem_timer_ativo && matchSearch(o))
+  const filtered = ordens.value.filter(o => ESTADOS_REPARACAO.includes(o.estado) && matchSearch(o))
   return applySort(filtered, repSort.value)
 })
 
@@ -170,10 +170,13 @@ function fmt(dt) {
           <tr
             v-for="o in avaliacao"
             :key="o.id"
-            class="row"
+            :class="['row', { 'row--active': o.tem_timer_ativo }]"
             @click="handleRowClick(o)"
           >
-            <td class="mono">{{ o.numero }}</td>
+            <td class="mono">
+              {{ o.numero }}
+              <span v-if="o.tem_timer_ativo" class="timer-inline" title="Timer activo">●</span>
+            </td>
             <td class="mono">{{ o.trotinete_numero_serie || '—' }}</td>
             <td>{{ o.cliente_nome || '—' }}</td>
             <td><StatusBadge :estado="o.estado" /></td>
@@ -228,10 +231,13 @@ function fmt(dt) {
           <tr
             v-for="o in reparacao"
             :key="o.id"
-            class="row"
+            :class="['row', { 'row--active': o.tem_timer_ativo }]"
             @click="handleRowClick(o)"
           >
-            <td class="mono">{{ o.numero }}</td>
+            <td class="mono">
+              {{ o.numero }}
+              <span v-if="o.tem_timer_ativo" class="timer-inline" title="Timer activo">●</span>
+            </td>
             <td class="mono">{{ o.trotinete_numero_serie || '—' }}</td>
             <td>{{ o.cliente_nome || '—' }}</td>
             <td><StatusBadge :estado="o.estado" /></td>
@@ -343,5 +349,7 @@ function fmt(dt) {
 .atraso-badge { background: #fef3c7; color: #92400e; font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 999px; }
 .timer-on { color: #1abc9c; font-weight: 700; font-size: 0.82rem; }
 .timer-off { color: #9ca3af; font-size: 0.82rem; }
+.timer-inline { color: #1abc9c; font-size: 0.65rem; margin-left: 0.4rem; vertical-align: middle; }
+.row--active { background: #f0fdf9 !important; }
 
 </style>
