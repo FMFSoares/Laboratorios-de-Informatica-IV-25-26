@@ -1,128 +1,63 @@
-from __future__ import annotations
+from sqlalchemy.orm import Session, joinedload
+from app.models.stock import StockLoja
 
-from dataclasses import dataclass
-from typing import ClassVar
+class StockRepository:
+    def __init__(self, db: Session):
+        self.db = db
 
-from fastapi import HTTPException, status
+    def get(self, peca_id: int, loja_id: int) -> StockLoja | None:
+        return self.db.query(StockLoja).filter(
+            StockLoja.peca_id == peca_id,
+            StockLoja.loja_id == loja_id
+        ).first()
 
+    def get_or_create(self, peca_id: int, loja_id: int) -> StockLoja:
+        stock = self.get(peca_id, loja_id)
+        if not stock:
+            stock = StockLoja(peca_id=peca_id, loja_id=loja_id, quantidade=0, limite_minimo=2)
+            self.db.add(stock)
+            self.db.flush()  # Deixa o commit final para ser gerido pelo Service
+        return stock
 
-@dataclass
-class StockItem:
-    peca_id: int
-    loja_id: int
-    quantidade: int
-    limite_minimo: int
-
-
-class MockStockRepository:
-    _data: ClassVar[list[StockItem]] = [
-        # ── Porto (loja 1) ─────────────────────────────────────────────────────
-        # Baterias: bat Xiaomi abaixo do mínimo, bat Ninebot OK
-        StockItem(peca_id=1,  loja_id=1, quantidade=2,  limite_minimo=5),   # ALERTA
-        StockItem(peca_id=2,  loja_id=1, quantidade=8,  limite_minimo=3),
-        # Pneus: dianteiro esgotado, traseiro OK
-        StockItem(peca_id=3,  loja_id=1, quantidade=14, limite_minimo=4),
-        StockItem(peca_id=4,  loja_id=1, quantidade=0,  limite_minimo=3),   # ESGOTADO
-        # Travões: pastilhas OK, cabo abaixo do mínimo
-        StockItem(peca_id=5,  loja_id=1, quantidade=10, limite_minimo=4),
-        StockItem(peca_id=6,  loja_id=1, quantidade=2,  limite_minimo=5),   # ALERTA
-        # Motor: stock baixo
-        StockItem(peca_id=7,  loja_id=1, quantidade=1,  limite_minimo=2),   # ALERTA
-        # Controladores: ESC OK, display esgotado
-        StockItem(peca_id=8,  loja_id=1, quantidade=5,  limite_minimo=2),
-        StockItem(peca_id=9,  loja_id=1, quantidade=0,  limite_minimo=2),   # ESGOTADO
-        # Luzes e acessórios: ambos OK
-        StockItem(peca_id=10, loja_id=1, quantidade=9,  limite_minimo=3),
-        StockItem(peca_id=11, loja_id=1, quantidade=12, limite_minimo=5),
-        StockItem(peca_id=12, loja_id=1, quantidade=6,  limite_minimo=3),
-
-        # ── Lisboa (loja 2) ────────────────────────────────────────────────────
-        # Baterias: Xiaomi esgotada (situação inversa ao Porto), Ninebot excedente
-        StockItem(peca_id=1,  loja_id=2, quantidade=0,  limite_minimo=5),   # ESGOTADO
-        StockItem(peca_id=2,  loja_id=2, quantidade=15, limite_minimo=3),
-        # Pneus: traseiro alerta, dianteiro OK
-        StockItem(peca_id=3,  loja_id=2, quantidade=3,  limite_minimo=4),   # ALERTA
-        StockItem(peca_id=4,  loja_id=2, quantidade=7,  limite_minimo=3),
-        # Travões: pastilhas alerta, cabo OK
-        StockItem(peca_id=5,  loja_id=2, quantidade=3,  limite_minimo=4),   # ALERTA
-        StockItem(peca_id=6,  loja_id=2, quantidade=8,  limite_minimo=5),
-        # Motor: excedente em Lisboa
-        StockItem(peca_id=7,  loja_id=2, quantidade=5,  limite_minimo=2),
-        # Controladores: ESC alerta, display OK
-        StockItem(peca_id=8,  loja_id=2, quantidade=1,  limite_minimo=2),   # ALERTA
-        StockItem(peca_id=9,  loja_id=2, quantidade=4,  limite_minimo=2),
-        # Luzes e acessórios
-        StockItem(peca_id=10, loja_id=2, quantidade=6,  limite_minimo=3),
-        StockItem(peca_id=11, loja_id=2, quantidade=3,  limite_minimo=5),   # ALERTA
-        StockItem(peca_id=12, loja_id=2, quantidade=10, limite_minimo=3),
-    ]
-
-    def get(self, peca_id: int, loja_id: int) -> StockItem | None:
-        return next(
-            (s for s in self._data if s.peca_id == peca_id and s.loja_id == loja_id),
-            None,
+    def list(self, loja_id: int | None, apenas_alertas: bool, skip: int, limit: int) -> tuple[list[StockLoja], int]:
+        query = self.db.query(StockLoja).options(
+            joinedload(StockLoja.peca),
+            joinedload(StockLoja.loja)
         )
-
-    def get_or_create(self, peca_id: int, loja_id: int) -> StockItem:
-        item = self.get(peca_id, loja_id)
-        if item is None:
-            item = StockItem(peca_id=peca_id, loja_id=loja_id, quantidade=0, limite_minimo=2)
-            self._data.append(item)
-        return item
-
-    def list(
-        self,
-        loja_id: int | None,
-        apenas_alertas: bool,
-        page: int,
-        page_size: int,
-    ) -> tuple[list[StockItem], int]:
-        itens = list(self._data)
+        
         if loja_id is not None:
-            itens = [s for s in itens if s.loja_id == loja_id]
+            query = query.filter(StockLoja.loja_id == loja_id)
+            
         if apenas_alertas:
-            itens = [s for s in itens if s.quantidade <= s.limite_minimo]
-        total = len(itens)
-        start = (page - 1) * page_size
-        return itens[start : start + page_size], total
-
-    def list_all(self) -> list[StockItem]:
-        return list(self._data)
+            query = query.filter(StockLoja.quantidade <= StockLoja.limite_minimo)
+            
+        total = query.count()
+        itens = query.offset(skip).limit(limit).all()
+        return itens, total
 
     def get_disponivel(self, peca_id: int, loja_id: int) -> int:
-        item = self.get(peca_id, loja_id)
-        return item.quantidade if item else 0
+        stock = self.get(peca_id, loja_id)
+        return stock.quantidade if stock else 0
 
-    def consumir(self, peca_id: int, loja_id: int, quantidade: int) -> None:
-        item = self.get(peca_id, loja_id)
-        if item is None or item.quantidade < quantidade:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"detail": "Stock insuficiente.", "code": "INSUFFICIENT_STOCK"},
-            )
-        item.quantidade -= quantidade
+    def adicionar(self, peca_id: int, loja_id: int, quantidade: int) -> StockLoja:
+        stock = self.get_or_create(peca_id, loja_id)
+        stock.quantidade += quantidade
+        return stock
 
-    def atualizar_minimo(self, peca_id: int, loja_id: int, limite_minimo: int) -> StockItem:
-        item = self.get_or_create(peca_id, loja_id)
-        item.limite_minimo = limite_minimo
-        return item
+    def atualizar_minimo(self, peca_id: int, loja_id: int, minimo: int) -> StockLoja:
+        stock = self.get_or_create(peca_id, loja_id)
+        stock.limite_minimo = minimo
+        return stock
 
-    def adicionar(self, peca_id: int, loja_id: int, quantidade: int) -> StockItem:
-        item = self.get_or_create(peca_id, loja_id)
-        item.quantidade += quantidade
-        return item
+    def consumir(self, peca_id: int, loja_id: int, quantidade: int) -> StockLoja:
+        stock = self.get_or_create(peca_id, loja_id)
+        if stock.quantidade < quantidade:
+            raise ValueError("Stock insuficiente")
+        stock.quantidade -= quantidade
+        return stock
 
-    def transferir(self, peca_id: int, loja_origem_id: int, loja_destino_id: int, quantidade: int) -> tuple[StockItem, StockItem]:
-        origem = self.get_or_create(peca_id, loja_origem_id)
-        if origem.quantidade < quantidade:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "detail": f"Stock insuficiente na loja de origem (disponível: {origem.quantidade}).",
-                    "code": "INSUFFICIENT_STOCK",
-                },
-            )
-        destino = self.get_or_create(peca_id, loja_destino_id)
-        origem.quantidade -= quantidade
-        destino.quantidade += quantidade
+    def transferir(self, peca_id: int, loja_origem_id: int, loja_destino_id: int, quantidade: int) -> tuple[StockLoja, StockLoja]:
+        origem = self.consumir(peca_id, loja_origem_id, quantidade) # Reutiliza a lógica e o ValueError se falhar
+        destino = self.adicionar(peca_id, loja_destino_id, quantidade)
+        
         return origem, destino

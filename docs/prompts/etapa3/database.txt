@@ -1,3 +1,5 @@
+--------------------------------- Prompt 1 --------------------------------------------------------
+
 Contexto:
 Atua como um Arquiteto de Software e Especialista em base de dados MySQL. Estamos a desenvolver a camada de dados do projeto DLMCare usando FastAPI e SQLAlchemy 2.0.
 
@@ -40,3 +42,430 @@ Estrutura Exata das Tabelas a Gerar:
     Fatura (__tablename__ = "faturas"): id (PK), numero (unique), ordem_servico_id (FK unique, pois é 1:1), data_emissao, estado (Enum EstadoFatura), subtotal_pecas (float), valor_final (float).
 
     Auditoria (__tablename__ = "auditoria"): id (PK), evento (Enum TipoEventoAuditoria), descricao, utilizador_id (FK nullable), loja_id (FK nullable), ip_origem (nullable), timestamp, detalhe (JSON - usa JSON do SQLAlchemy).
+    
+---------------------------------------------------------------------------------------------------
+
+--------------------------------- Prompt 2 --------------------------------------------------------
+
+Atua como um Arquiteto de Software Sénior. O projeto DLMCare já tem os modelos SQLAlchemy da base de dados criados (@app/models/cliente.py).
+Neste momento, o meu ficheiro @app/services/cliente_service.py ainda está a usar dados em memória.
+
+Objetivo:
+Preciso de fazer a transição para a base de dados real usando o Repository Pattern. Gera o código para os seguintes passos:
+
+1. Criar o app/repositories/cliente_repository.py:
+
+    Cria a classe ClienteRepository que recebe a db: Session no construtor.
+
+    Implementa os métodos SQLAlchemy puros: get_by_id, get_by_nif, get_all, e create (que recebe o schema ClienteCreate). Nada de HTTPExceptions aqui.
+
+2. Refatorar o @app/services/cliente_service.py:
+
+    Apaga a lógica de mocks que lá está.
+
+    A classe ClienteService deve agora receber a dependência do ClienteRepository.
+
+    Atualiza os métodos para chamarem o repositório. Por exemplo, no criar_cliente, usa o repo para verificar se o NIF já existe; se existir, lança HTTPException(400, "NIF já registado"). Se não, chama repo.create().
+
+3. Atualizar o @app/routers/clientes.py:
+
+    Injeta a base de dados nas rotas com db: Session = Depends(get_db).
+
+Mantém o código limpo e usa as tipagens do Pydantic que estão no @app/schemas/cliente.py.
+
+---------------------------------------------------------------------------------------------------
+
+--------------------------------- Prompt 3 --------------------------------------------------------
+
+Contexto:
+Atua como um Arquiteto de Software Sénior. Estamos a ligar a entidade Auditoria à base de dados real (FastAPI + SQLAlchemy 2.0).
+
+Ficheiros de Referência:
+Lê o modelo @app/models/auditoria.py e os schemas @app/schemas/auditoria.py. Lê também o teu ficheiro de serviço atual da auditoria.
+
+Objetivo:
+Gera os ficheiros da camada de dados e atualiza o serviço existente, substituindo os mocks por SQLAlchemy.
+
+1. app/repositories/auditoria_repository.py (Novo):
+
+    Cria a classe AuditoriaRepository com o construtor __init__(self, db: Session).
+
+    Cria o método registar que recebe os dados do evento, cria a instância do modelo Auditoria (usando datetime.now(timezone.utc)), faz add, commit, refresh e devolve a entidade.
+
+    Cria o método listar que recebe os filtros (loja_id, evento, utilizador_id, data_inicio, data_fim) e a paginação (page, page_size). Constrói a query SQLAlchemy dinamicamente, conta o total e devolve o tuplo (itens, total).
+
+2. app/services/auditoria_service.py (Atualizar):
+
+    Apaga a importação do MockAuditoriaRepository.
+
+    Mantém EXATAMENTE os nomes das funções (registar e listar), mas adiciona db: Session como o primeiro parâmetro de cada uma delas.
+
+    Dentro de cada função, instancia o repositório: repo = AuditoriaRepository(db).
+
+    O método listar deve manter a regra de negócio do RBAC: se current_user.perfil != "ADMINISTRADOR", força a pesquisa com loja_id=current_user.loja_id.
+
+    O método listar deve continuar a retornar o PaginatedResponse[AuditoriaItemResponse].
+
+3. app/routers/auditoria.py (Atualizar):
+
+    Atualiza os endpoints para injetar a base de dados (db: Session = Depends(get_db)).
+
+    Atualiza as chamadas a auditoria_service.listar() e auditoria_service.registar() para passarem a variável db como primeiro argumento.
+
+---------------------------------------------------------------------------------------------------
+
+--------------------------------- Prompt 4 --------------------------------------------------------
+
+Contexto:
+Atua como um Arquiteto de Software Sénior. Estamos a ligar a entidade Fatura à base de dados real (FastAPI + SQLAlchemy 2.0), substituindo os mocks.
+
+Ficheiros de Referência:
+Lê o modelo @app/models/fatura.py (e os relacionados @app/models/ordem_servico.py e @app/models/loja.py) e os schemas @app/schemas/fatura.py.
+Lê também o meu serviço e router atuais de faturação.
+
+Objetivo:
+Cria o repositório e refatora o serviço/router para usarem o SQLAlchemy, mantendo toda a lógica de negócio de cálculo de totais e validações.
+
+1. app/repositories/fatura_repository.py (Novo):
+
+    Cria a classe FaturaRepository com __init__(self, db: Session).
+
+    Cria get_by_id(fatura_id: int).
+
+    Cria list(loja_id, ordem_servico_id, data_inicio, data_fim, page, page_size). Faz queries dinâmicas, usa cast(Fatura.data_emissao, Date) se houver filtros de data, conta o total (query.count()) e aplica .offset().limit(). Devolve (itens, total).
+
+    Cria create(...) que recebe os dados calculados do serviço e instancia o modelo Fatura. Importante: Neste repositório, fazes apenas self.db.add(), mas deixa o commit() para o serviço, pois faz parte de uma transação maior.
+
+2. app/services/fatura_service.py (Atualizar):
+
+    Apaga os MockFaturaRepository e MockLojaRepository.
+
+    Mantém os nomes exatos das funções (emitir, obter, descarregar_pdf, enviar_email, listar).
+
+    Adiciona db: Session como o primeiro argumento de TODAS estas funções.
+
+    Na função emitir:
+
+        Instancia o FaturaRepository(db), OrdemServicoRepository(db), e AuditoriaRepository(db).
+
+        Vai buscar a OS à BD. Verifica regras (já faturada? estado não é CONCLUIDA?).
+
+        Calcula o subtotal_pecas, os descontos e o valor_final como já tinhas.
+
+        Cria a fatura via repository (repo.create(...)).
+
+        Atualiza o estado da OS para FATURADA e associa-lhe o fatura_id.
+
+        Cria o registo de auditoria de FATURA_EMITIDA via repo de auditoria.
+
+        No final de tudo, faz um único db.commit() (Transação ACID) e depois db.refresh(fatura) e devolve o schema.
+
+    Nas outras funções, usa os repositórios reais para buscar os dados em vez das listas em memória.
+
+3. app/routers/faturas.py (Atualizar):
+
+    Injeta db: Session = Depends(get_db) em todos os endpoints (emitir, enviar_email, descarregar_pdf, obter, listar).
+
+    Atualiza as chamadas ao fatura_service para passarem o argumento db.
+
+---------------------------------------------------------------------------------------------------
+
+--------------------------------- Prompt 5 --------------------------------------------------------
+
+Contexto:
+Atua como um Arquiteto de Software Sénior. Estamos a ligar a entidade Loja à base de dados real (FastAPI + SQLAlchemy 2.0), substituindo os mocks.
+
+Ficheiros de Referência:
+Lê o modelo @app/models/loja.py e os schemas @app/schemas/loja.py. Lê também o meu repositório mockado, serviço e router atuais das lojas.
+
+Objetivo:
+Cria o repositório real e refatora o serviço/router para usarem o SQLAlchemy, mantendo estritamente a assinatura das funções base para não quebrar as dependências de outros serviços.
+
+1. app/repositories/loja_repository.py (Novo):
+
+    Remove a dataclass e o MockLojaRepository.
+
+    Cria a classe LojaRepository com o construtor __init__(self, db: Session).
+
+    Cria o método get_by_id(loja_id: int) -> Loja | None.
+
+    Cria o método list(loja_id_filtro: int | None, skip: int, limit: int) -> tuple[list[Loja], int]. Constrói a query (db.query(Loja)), aplica o filtro se existir, faz query.count() para o total, e aplica .offset(skip).limit(limit).all().
+
+    Converte os helpers para SQL:
+
+        exists(loja_id: int) -> bool: usa db.query(Loja.id).filter(...).first() is not None.
+
+        get_nome(loja_id: int) -> str | None: faz fetch apenas da coluna nome.
+
+        get_telefone(loja_id: int) -> str | None: faz fetch apenas da coluna telefone.
+
+        as_dict(loja_id: int) -> dict | None: devolve um dict com nome, morada e telefone.
+
+2. app/services/loja_service.py (Atualizar):
+
+    Apaga a instância global _repo = MockLojaRepository().
+
+    Mantém os nomes das funções: get_nome, get_telefone, listar, obter.
+
+    Adiciona db: Session como o primeiro argumento de TODAS as funções.
+
+    Dentro de cada função, instancia repo = LojaRepository(db).
+
+    No método listar: Substitui a lógica de paginação em memória pela chamada ao repositório itens, total = repo.list(loja_id_filtro, skip, limit).
+
+    Mantém as chamadas de segurança check_loja_access.
+
+3. app/routers/lojas.py (Atualizar):
+
+    Importa a base de dados: from app.database import get_db e a Session do sqlalchemy.
+
+    Em cada endpoint (listar, obter), injeta db: Session = Depends(get_db).
+
+    Atualiza as chamadas ao loja_service para passarem o argumento db como primeiro parâmetro.
+
+---------------------------------------------------------------------------------------------------
+
+--------------------------------- Prompt 6 -------------------------------------------------------
+
+Contexto:
+Atua como um Arquiteto de Software Sénior. Estamos a ligar o módulo de Ordem de Serviço (OS) à base de dados real (FastAPI + SQLAlchemy 2.0).
+
+Ficheiros de Referência:
+Lê os modelos @app/models/ordem_servico.py, @app/models/trotinete.py e @app/models/peca.py.
+Lê os schemas @app/schemas/ordem_servico.py.
+Lê também o meu repositório mockado, serviço e router atuais de OS para preservares a lógica de negócio.
+
+Objetivo:
+Criar o repositório real e refatorar o serviço/router para usarem SQLAlchemy, garantindo integridade transacional.
+
+1. app/repositories/ordem_servico_repository.py (Novo):
+
+    Cria a classe OrdemServicoRepository(db: Session).
+
+    Implementa get_by_id (usa joinedload para carregar cliente, trotinete e mecânico).
+
+    Implementa list com todos os filtros (loja, estado, mecânico, datas) e paginação.
+
+    Implementa create (gera número OS-2026-XXXX).
+
+    Implementa métodos para tabelas associadas: adicionar_peca_os, remover_peca_os, registar_tempo, adicionar_observacao.
+
+2. app/services/ordem_servico_service.py (Atualizar):
+
+    Substitui todos os MockRepository pelos repositórios reais.
+
+    Mantém os nomes das funções e a lógica da máquina de estados (_TRANSICOES).
+
+    Adiciona db: Session como primeiro argumento em todas as funções.
+
+    Transações (Crítico): Em funções como adicionar_peca ou atualizar_estado, garante que todas as operações (ex: abater stock + adicionar peça à OS + registar auditoria) correm dentro da mesma transação, fazendo db.commit() apenas no fim.
+
+    No atualizar_estado, integra com o auditoria_service real.
+
+    No adicionar_peca, utiliza o stock_service para consumir stock na base de dados.
+
+3. app/routers/ordem_servico.py (Atualizar):
+
+    Injeta db: Session = Depends(get_db) em todos os endpoints.
+
+    Passa o objeto db para as funções do ordem_servico_service.
+
+Regra Especial: > Na função listar, traduz a lógica de "OS em atraso" (RF17) para uma subquery SQL ou um filtro que compare a data_entrada com a média de tempo das OS concluídas, se possível, ou mantém o filtro em Python após o fetch se for muito complexo.
+
+---------------------------------------------------------------------------------------------------
+
+--------------------------------- Prompt 7 -------------------------------------------------------
+
+Contexto:
+Atua como um Arquiteto de Software Sénior. Estamos a ligar o módulo de Peça (Catálogo) à base de dados real (FastAPI + SQLAlchemy 2.0).
+
+Ficheiros de Referência:
+Lê o modelo @app/models/peca.py e os schemas @app/schemas/peca.py.
+Lê também os ficheiros mockados atuais de Peça (repositório, serviço e router) para manteres a mesma lógica e assinaturas.
+
+Objetivo:
+Criar o repositório real e refatorar o serviço/router para SQLAlchemy, mantendo os filtros de pesquisa e helpers.
+
+1. app/repositories/peca_repository.py (Novo):
+
+    Remove as dataclasses e o MockPecaRepository.
+
+    Cria a classe PecaRepository(db: Session).
+
+    Cria get_by_id(peca_id: int).
+
+    Cria list(query: str | None, categoria: CategoriaPeca | None, skip: int, limit: int).
+
+        Nota de SQL: A pesquisa base deve sempre filtrar por ativo == True. Se houver categoria, filtra. Se houver query, usa or_(Peca.nome.ilike(f"%{query}%"), Peca.referencia.ilike(f"%{query}%")) para pesquisa case-insensitive. Faz query.count() e paginação.
+
+    Cria exists_referencia(referencia: str) -> bool.
+
+    Cria create(...) para adicionar a peça (garante que ativo=True por defeito).
+
+2. app/services/peca_service.py (Atualizar):
+
+    Apaga a instância _repo = MockPecaRepository().
+
+    Importante: Mantém exatamente a assinatura de get_peca_interna, listar, obter e criar, mas adiciona db: Session como o primeiro parâmetro em todas elas.
+
+    Dentro de cada função, instancia repo = PecaRepository(db).
+
+    No criar, a validação de referência duplicada deve usar o repo.exists_referencia(body.referencia).
+
+3. app/routers/pecas.py (Atualizar):
+
+    Importa get_db de app.database.
+
+    Injeta db: Session = Depends(get_db) em todos os endpoints (listar, obter, criar).
+
+    Passa o db como primeiro argumento para as funções do peca_service.
+
+---------------------------------------------------------------------------------------------------
+
+--------------------------------- Prompt 8 -------------------------------------------------------
+
+Contexto:
+Atua como um Arquiteto de Software Sénior. Estamos a ligar o módulo de Trotinete à base de dados real (FastAPI + SQLAlchemy 2.0).
+
+Ficheiros de Referência:
+Lê o modelo @app/models/trotinete.py e os schemas @app/schemas/trotinete.py.
+Lê também os ficheiros atuais (repositório mockado, serviço e router da trotinete).
+
+Objetivo:
+Criar o repositório real e refatorar o serviço/router para SQLAlchemy, mantendo os acessos cruzados com o cliente_service.
+
+1. app/repositories/trotinete_repository.py (Novo):
+
+    Cria a classe TrotineteRepository(db: Session).
+
+    Cria get_by_id(trotinete_id: int).
+
+    Cria list(loja_id, cliente_id, numero_serie, skip, limit). Constrói a query com filtros opcionais, conta o total e aplica a paginação.
+
+    Cria list_by_cliente(cliente_id: int).
+
+    Cria exists_numero_serie(numero_serie: str) -> bool.
+
+    Cria create(...) que recebe os dados e usa datetime.now(timezone.utc) para a data de registo.
+
+    Cria count_by_trotinete(trotinete_id: int) -> int. Dica de SQL: Em vez de chamares o repositório da OS, importa o modelo OrdemServico (from app.models.ordem_servico import OrdemServico) e faz return de self.db.query(OrdemServico).filter(OrdemServico.trotinete_id == trotinete_id).count().
+
+2. app/services/trotinete_service.py (Atualizar):
+
+    Apaga o MockTrotineteRepository.
+
+    Mantém os nomes: _find, get_por_cliente, listar, criar, obter.
+
+    Adiciona db: Session como o primeiro parâmetro em TODAS estas funções.
+
+    Instancia repo = TrotineteRepository(db) dentro das funções.
+
+    Atenção aos imports cruzados: Nas funções criar e obter, quando chamares cliente_service._find(body.cliente_id), não te esqueças de passar o db (ex: cliente_service._find(db, body.cliente_id)).
+
+3. app/routers/trotinetes.py (Atualizar):
+
+    Importa get_db de app.database.
+
+    Injeta db: Session = Depends(get_db) em todos os endpoints (listar, criar, obter).
+
+    Atualiza as chamadas a trotinete_service para passarem a db.
+
+---------------------------------------------------------------------------------------------------
+
+--------------------------------- Prompt 9 -------------------------------------------------------
+
+Contexto:
+Atua como um Arquiteto de Software Sénior. Este é o último módulo a refatorar para SQLAlchemy 2.0 (FastAPI): Utilizador (Staff).
+
+Ficheiros de Referência:
+Lê o modelo @app/models/utilizador.py e os schemas @app/schemas/utilizador.py.
+Lê os ficheiros mockados que te dei no contexto (repositório, serviço e router).
+
+Objetivo:
+Cria o repositório real e refatora o serviço/router para SQLAlchemy.
+
+1. app/repositories/utilizador_repository.py (Novo):
+
+    Remove a dataclass e o mock.
+
+    Cria UtilizadorRepository(db: Session).
+
+    Implementa get_by_id(utilizador_id: int).
+
+    Implementa get_by_email(email: str) (importante para o login!). Usa ilike para case-insensitivity ou guarda/pesquisa sempre em minúsculas.
+
+    Implementa list(skip, limit) com query.count(). Usa joinedload(Utilizador.loja) para trazer logo os dados da loja associada sem fazer N+1 queries.
+
+    Implementa list_by_perfil(perfil, loja_id=None).
+
+    Implementa exists_email(email: str) -> bool.
+
+    Implementa create(...).
+
+2. app/services/utilizador_service.py (Atualizar):
+
+    Apaga os MockRepository.
+
+    Adiciona db: Session como primeiro argumento nas funções listar_utilizadores e criar_utilizador.
+
+    Instancia repo = UtilizadorRepository(db) e loja_repo = LojaRepository(db) nas funções.
+
+    No criar_utilizador, se vier um loja_id, usa o loja_repo para validar se a loja existe na BD (caso contrário o SQLAlchemy daria erro de Foreign Key). Depois gera o hash da password e chama o repo.create().
+
+    Se o modelo SQLAlchemy retornar o objeto loja como um relacionamento, o Pydantic (UtilizadorResponse(..., loja_nome=...)) poderá precisar de uma pequena adaptação na hora de construir a resposta (ex: loja_nome=novo.loja.nome if novo.loja else None).
+
+3. app/routers/utilizadores.py (Atualizar):
+
+    Injeta db: Session = Depends(get_db) nos endpoints listar e criar.
+
+    Passa o db para o serviço.
+
+---------------------------------------------------------------------------------------------------
+
+--------------------------------- Prompt 10 -------------------------------------------------------
+
+Contexto:
+Atua como um Arquiteto de Software Sénior. Este é o último módulo a migrar para SQLAlchemy 2.0: Stock (Inventário).
+
+Ficheiros de Referência:
+Lê os modelos @app/models/stock.py, @app/models/peca.py, @app/models/loja.py e os schemas @app/schemas/stock.py.
+Lê os ficheiros mockados do módulo de stock (repositório, serviço e router) que constam no contexto.
+
+Objetivo:
+Criar o repositório real e refatorar o serviço/router para SQLAlchemy, mantendo a integridade nas operações matemáticas de stock.
+
+1. app/repositories/stock_repository.py (Novo):
+
+    Remove a dataclass e o MockStockRepository.
+
+    Cria a classe StockRepository(db: Session).
+
+    Implementa get(peca_id: int, loja_id: int) -> StockLoja | None.
+
+    Implementa get_or_create(peca_id: int, loja_id: int) -> StockLoja. Se não existir, instancia com quantidade=0 e limite_minimo=2, adiciona à db e devolve.
+
+    Implementa list(loja_id, apenas_alertas, skip, limit). Faz o fetch paginado e usa joinedload para trazer a peça e a loja numa só query. Se apenas_alertas for True, filtra onde quantidade <= limite_minimo.
+
+    Implementa get_disponivel, adicionar e atualizar_minimo.
+
+    Refatoração Crítica (consumir e transferir): Retira o HTTPException daqui. Em vez disso, se o stock for insuficiente, levanta um simples ValueError("Stock insuficiente").
+
+2. app/services/stock_service.py (Atualizar):
+
+    Remove os Mocks (MockStockRepository, MockLojaRepository, MockPecaRepository).
+
+    Mantém as assinaturas das funções (consumir_stock, get_stock_disponivel, listar, atualizar_minimo, entrada, transferencia), mas adiciona db: Session como o primeiro parâmetro.
+
+    Instancia repo = StockRepository(db). Para as validações de Loja e Peça, instancia o LojaRepository(db) e PecaRepository(db) em vez dos mocks.
+
+    Nas funções consumir_stock e transferencia: Apanha o ValueError que o repo agora lança usando um bloco try...except ValueError as e:, e aí sim, levanta o HTTPException(400, detail=str(e)). Faz o db.commit() no final destas operações de escrita.
+
+    No _to_item_response, adapta para ler o peca.nome e loja.nome diretamente dos relacionamentos do SQLAlchemy (ex: s.peca.nome), poupando queries adicionais.
+
+3. app/routers/stock.py (Atualizar):
+
+    Injeta db: Session = Depends(get_db) em todos os endpoints.
+
+    Passa a db como primeiro argumento para o stock_service.
+
+---------------------------------------------------------------------------------------------------

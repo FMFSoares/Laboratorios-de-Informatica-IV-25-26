@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
+from app.database import get_db
 from app.auth.dependencies import require_roles
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.common import DataResponse, PaginatedResponse
 from app.schemas.peca import CategoriaPeca, PecaCreate, PecaDetalheResponse, PecaResponse
 from app.schemas.utilizador import PerfilUtilizador
-from app.services import peca_service
+from app.services.peca_service import PecaService
+from app.repositories.peca_repository import PecaRepository
 
 router = APIRouter(prefix="/pecas", tags=["peças"])
 
@@ -22,6 +25,8 @@ _escrita = require_roles(
     PerfilUtilizador.GERENTE_LOJA,
 )
 
+def get_peca_service(db: Session = Depends(get_db)) -> PecaService:
+    return PecaService(PecaRepository(db))
 
 @router.get(
     "",
@@ -34,8 +39,9 @@ def listar(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     _: CurrentUserResponse = Depends(_todos),
+    service: PecaService = Depends(get_peca_service),
 ) -> PaginatedResponse[PecaResponse]:
-    return peca_service.listar(query, categoria, page, page_size)
+    return service.listar(query, categoria, page, page_size)
 
 
 @router.get(
@@ -47,8 +53,9 @@ def listar(
 def obter(
     peca_id: int,
     _: CurrentUserResponse = Depends(_todos),
+    service: PecaService = Depends(get_peca_service),
 ) -> DataResponse[PecaDetalheResponse]:
-    return peca_service.obter(peca_id)
+    return service.obter(peca_id)
 
 
 @router.post(
@@ -61,5 +68,6 @@ def obter(
 def criar(
     body: PecaCreate,
     _: CurrentUserResponse = Depends(_escrita),
+    service: PecaService = Depends(get_peca_service),
 ) -> DataResponse[PecaResponse]:
-    return peca_service.criar(body)
+    return service.criar(body)

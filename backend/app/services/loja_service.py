@@ -1,52 +1,46 @@
-from __future__ import annotations
+from fastapi import HTTPException
 
-from fastapi import HTTPException, status
-
-from app.repositories.loja_repository import MockLojaRepository
+from app.repositories.loja_repository import LojaRepository
 from app.schemas.auth import CurrentUserResponse
-from app.schemas.common import DataResponse, PaginatedResponse
-from app.schemas.loja import LojaResponse
 from app.schemas.utilizador import PerfilUtilizador
-from app.utils.permissions import check_loja_access
+from app.schemas.common import PaginatedResponse
+from app.schemas.loja import LojaResumo, LojaResponse
 
-_repo = MockLojaRepository()
+def check_loja_access(current_user: CurrentUserResponse, loja_id: int):
+    if current_user.perfil != PerfilUtilizador.ADMINISTRADOR and current_user.loja_id != loja_id:
+        raise HTTPException(status_code=403, detail="Acesso negado a esta loja.")
 
+class LojaService:
+    def __init__(self, repo: LojaRepository):
+        self.repo = repo
 
-# ── Helpers for other services ────────────────────────────────────────────────
+    def get_nome(self, loja_id: int) -> str | None:
+        return self.repo.get_nome(loja_id)
 
-def get_nome(loja_id: int) -> str | None:
-    return _repo.get_nome(loja_id)
+    def get_telefone(self, loja_id: int) -> str | None:
+        return self.repo.get_telefone(loja_id)
 
+    def listar(
+        self,
+        loja_id_filtro: int | None,
+        page: int,
+        page_size: int,
+        current_user: CurrentUserResponse
+    ) -> PaginatedResponse[LojaResumo]:
+        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR:
+            loja_id_filtro = current_user.loja_id
 
-def get_telefone(loja_id: int) -> str | None:
-    return _repo.get_telefone(loja_id)
-
-
-# ── Casos de uso ──────────────────────────────────────────────────────────────
-
-def listar(page: int, page_size: int, current_user: CurrentUserResponse) -> PaginatedResponse[LojaResponse]:
-    loja_id_filtro = None if current_user.perfil == PerfilUtilizador.ADMINISTRADOR else current_user.loja_id
-    itens = _repo.list(loja_id_filtro)
-
-    total = len(itens)
-    pages = max(1, -(-total // page_size))
-    start = (page - 1) * page_size
-
-    return PaginatedResponse[LojaResponse](
-        data=[LojaResponse(**l.__dict__) for l in itens[start : start + page_size]],
-        total=total,
-        page=page,
-        page_size=page_size,
-        pages=pages,
-    )
-
-
-def obter(loja_id: int, current_user: CurrentUserResponse) -> DataResponse[LojaResponse]:
-    loja = _repo.get_by_id(loja_id)
-    if loja is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Loja não encontrada.", "code": "RESOURCE_NOT_FOUND"},
+        skip = (page - 1) * page_size
+        itens, total = self.repo.list(loja_id_filtro, skip, page_size)
+        pages = max(1, -(-total // page_size))
+        
+        return PaginatedResponse[LojaResumo](
+            data=itens, total=total, page=page, page_size=page_size, pages=pages
         )
-    check_loja_access(loja_id, current_user)
-    return DataResponse[LojaResponse](data=LojaResponse(**loja.__dict__))
+
+    def obter(self, loja_id: int, current_user: CurrentUserResponse) -> LojaResponse:
+        check_loja_access(current_user, loja_id)
+        loja = self.repo.get_by_id(loja_id)
+        if not loja:
+            raise HTTPException(status_code=404, detail="Loja não encontrada.")
+        return loja

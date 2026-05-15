@@ -10,7 +10,7 @@ CREATE DATABASE IF NOT EXISTS dlmcare
     COLLATE utf8mb4_unicode_ci;
 
 -- Criar utilizador da aplicação (substituir a password)
-CREATE USER IF NOT EXISTS 'dlmcare_user'@'%' IDENTIFIED BY 'changeme';
+CREATE USER IF NOT EXISTS 'dlmcare_user'@'%' IDENTIFIED BY 'DlmCare_2026!';
 
 -- Conceder permissões apenas ao schema dlmcare
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from app.database import get_db
 
 from app.auth.dependencies import get_current_user
 from app.schemas.auth import (
@@ -10,9 +12,12 @@ from app.schemas.auth import (
     RefreshTokenResponse,
     TokenResponse,
 )
-from app.services import auth_service
+from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["autenticação"])
+
+def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
+    return AuthService(db)
 
 
 @router.post(
@@ -25,8 +30,8 @@ router = APIRouter(prefix="/auth", tags=["autenticação"])
         403: {"description": "Conta inativa"},
     },
 )
-def login(body: LoginRequest) -> TokenResponse:
-    return auth_service.login(body.email, body.password)
+def login(body: LoginRequest, service: AuthService = Depends(get_auth_service)) -> TokenResponse:
+    return service.login(body.email, body.password)
 
 
 @router.post(
@@ -37,8 +42,8 @@ def login(body: LoginRequest) -> TokenResponse:
         401: {"description": "Refresh token inválido ou expirado"},
     },
 )
-def refresh(body: RefreshTokenRequest) -> RefreshTokenResponse:
-    return auth_service.refresh(body.refresh_token)
+def refresh(body: RefreshTokenRequest, service: AuthService = Depends(get_auth_service)) -> RefreshTokenResponse:
+    return service.refresh(body.refresh_token)
 
 
 @router.get(

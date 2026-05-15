@@ -1,167 +1,102 @@
-from __future__ import annotations
-
 from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
 
-from app.repositories.stock_repository import MockStockRepository, StockItem
-from app.repositories.loja_repository import MockLojaRepository
-from app.repositories.peca_repository import MockPecaRepository
+from app.repositories.stock_repository import StockRepository
+from app.repositories.loja_repository import LojaRepository
+from app.repositories.peca_repository import PecaRepository
+from app.schemas.stock import StockItemResponse, StockEntradaRequest, StockEntradaResponse, StockTransferenciaRequest, StockTransferenciaResponse
 from app.schemas.auth import CurrentUserResponse
-from app.schemas.common import DataResponse, PaginatedResponse
-from app.schemas.stock import (
-    StockEntradaRequest,
-    StockEntradaResponse,
-    StockItemResponse,
-    StockTransferenciaRequest,
-    StockTransferenciaResponse,
-)
 from app.schemas.utilizador import PerfilUtilizador
-from app.utils.permissions import check_loja_access
+from app.schemas.common import PaginatedResponse, DataResponse
 
-_repo = MockStockRepository()
-_loja_repo = MockLojaRepository()
-_peca_repo = MockPecaRepository()
+class StockService:
+    def __init__(self, db: Session):
+        self.db = db
+        self.repo = StockRepository(db)
+        self.loja_repo = LojaRepository(db)
+        self.peca_repo = PecaRepository(db)
 
-
-def _to_item_response(s: StockItem) -> StockItemResponse:
-    peca = _peca_repo.get_by_id(s.peca_id)
-    loja_nome = _loja_repo.get_nome(s.loja_id) or f"Loja {s.loja_id}"
-    return StockItemResponse(
-        peca_id=s.peca_id,
-        peca_referencia=peca.referencia if peca else "—",
-        peca_nome=peca.nome if peca else "—",
-        loja_id=s.loja_id,
-        loja_nome=loja_nome,
-        quantidade=s.quantidade,
-        limite_minimo=s.limite_minimo,
-        alerta=s.quantidade <= s.limite_minimo,
-    )
-
-
-def consumir_stock(peca_id: int, loja_id: int, quantidade: int) -> None:
-    """Reduces stock when a part is applied to an OS. Called by ordem_servico_service."""
-    _repo.consumir(peca_id, loja_id, quantidade)
-
-
-def get_stock_disponivel(peca_id: int, loja_id: int) -> int:
-    return _repo.get_disponivel(peca_id, loja_id)
-
-
-def listar(
-    loja_id: int | None,
-    apenas_alertas: bool,
-    page: int,
-    page_size: int,
-    current_user: CurrentUserResponse,
-) -> PaginatedResponse[StockItemResponse]:
-    if current_user.perfil not in (PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA):
-        loja_id = current_user.loja_id
-
-    itens, total = _repo.list(loja_id, apenas_alertas, page, page_size)
-    pages = max(1, -(-total // page_size))
-
-    return PaginatedResponse[StockItemResponse](
-        data=[_to_item_response(s) for s in itens],
-        total=total,
-        page=page,
-        page_size=page_size,
-        pages=pages,
-    )
-
-
-def atualizar_minimo(
-    peca_id: int,
-    loja_id: int,
-    limite_minimo: int,
-    current_user: CurrentUserResponse,
-) -> DataResponse[StockItemResponse]:
-    check_loja_access(loja_id, current_user)
-
-    if not _loja_repo.exists(loja_id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Loja não encontrada.", "code": "RESOURCE_NOT_FOUND"},
-        )
-    if _peca_repo.get_by_id(peca_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Peça não encontrada.", "code": "RESOURCE_NOT_FOUND"},
+    def _to_item_response(self, s) -> StockItemResponse:
+        # Aproveita os relacionamentos SQLAlchemy (joinedload do repository) evitando N+1 queries.
+        return StockItemResponse(
+            peca_id=s.peca_id,
+            peca_referencia=s.peca.referencia if s.peca else "",
+            peca_nome=s.peca.nome if s.peca else "",
+            loja_id=s.loja_id,
+            loja_nome=s.loja.nome if s.loja else "",
+            quantidade=s.quantidade,
+            limite_minimo=s.limite_minimo,
+            alerta=s.quantidade <= s.limite_minimo
         )
 
-    item = _repo.atualizar_minimo(peca_id, loja_id, limite_minimo)
-    return DataResponse[StockItemResponse](
-        data=_to_item_response(item),
-        message="Limite mínimo atualizado.",
-    )
+    def consumir_stock(self, peca_id: int, loja_id: int, quantidade: int):
+        try:
+            self.repo.consumir(peca_id, loja_id, quantidade)
+            self.db.commit()
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+    def get_stock_disponivel(self, peca_id: int, loja_id: int) -> int:
+        return self.repo.get_disponivel(peca_id, loja_id)
 
-def entrada(
-    body: StockEntradaRequest,
-    current_user: CurrentUserResponse,
-) -> DataResponse[StockEntradaResponse]:
-    check_loja_access(body.loja_id, current_user)
+    def listar(
+        self, loja_id: int | None, apenas_alertas: bool, page: int, page_size: int, current_user: CurrentUserResponse
+    ) -> PaginatedResponse[StockItemResponse]:
+        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR:
+            loja_id = current_user.loja_id
 
-    if not _loja_repo.exists(body.loja_id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Loja não encontrada.", "code": "RESOURCE_NOT_FOUND"},
+        skip = (page - 1) * page_size
+        itens, total = self.repo.list(loja_id, apenas_alertas, skip, page_size)
+        pages = max(1, -(-total // page_size))
+
+        data = [self._to_item_response(i) for i in itens]
+
+        return PaginatedResponse[StockItemResponse](
+            data=data, total=total, page=page, page_size=page_size, pages=pages
         )
 
-    peca = _peca_repo.get_by_id(body.peca_id)
-    if peca is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Peça não encontrada.", "code": "RESOURCE_NOT_FOUND"},
+    def atualizar_minimo(self, peca_id: int, loja_id: int, minimo: int, current_user: CurrentUserResponse):
+        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR and current_user.loja_id != loja_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado à loja")
+            
+        self.repo.atualizar_minimo(peca_id, loja_id, minimo)
+        self.db.commit()
+
+    def entrada(self, body: StockEntradaRequest, current_user: CurrentUserResponse) -> DataResponse[StockEntradaResponse]:
+        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR and body.loja_id != current_user.loja_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado à loja")
+
+        if not self.loja_repo.get_by_id(body.loja_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loja não encontrada")
+            
+        if not self.peca_repo.get_by_id(body.peca_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Peça não encontrada")
+
+        stock = self.repo.adicionar(body.peca_id, body.loja_id, body.quantidade)
+        self.db.commit()
+        
+        return DataResponse[StockEntradaResponse](
+            data=StockEntradaResponse(peca_id=stock.peca_id, loja_id=stock.loja_id, quantidade=body.quantidade),
+            message="Entrada de stock registada com sucesso."
         )
 
-    item = _repo.get_or_create(body.peca_id, body.loja_id)
-    quantidade_anterior = item.quantidade
-    item = _repo.adicionar(body.peca_id, body.loja_id, body.quantidade)
+    def transferencia(self, body: StockTransferenciaRequest, current_user: CurrentUserResponse) -> DataResponse[StockTransferenciaResponse]:
+        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR and body.loja_origem_id != current_user.loja_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado à loja de origem")
 
-    return DataResponse[StockEntradaResponse](
-        data=StockEntradaResponse(
-            peca_id=body.peca_id,
-            peca_nome=peca.nome,
-            loja_id=body.loja_id,
-            quantidade_anterior=quantidade_anterior,
-            quantidade_adicionada=body.quantidade,
-            quantidade_atual=item.quantidade,
-            alerta=item.quantidade <= item.limite_minimo,
-        ),
-        message="Entrada de stock registada.",
-    )
+        if not self.loja_repo.get_by_id(body.loja_origem_id) or not self.loja_repo.get_by_id(body.loja_destino_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loja de origem ou destino não encontrada")
 
+        if not self.peca_repo.get_by_id(body.peca_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Peça não encontrada")
 
-def transferencia(
-    body: StockTransferenciaRequest,
-    current_user: CurrentUserResponse,
-) -> DataResponse[StockTransferenciaResponse]:
-    check_loja_access(body.loja_origem_id, current_user)
+        try:
+            origem, destino = self.repo.transferir(body.peca_id, body.loja_origem_id, body.loja_destino_id, body.quantidade)
+            self.db.commit()
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    for loja_id in (body.loja_origem_id, body.loja_destino_id):
-        if not _loja_repo.exists(loja_id):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"detail": f"Loja {loja_id} não encontrada.", "code": "RESOURCE_NOT_FOUND"},
-            )
-
-    peca = _peca_repo.get_by_id(body.peca_id)
-    if peca is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Peça não encontrada.", "code": "RESOURCE_NOT_FOUND"},
+        return DataResponse[StockTransferenciaResponse](
+            data=StockTransferenciaResponse(peca_id=origem.peca_id, loja_origem_id=origem.loja_id, loja_destino_id=destino.loja_id, quantidade=body.quantidade),
+            message="Transferência registada com sucesso."
         )
-
-    origem, destino = _repo.transferir(body.peca_id, body.loja_origem_id, body.loja_destino_id, body.quantidade)
-
-    return DataResponse[StockTransferenciaResponse](
-        data=StockTransferenciaResponse(
-            peca_id=body.peca_id,
-            peca_nome=peca.nome,
-            loja_origem_id=body.loja_origem_id,
-            loja_destino_id=body.loja_destino_id,
-            quantidade_transferida=body.quantidade,
-            stock_origem_apos=origem.quantidade,
-            stock_destino_apos=destino.quantidade,
-        ),
-        message="Transferência de stock concluída.",
-    )

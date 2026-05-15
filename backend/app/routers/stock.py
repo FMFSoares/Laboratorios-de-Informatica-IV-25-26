@@ -1,97 +1,42 @@
-from __future__ import annotations
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.orm import Session
 
-from fastapi import APIRouter, Depends, Query
-
-from app.auth.dependencies import require_roles
+from app.database import get_db
+from app.auth.dependencies import require_roles, get_current_user
 from app.schemas.auth import CurrentUserResponse
-from app.schemas.common import DataResponse, PaginatedResponse
-from app.schemas.stock import (
-    StockEntradaRequest,
-    StockEntradaResponse,
-    StockItemResponse,
-    StockMinimoUpdate,
-    StockTransferenciaRequest,
-    StockTransferenciaResponse,
-)
 from app.schemas.utilizador import PerfilUtilizador
-from app.services import stock_service
+from app.schemas.common import PaginatedResponse, DataResponse
+from app.schemas.stock import StockItemResponse, StockEntradaRequest, StockEntradaResponse, StockTransferenciaRequest, StockTransferenciaResponse
+from app.services.stock_service import StockService
 
 router = APIRouter(prefix="/stock", tags=["stock"])
 
-_todos = require_roles(
-    PerfilUtilizador.ADMINISTRADOR,
-    PerfilUtilizador.GERENTE_LOJA,
-    PerfilUtilizador.RECECIONISTA,
-    PerfilUtilizador.MECANICO,
-)
-_gestao = require_roles(
-    PerfilUtilizador.ADMINISTRADOR,
-    PerfilUtilizador.GERENTE_LOJA,
-)
+def get_stock_service(db: Session = Depends(get_db)) -> StockService:
+    return StockService(db)
 
-
-@router.get(
-    "",
-    response_model=PaginatedResponse[StockItemResponse],
-    summary="Consultar stock",
-)
-def listar(
-    loja_id: int | None = Query(None, description="Filtrar por loja (só ADMINISTRADOR)."),
-    alerta: bool = Query(False, description="Se true, devolve apenas peças abaixo do limite mínimo."),
+@router.get("/", response_model=PaginatedResponse[StockItemResponse])
+def listar_stock(
+    loja_id: int | None = Query(None),
+    apenas_alertas: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: CurrentUserResponse = Depends(_todos),
-) -> PaginatedResponse[StockItemResponse]:
-    return stock_service.listar(loja_id, alerta, page, page_size, current_user)
+    current_user: CurrentUserResponse = Depends(get_current_user),
+    service: StockService = Depends(get_stock_service)
+):
+    return service.listar(loja_id, apenas_alertas, page, page_size, current_user)
 
-
-@router.patch(
-    "/{peca_id}/minimo",
-    response_model=DataResponse[StockItemResponse],
-    summary="Atualizar limite mínimo de stock de uma peça numa loja",
-    responses={
-        403: {"description": "LOJA_MISMATCH"},
-        404: {"description": "Peça ou loja não encontrada"},
-    },
-)
-def atualizar_minimo(
-    peca_id: int,
-    body: StockMinimoUpdate,
-    current_user: CurrentUserResponse = Depends(_gestao),
-) -> DataResponse[StockItemResponse]:
-    return stock_service.atualizar_minimo(peca_id, body.loja_id, body.limite_minimo, current_user)
-
-
-@router.post(
-    "/entradas",
-    response_model=DataResponse[StockEntradaResponse],
-    status_code=201,
-    summary="Registar entrada de stock",
-    responses={
-        403: {"description": "LOJA_MISMATCH"},
-        404: {"description": "Peça ou loja não encontrada"},
-    },
-)
-def entrada(
+@router.post("/entradas", response_model=DataResponse[StockEntradaResponse], status_code=status.HTTP_201_CREATED)
+def registar_entrada(
     body: StockEntradaRequest,
-    current_user: CurrentUserResponse = Depends(_gestao),
-) -> DataResponse[StockEntradaResponse]:
-    return stock_service.entrada(body, current_user)
+    current_user: CurrentUserResponse = Depends(require_roles(PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA)),
+    service: StockService = Depends(get_stock_service)
+):
+    return service.entrada(body, current_user)
 
-
-@router.post(
-    "/transferencias",
-    response_model=DataResponse[StockTransferenciaResponse],
-    status_code=201,
-    summary="Transferir stock entre lojas",
-    responses={
-        400: {"description": "INSUFFICIENT_STOCK"},
-        403: {"description": "LOJA_MISMATCH"},
-        404: {"description": "Peça ou loja não encontrada"},
-    },
-)
-def transferencia(
+@router.post("/transferencias", response_model=DataResponse[StockTransferenciaResponse], status_code=status.HTTP_201_CREATED)
+def registar_transferencia(
     body: StockTransferenciaRequest,
-    current_user: CurrentUserResponse = Depends(_gestao),
-) -> DataResponse[StockTransferenciaResponse]:
-    return stock_service.transferencia(body, current_user)
+    current_user: CurrentUserResponse = Depends(require_roles(PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA)),
+    service: StockService = Depends(get_stock_service)
+):
+    return service.transferencia(body, current_user)

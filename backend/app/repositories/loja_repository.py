@@ -1,67 +1,35 @@
-from __future__ import annotations
+from sqlalchemy.orm import Session
+from app.models.loja import Loja
 
-from dataclasses import dataclass
-from typing import ClassVar
-
-
-@dataclass
-class Loja:
-    id: int
-    nome: str
-    cidade: str
-    morada: str
-    telefone: str
-    email: str
-    ativo: bool
-
-
-class MockLojaRepository:
-    _data: ClassVar[list[Loja]] = [
-        Loja(
-            id=1,
-            nome="DLMCare Porto",
-            cidade="Porto",
-            morada="Rua de Santa Catarina 100, 4000-447 Porto",
-            telefone="222000001",
-            email="porto@dlmcare.pt",
-            ativo=True,
-        ),
-        Loja(
-            id=2,
-            nome="DLMCare Lisboa",
-            cidade="Lisboa",
-            morada="Av. da Liberdade 100, 1250-096 Lisboa",
-            telefone="213000001",
-            email="lisboa@dlmcare.pt",
-            ativo=True,
-        ),
-    ]
+class LojaRepository:
+    def __init__(self, db: Session):
+        self.db = db
 
     def get_by_id(self, loja_id: int) -> Loja | None:
-        return next((l for l in self._data if l.id == loja_id), None)
+        return self.db.query(Loja).filter(Loja.id == loja_id).first()
 
-    def list(self, loja_id_filtro: int | None = None) -> list[Loja]:
+    def list(self, loja_id_filtro: int | None, skip: int, limit: int) -> tuple[list[Loja], int]:
+        query = self.db.query(Loja)
         if loja_id_filtro is not None:
-            return [l for l in self._data if l.id == loja_id_filtro]
-        return list(self._data)
+            query = query.filter(Loja.id == loja_id_filtro)
+        
+        total = query.count()
+        itens = query.offset(skip).limit(limit).all()
+        return itens, total
 
     def exists(self, loja_id: int) -> bool:
-        return self.get_by_id(loja_id) is not None
+        return self.db.query(Loja.id).filter(Loja.id == loja_id).first() is not None
 
     def get_nome(self, loja_id: int) -> str | None:
-        loja = self.get_by_id(loja_id)
-        return loja.nome if loja else None
+        res = self.db.query(Loja.nome).filter(Loja.id == loja_id).first()
+        return res[0] if res else None
 
     def get_telefone(self, loja_id: int) -> str | None:
-        loja = self.get_by_id(loja_id)
-        return loja.telefone if loja else None
+        res = self.db.query(Loja.telefone).filter(Loja.id == loja_id).first()
+        return res[0] if res else None
 
     def as_dict(self, loja_id: int) -> dict | None:
         loja = self.get_by_id(loja_id)
-        if loja is None:
-            return None
-        return {
-            "nome": loja.nome,
-            "morada": loja.morada,
-            "telefone": loja.telefone,
-        }
+        if loja:
+            return {"nome": loja.nome, "morada": loja.morada, "telefone": loja.telefone}
+        return None

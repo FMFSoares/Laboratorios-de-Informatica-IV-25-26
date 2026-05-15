@@ -1,221 +1,58 @@
-from __future__ import annotations
-
 from datetime import date
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.orm import Session
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
-
-from app.auth.dependencies import get_current_user, require_roles
+from app.database import get_db
 from app.schemas.auth import CurrentUserResponse
-from app.schemas.common import DataResponse, PaginatedResponse
-from app.schemas.ordem_servico import (
-    EstadoOrdemServico,
-    OrdemServicoCreate,
-    OrdemServicoDetalheResponse,
-    OrdemServicoEstadoUpdate,
-    OrdemServicoEstadoUpdateResponse,
-    OrdemServicoMecanicoUpdate,
-    OrdemServicoMecanicoUpdateResponse,
-    OrdemServicoObservacaoCreate,
-    OrdemServicoObservacaoResponse,
-    OrdemServicoResponse,
-    OrdemServicoResumo,
-    PecaAplicadaRequest,
-    PecaAplicadaResponse,
-    TempoInicioResponse,
-    TempoParagemResponse,
-)
+from app.auth.dependencies import get_current_user, require_roles
 from app.schemas.utilizador import PerfilUtilizador
-from app.services import ordem_servico_service
+from app.services.ordem_servico_service import OrdemServicoService
 
 router = APIRouter(prefix="/ordens-servico", tags=["ordens de serviço"])
 
-_todos = require_roles(
-    PerfilUtilizador.ADMINISTRADOR,
-    PerfilUtilizador.GERENTE_LOJA,
-    PerfilUtilizador.RECECIONISTA,
-    PerfilUtilizador.MECANICO,
-)
-_criacao = require_roles(
-    PerfilUtilizador.ADMINISTRADOR,
-    PerfilUtilizador.GERENTE_LOJA,
-    PerfilUtilizador.RECECIONISTA,
-)
-_tecnicos = require_roles(
-    PerfilUtilizador.ADMINISTRADOR,
-    PerfilUtilizador.GERENTE_LOJA,
-    PerfilUtilizador.MECANICO,
-)
+def get_os_service(db: Session = Depends(get_db)) -> OrdemServicoService:
+    return OrdemServicoService(db)
 
-
-@router.post(
-    "",
-    response_model=DataResponse[OrdemServicoResponse],
-    status_code=201,
-    summary="Criar ordem de serviço",
-    responses={
-        403: {"description": "LOJA_MISMATCH"},
-        404: {"description": "Trotinete ou mecânico não encontrado"},
-    },
-)
-def criar(
-    body: OrdemServicoCreate,
-    current_user: CurrentUserResponse = Depends(_criacao),
-) -> DataResponse[OrdemServicoResponse]:
-    return ordem_servico_service.criar(body, current_user)
-
-
-@router.get(
-    "",
-    response_model=PaginatedResponse[OrdemServicoResumo],
-    summary="Listar ordens de serviço",
-)
-def listar(
-    loja_id: int | None = Query(None, description="Filtrar por loja (ADMINISTRADOR apenas)."),
-    estado: EstadoOrdemServico | None = Query(None, description="Filtrar por estado."),
-    mecanico_id: int | None = Query(None, description="Filtrar por mecânico."),
-    data_inicio: date | None = Query(None, description="Data de entrada a partir de (ISO 8601)."),
-    data_fim: date | None = Query(None, description="Data de entrada até (ISO 8601)."),
-    em_atraso: bool | None = Query(None, description="Se true, devolve apenas OS cujo tempo decorrido supera a média das concluídas (RF17)."),
+@router.get("/")
+def listar_ordens_servico(
+    loja_id: int | None = Query(None),
+    estado: str | None = Query(None),
+    mecanico_id: int | None = Query(None),
+    data_inicio: date | None = Query(None),
+    data_fim: date | None = Query(None),
+    em_atraso: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: CurrentUserResponse = Depends(_todos),
-) -> PaginatedResponse[OrdemServicoResumo]:
-    return ordem_servico_service.listar(
-        loja_id, estado, mecanico_id, data_inicio, data_fim, em_atraso, page, page_size, current_user
+    current_user: CurrentUserResponse = Depends(get_current_user),
+    service: OrdemServicoService = Depends(get_os_service)
+):
+    return service.listar(
+        loja_id, estado, mecanico_id, data_inicio, data_fim, 
+        em_atraso, page, page_size, current_user
     )
 
-
-@router.get(
-    "/{os_id}",
-    response_model=DataResponse[OrdemServicoDetalheResponse],
-    summary="Detalhe de ordem de serviço",
-    responses={
-        403: {"description": "LOJA_MISMATCH"},
-        404: {"description": "Ordem não encontrada"},
-    },
-)
-def obter(
+@router.get("/{os_id}")
+def obter_ordem_servico(
     os_id: int,
-    current_user: CurrentUserResponse = Depends(_todos),
-) -> DataResponse[OrdemServicoDetalheResponse]:
-    return ordem_servico_service.obter(os_id, current_user)
-
-
-@router.patch(
-    "/{os_id}/estado",
-    response_model=DataResponse[OrdemServicoEstadoUpdateResponse],
-    summary="Atualizar estado da ordem de serviço",
-    responses={
-        403: {"description": "PERMISSION_DENIED ou LOJA_MISMATCH"},
-        404: {"description": "Ordem não encontrada"},
-        409: {"description": "INVALID_STATE_TRANSITION"},
-    },
-)
-def atualizar_estado(
-    os_id: int,
-    body: OrdemServicoEstadoUpdate,
-    background_tasks: BackgroundTasks,
     current_user: CurrentUserResponse = Depends(get_current_user),
-) -> DataResponse[OrdemServicoEstadoUpdateResponse]:
-    # RBAC por transição é verificado no service
-    return ordem_servico_service.atualizar_estado(os_id, body, current_user, background_tasks)
+    service: OrdemServicoService = Depends(get_os_service)
+):
+    # Irás envolver este retorno com DataResponse[OrdemServicoDetalheResponse]
+    return {"data": service.obter(os_id, current_user)}
 
-
-@router.patch(
-    "/{os_id}/mecanico",
-    response_model=DataResponse[OrdemServicoMecanicoUpdateResponse],
-    summary="Reatribuir ou desatribuir mecânico",
-    responses={
-        403: {"description": "LOJA_MISMATCH"},
-        404: {"description": "Ordem ou mecânico não encontrado"},
-        409: {"description": "INVALID_STATE_TRANSITION — OS já concluída ou cancelada"},
-    },
-)
-def atualizar_mecanico(
+@router.patch("/{os_id}/estado")
+def atualizar_estado_os(
     os_id: int,
-    body: OrdemServicoMecanicoUpdate,
-    current_user: CurrentUserResponse = Depends(_criacao),
-) -> DataResponse[OrdemServicoMecanicoUpdateResponse]:
-    return ordem_servico_service.atualizar_mecanico(os_id, body, current_user)
+    novo_estado: str, # Definido pelo teu payload
+    current_user: CurrentUserResponse = Depends(get_current_user),
+    service: OrdemServicoService = Depends(get_os_service)
+):
+    return service.atualizar_estado(os_id, novo_estado, current_user)
 
-
-@router.post(
-    "/{os_id}/tempos/iniciar",
-    response_model=DataResponse[TempoInicioResponse],
-    summary="Iniciar registo de tempo (métricas internas)",
-    responses={409: {"description": "INVALID_STATE_TRANSITION | MECANICO_TIMER_CONFLICT — inclui os_conflito_id e os_conflito_numero no body para o frontend apresentar diálogo de confirmação"}},
-)
-def iniciar_tempo(
-    os_id: int,
-    current_user: CurrentUserResponse = Depends(_tecnicos),
-) -> DataResponse[TempoInicioResponse]:
-    return ordem_servico_service.iniciar_tempo(os_id, current_user)
-
-
-@router.post(
-    "/{os_id}/tempos/parar",
-    response_model=DataResponse[TempoParagemResponse],
-    summary="Parar registo de tempo (métricas internas)",
-    responses={409: {"description": "Nenhum tempo em curso"}},
-)
-def parar_tempo(
-    os_id: int,
-    current_user: CurrentUserResponse = Depends(_tecnicos),
-) -> DataResponse[TempoParagemResponse]:
-    return ordem_servico_service.parar_tempo(os_id, current_user)
-
-
-@router.post(
-    "/{os_id}/pecas",
-    response_model=DataResponse[PecaAplicadaResponse],
-    status_code=201,
-    summary="Adicionar peça à ordem de serviço",
-    responses={
-        400: {"description": "INSUFFICIENT_STOCK"},
-        404: {"description": "Peça não encontrada"},
-        409: {"description": "OS em estado que não permite adicionar peças"},
-    },
-)
+@router.post("/{os_id}/pecas", status_code=status.HTTP_201_CREATED)
 def adicionar_peca(
-    os_id: int,
-    body: PecaAplicadaRequest,
-    current_user: CurrentUserResponse = Depends(_tecnicos),
-) -> DataResponse[PecaAplicadaResponse]:
-    return ordem_servico_service.adicionar_peca(os_id, body, current_user)
-
-
-@router.delete(
-    "/{os_id}/pecas/{peca_id}",
-    response_model=DataResponse[None],
-    summary="Remover peça da ordem de serviço",
-    responses={
-        404: {"description": "OS ou peça não encontrada"},
-        409: {"description": "OS em estado que não permite remover peças"},
-    },
-)
-def remover_peca(
-    os_id: int,
-    peca_id: int,
-    current_user: CurrentUserResponse = Depends(_tecnicos),
-) -> DataResponse[None]:
-    ordem_servico_service.remover_peca(os_id, peca_id, current_user)
-    return DataResponse[None](data=None, message="Peça removida da ordem de serviço.")
-
-
-@router.post(
-    "/{os_id}/observacoes",
-    response_model=DataResponse[OrdemServicoObservacaoResponse],
-    status_code=201,
-    summary="Adicionar observação interna à ordem de serviço",
-    responses={
-        403: {"description": "LOJA_MISMATCH"},
-        404: {"description": "Ordem não encontrada"},
-        409: {"description": "OS cancelada"},
-    },
-)
-def adicionar_observacao(
-    os_id: int,
-    body: OrdemServicoObservacaoCreate,
-    current_user: CurrentUserResponse = Depends(_tecnicos),
-) -> DataResponse[OrdemServicoObservacaoResponse]:
-    return ordem_servico_service.adicionar_observacao(os_id, body, current_user)
+    os_id: int, peca_id: int, quantidade: int, # Estes args vêm do teu body Request Schema
+    current_user: CurrentUserResponse = Depends(require_roles(PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO)),
+    service: OrdemServicoService = Depends(get_os_service)
+):
+    return service.adicionar_peca(os_id, peca_id, quantidade, current_user)
