@@ -1,119 +1,81 @@
-from __future__ import annotations
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
-from fastapi import HTTPException, status
-
-from app.repositories.trotinete_repository import MockTrotineteRepository, Trotinete
+from app.repositories.trotinete_repository import TrotineteRepository
+from app.schemas.trotinete import TrotineteCreate, TrotineteResponse, TrotineteDetalheResponse, ClienteResumoEmTrotinete
 from app.schemas.auth import CurrentUserResponse
-from app.schemas.common import DataResponse, PaginatedResponse
-from app.schemas.trotinete import (
-    ClienteResumoEmTrotinete,
-    TrotineteCreate,
-    TrotineteDetalheResponse,
-    TrotineteResponse,
-)
 from app.schemas.utilizador import PerfilUtilizador
-from app.utils.permissions import check_loja_access
+from app.schemas.common import DataResponse, PaginatedResponse
 
-_repo = MockTrotineteRepository()
+# Import local cruzado para validar o cliente
+from app.services import cliente_service
 
+class TrotineteService:
+    def __init__(self, db: Session):
+        self.db = db
+        self.repo = TrotineteRepository(db)
 
-def _to_response(t: Trotinete) -> TrotineteResponse:
-    data = {k: v for k, v in t.__dict__.items() if k != "loja_id"}
-    return TrotineteResponse(**data)
+    def _find(self, trotinete_id: int):
+        trotinete = self.repo.get_by_id(trotinete_id)
+        if not trotinete:
+            raise HTTPException(status_code=404, detail="Trotinete não encontrada.")
+        return trotinete
 
+    def get_por_cliente(self, cliente_id: int):
+        itens = self.repo.list_by_cliente(cliente_id)
+        data = []
+        for t in itens:
+            t_dict = {k: v for k, v in t.__dict__.items() if not k.startswith("_")}
+            data.append(TrotineteResponse(**t_dict))
+        return data
 
-def _find(trotinete_id: int) -> Trotinete | None:
-    """Cross-service lookup used by fatura_service and ordem_servico_service."""
-    return _repo.get_by_id(trotinete_id)
+    def listar(
+        self,
+        cliente_id: int | None,
+        numero_serie: str | None,
+        page: int,
+        page_size: int,
+        current_user: CurrentUserResponse
+    ) -> PaginatedResponse[TrotineteResponse]:
+        loja_id = current_user.loja_id if current_user.perfil != PerfilUtilizador.ADMINISTRADOR else None
+        skip = (page - 1) * page_size
+        itens, total = self.repo.list(loja_id, cliente_id, numero_serie, skip, page_size)
+        pages = max(1, -(-total // page_size))
 
+        data = []
+        for t in itens:
+            t_dict = {k: v for k, v in t.__dict__.items() if not k.startswith("_")}
+            data.append(TrotineteResponse(**t_dict))
 
-def get_por_cliente(cliente_id: int) -> list[Trotinete]:
-    """Used by cliente_service to populate the trotinetes list on client detail."""
-    return _repo.list_by_cliente(cliente_id)
-
-
-def listar(
-    cliente_id: int | None,
-    numero_serie: str | None,
-    page: int,
-    page_size: int,
-    current_user: CurrentUserResponse,
-) -> PaginatedResponse[TrotineteResponse]:
-    loja_id = None if current_user.perfil == PerfilUtilizador.ADMINISTRADOR else current_user.loja_id
-    itens, total = _repo.list(loja_id, cliente_id, numero_serie, page, page_size)
-    pages = max(1, -(-total // page_size))
-
-    return PaginatedResponse[TrotineteResponse](
-        data=[_to_response(t) for t in itens],
-        total=total,
-        page=page,
-        page_size=page_size,
-        pages=pages,
-    )
-
-
-def criar(
-    body: TrotineteCreate,
-    current_user: CurrentUserResponse,
-) -> DataResponse[TrotineteResponse]:
-    from app.services import cliente_service
-
-    cliente = cliente_service._find(body.cliente_id)
-    if cliente is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Cliente não encontrado.", "code": "RESOURCE_NOT_FOUND"},
+        return PaginatedResponse[TrotineteResponse](
+            data=data, total=total, page=page, page_size=page_size, pages=pages
         )
 
-    check_loja_access(cliente.loja_id, current_user)
+    def criar(self, body: TrotineteCreate, current_user: CurrentUserResponse) -> DataResponse[TrotineteResponse]:
+        cliente = cliente_service._find(self.db, body.cliente_id)
+        
+        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR and cliente.loja_id != current_user.loja_id:
+            raise HTTPException(status_code=403, detail="Acesso negado a este cliente.")
 
-    if _repo.exists_numero_serie(body.numero_serie):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"detail": "Número de série já registado no sistema.", "code": "DUPLICATE_ENTRY"},
-        )
+        if self.repo.exists_numero_serie(body.numero_serie):
+            raise HTTPException(status_code=409, detail="Número de série já registado.")
 
-    nova = _repo.create(
-        cliente_id=body.cliente_id,
-        loja_id=cliente.loja_id,
-        marca=body.marca,
-        modelo=body.modelo,
-        numero_serie=body.numero_serie,
-        ano_compra=body.ano_compra,
-        cor=body.cor,
-        observacoes_tecnicas=body.observacoes_tecnicas,
-    )
+        nova = self.repo.create(**body.model_dump())
+        t_dict = {k: v for k, v in nova.__dict__.items() if not k.startswith("_")}
+        
+        return DataResponse[TrotineteResponse](data=TrotineteResponse(**t_dict), message="Trotinete registada com sucesso.")
 
-    return DataResponse[TrotineteResponse](
-        data=_to_response(nova),
-        message="Trotinete registada com sucesso.",
-    )
+    def obter(self, trotinete_id: int, current_user: CurrentUserResponse) -> DataResponse[TrotineteDetalheResponse]:
+        trotinete = self._find(trotinete_id)
+        cliente = cliente_service._find(self.db, trotinete.cliente_id)
+        
+        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR and cliente.loja_id != current_user.loja_id:
+            raise HTTPException(status_code=403, detail="Acesso negado a esta trotinete.")
 
-
-def obter(
-    trotinete_id: int,
-    current_user: CurrentUserResponse,
-) -> DataResponse[TrotineteDetalheResponse]:
-    from app.services import cliente_service
-
-    trotinete = _repo.get_by_id(trotinete_id)
-    if trotinete is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Trotinete não encontrada.", "code": "RESOURCE_NOT_FOUND"},
-        )
-    check_loja_access(trotinete.loja_id, current_user)
-
-    cliente = cliente_service._find(trotinete.cliente_id)
-    cliente_resumo = ClienteResumoEmTrotinete(
-        id=cliente.id,
-        nome=cliente.nome,
-        telemovel=cliente.telemovel,
-    )
-
-    total_ordens = _repo.count_by_trotinete(trotinete_id)
-    data = {k: v for k, v in trotinete.__dict__.items() if k != "loja_id"}
-
-    return DataResponse[TrotineteDetalheResponse](
-        data=TrotineteDetalheResponse(**data, cliente=cliente_resumo, total_ordens=total_ordens),
-    )
+        total_ordens = self.repo.count_by_trotinete(trotinete_id)
+        
+        t_dict = {k: v for k, v in trotinete.__dict__.items() if not k.startswith("_")}
+        c_dict = {k: v for k, v in cliente.__dict__.items() if not k.startswith("_")}
+        detalhe = TrotineteDetalheResponse(**t_dict, cliente=ClienteResumoEmTrotinete(**c_dict), total_ordens=total_ordens)
+        
+        return DataResponse[TrotineteDetalheResponse](data=detalhe)

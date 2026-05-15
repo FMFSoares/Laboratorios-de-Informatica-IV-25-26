@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from sqlalchemy.orm import Session
+from sqlalchemy import func, cast, Date
 
-from app.repositories.ordem_servico_repository import MockOrdemServicoRepository
-from app.repositories.fatura_repository import MockFaturaRepository
-from app.repositories.stock_repository import MockStockRepository
-from app.repositories.peca_repository import MockPecaRepository
-from app.repositories.utilizador_repository import MockUtilizadorRepository
-from app.repositories.loja_repository import MockLojaRepository
+from app.models.ordem_servico import OrdemServico, EstadoOrdemServico
+from app.models.fatura import Fatura
+from app.models.stock import StockLoja
+from app.models.peca import Peca
+from app.models.loja import Loja
+from app.models.utilizador import Utilizador
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.common import DataResponse
 from app.schemas.dashboard import (
@@ -17,112 +19,113 @@ from app.schemas.dashboard import (
     OrdensConcluidasPorLoja,
     PecaAbaixoStockMinimo,
 )
-from app.schemas.ordem_servico import EstadoOrdemServico as E
 from app.schemas.utilizador import PerfilUtilizador as P
 
-_os_repo = MockOrdemServicoRepository()
-_fatura_repo = MockFaturaRepository()
-_stock_repo = MockStockRepository()
-_peca_repo = MockPecaRepository()
-_util_repo = MockUtilizadorRepository()
-_loja_repo = MockLojaRepository()
 
+class DashboardService:
+    def __init__(self, db: Session):
+        self.db = db
 
-def obter(
-    loja_id: int | None,
-    data_inicio: date | None,
-    data_fim: date | None,
-    current_user: CurrentUserResponse,
-) -> DataResponse[DashboardResponse]:
-    hoje = date.today()
-    d_inicio = data_inicio or (hoje - timedelta(days=30))
-    d_fim = data_fim or hoje
+    def obter(
+        self,
+        loja_id: int | None,
+        data_inicio: date | None,
+        data_fim: date | None,
+        current_user: CurrentUserResponse,
+    ) -> DataResponse[DashboardResponse]:
+        hoje = date.today()
+        d_inicio = data_inicio or (hoje - timedelta(days=30))
+        d_fim = data_fim or hoje
 
-    loja_filtro = loja_id if current_user.perfil == P.ADMINISTRADOR else current_user.loja_id
+        loja_filtro = loja_id if current_user.perfil == P.ADMINISTRADOR else current_user.loja_id
 
-    os_todas = _os_repo.list_all()
-    os_filtradas = [
-        o for o in os_todas
-        if d_inicio <= o.data_entrada.date() <= d_fim
-        and (loja_filtro is None or o.loja_id == loja_filtro)
-    ]
-
-    # ordens_por_estado
-    estados: dict[str, int] = {e.value: 0 for e in E}
-    for o in os_filtradas:
-        estados[o.estado.value] += 1
-
-    # ordens_concluidas_por_loja
-    concluidas_map: dict[int, int] = {}
-    for o in os_filtradas:
-        if o.estado in {E.CONCLUIDA, E.FATURADA}:
-            concluidas_map[o.loja_id] = concluidas_map.get(o.loja_id, 0) + 1
-
-    ordens_concluidas_por_loja = [
-        OrdensConcluidasPorLoja(
-            loja_id=lid,
-            loja_nome=_loja_repo.get_nome(lid) or f"Loja {lid}",
-            total=total,
+        # 1. Filtro Global de OS por datas
+        os_query = self.db.query(OrdemServico).filter(
+            cast(OrdemServico.data_entrada, Date) >= d_inicio,
+            cast(OrdemServico.data_entrada, Date) <= d_fim
         )
-        for lid, total in sorted(concluidas_map.items())
-    ]
+        if loja_filtro is not None:
+            os_query = os_query.filter(OrdemServico.loja_id == loja_filtro)
 
-    # tempo_medio_reparacao_minutos
-    tempos = [o.tempo_total_minutos for o in os_filtradas if o.tempo_total_minutos is not None]
-    tempo_medio = int(sum(tempos) / len(tempos)) if tempos else None
+        # Métrica 1: Ordens por estado
+        estado_counts = os_query.with_entities(OrdemServico.estado, func.count(OrdemServico.id)).group_by(OrdemServico.estado).all()
+        ordens_por_estado = {estado.value: 0 for estado in EstadoOrdemServico}
+        for estado, count in estado_counts:
+            ordens_por_estado[estado.value] = count
 
-    # faturacao_total
-    faturas_periodo = [
-        f for f in _fatura_repo.list_all()
-        if d_inicio <= f.data_emissao.date() <= d_fim
-        and (loja_filtro is None or f.loja_id == loja_filtro)
-    ]
-    faturacao_total = round(sum(f.valor_final for f in faturas_periodo), 2)
+        # Métrica 2: Ordens Concluídas por Loja (Ordenação nativa pelo topo)
+        concluidas_query = self.db.query(
+            Loja.id, Loja.nome, func.count(OrdemServico.id).label("total")
+        ).join(OrdemServico, Loja.id == OrdemServico.loja_id)\
+         .filter(
+             OrdemServico.estado.in_([EstadoOrdemServico.CONCLUIDA, EstadoOrdemServico.FATURADA]),
+             cast(OrdemServico.data_entrada, Date) >= d_inicio,
+             cast(OrdemServico.data_entrada, Date) <= d_fim
+         )
+        if loja_filtro is not None:
+            concluidas_query = concluidas_query.filter(Loja.id == loja_filtro)
 
-    # pecas_abaixo_stock_minimo
-    pecas_alerta = []
-    for s in _stock_repo.list_all():
-        if loja_filtro is not None and s.loja_id != loja_filtro:
-            continue
-        if s.quantidade < s.limite_minimo:
-            peca = _peca_repo.get_by_id(s.peca_id)
-            pecas_alerta.append(PecaAbaixoStockMinimo(
-                peca_id=s.peca_id,
-                peca_nome=peca.nome if peca else f"Peça {s.peca_id}",
-                loja_id=s.loja_id,
-                loja_nome=_loja_repo.get_nome(s.loja_id) or f"Loja {s.loja_id}",
-                quantidade=s.quantidade,
-                limite_minimo=s.limite_minimo,
-            ))
+        concluidas_por_loja_raw = concluidas_query.group_by(Loja.id).order_by(func.count(OrdemServico.id).desc()).all()
+        ordens_concluidas_por_loja = [
+            OrdensConcluidasPorLoja(loja_id=r[0], loja_nome=r[1], total=r[2]) for r in concluidas_por_loja_raw
+        ]
 
-    # eficiencia_por_mecanico
-    mecanicos = {u.id: u for u in _util_repo.list_by_perfil(P.MECANICO)}
-    eficiencia_map: dict[int, list] = {mid: [] for mid in mecanicos}
+        # Métrica 3: Tempo Médio de Reparação Geral
+        tempo_medio = os_query.with_entities(func.avg(OrdemServico.tempo_total_minutos)).filter(OrdemServico.tempo_total_minutos.isnot(None)).scalar()
+        tempo_medio_reparacao_minutos = int(tempo_medio) if tempo_medio else None
 
-    for o in os_filtradas:
-        if o.estado in {E.CONCLUIDA, E.FATURADA} and o.mecanico_id in eficiencia_map:
-            eficiencia_map[o.mecanico_id].append(o.tempo_total_minutos)
+        # Métrica 4: Faturação Total
+        fat_query = self.db.query(func.sum(Fatura.valor_final)).join(OrdemServico)\
+            .filter(cast(Fatura.data_emissao, Date) >= d_inicio, cast(Fatura.data_emissao, Date) <= d_fim)
+        if loja_filtro is not None:
+            fat_query = fat_query.filter(OrdemServico.loja_id == loja_filtro)
 
-    eficiencia_por_mecanico = []
-    for mid, tempos_m in eficiencia_map.items():
-        if not tempos_m:
-            continue
-        t_validos = [t for t in tempos_m if t is not None]
-        eficiencia_por_mecanico.append(EficienciaMecanico(
-            mecanico_id=mid,
-            nome=mecanicos[mid].nome,
-            ordens_concluidas=len(tempos_m),
-            tempo_medio_minutos=int(sum(t_validos) / len(t_validos)) if t_validos else None,
-        ))
+        faturacao_total = fat_query.scalar() or 0.0
 
-    return DataResponse[DashboardResponse](
-        data=DashboardResponse(
-            periodo=DashboardPeriodo(inicio=d_inicio, fim=d_fim),
-            ordens_por_estado=estados,
-            ordens_concluidas_por_loja=ordens_concluidas_por_loja,
-            tempo_medio_reparacao_minutos=tempo_medio,
-            faturacao_total=faturacao_total,
-            pecas_abaixo_stock_minimo=pecas_alerta,
-            eficiencia_por_mecanico=eficiencia_por_mecanico,
+        # Métrica 5: Peças abaixo do stock mínimo
+        stock_query = self.db.query(StockLoja, Peca, Loja).join(Peca).join(Loja)\
+            .filter(StockLoja.quantidade < StockLoja.limite_minimo)
+        if loja_filtro is not None:
+            stock_query = stock_query.filter(StockLoja.loja_id == loja_filtro)
+
+        stock_alertas = stock_query.order_by((StockLoja.quantidade - StockLoja.limite_minimo).asc()).all()
+        pecas_abaixo_stock = [
+            PecaAbaixoStockMinimo(
+                peca_id=s.StockLoja.peca_id, peca_nome=s.Peca.nome,
+                loja_id=s.StockLoja.loja_id, loja_nome=s.Loja.nome,
+                quantidade=s.StockLoja.quantidade, limite_minimo=s.StockLoja.limite_minimo
+            ) for s in stock_alertas
+        ]
+
+        # Métrica 6: Eficiência por Mecânico (Ordenação nativa pelo topo)
+        mecanicos_query = self.db.query(
+            Utilizador.id, Utilizador.nome,
+            func.count(OrdemServico.id).label("total_ordens"),
+            func.avg(OrdemServico.tempo_total_minutos).label("media_minutos")
+        ).join(OrdemServico, Utilizador.id == OrdemServico.mecanico_id)\
+         .filter(
+             OrdemServico.estado.in_([EstadoOrdemServico.CONCLUIDA, EstadoOrdemServico.FATURADA]),
+             cast(OrdemServico.data_entrada, Date) >= d_inicio,
+             cast(OrdemServico.data_entrada, Date) <= d_fim
+         )
+        if loja_filtro is not None:
+            mecanicos_query = mecanicos_query.filter(OrdemServico.loja_id == loja_filtro)
+
+        mecanicos_stats = mecanicos_query.group_by(Utilizador.id).order_by(func.count(OrdemServico.id).desc()).all()
+        eficiencia = [
+            EficienciaMecanico(
+                mecanico_id=m[0], nome=m[1], ordens_concluidas=m[2], tempo_medio_minutos=int(m[3]) if m[3] else None
+            ) for m in mecanicos_stats
+        ]
+
+        return DataResponse[DashboardResponse](
+            data=DashboardResponse(
+                periodo=DashboardPeriodo(inicio=d_inicio, fim=d_fim),
+                ordens_por_estado=ordens_por_estado,
+                ordens_concluidas_por_loja=ordens_concluidas_por_loja,
+                tempo_medio_reparacao_minutos=tempo_medio_reparacao_minutos,
+                faturacao_total=faturacao_total,
+                pecas_abaixo_stock_minimo=pecas_abaixo_stock,
+                eficiencia_por_mecanico=eficiencia,
+            )
         )
-    )

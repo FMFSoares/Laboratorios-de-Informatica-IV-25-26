@@ -1,77 +1,49 @@
-from __future__ import annotations
-
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_roles
+from app.database import get_db
+from app.auth.dependencies import require_roles, get_current_user
 from app.schemas.auth import CurrentUserResponse
-from app.schemas.common import DataResponse, PaginatedResponse
-from app.schemas.trotinete import (
-    TrotineteCreate,
-    TrotineteDetalheResponse,
-    TrotineteResponse,
-)
 from app.schemas.utilizador import PerfilUtilizador
-from app.services import trotinete_service
+from app.schemas.common import DataResponse, PaginatedResponse
+from app.schemas.trotinete import TrotineteCreate, TrotineteResponse, TrotineteDetalheResponse
+from app.services.trotinete_service import TrotineteService
 
 router = APIRouter(prefix="/trotinetes", tags=["trotinetes"])
 
-_todos = require_roles(
-    PerfilUtilizador.ADMINISTRADOR,
-    PerfilUtilizador.GERENTE_LOJA,
-    PerfilUtilizador.RECECIONISTA,
-    PerfilUtilizador.MECANICO,
-)
+_todos = get_current_user
 _escrita = require_roles(
     PerfilUtilizador.ADMINISTRADOR,
     PerfilUtilizador.GERENTE_LOJA,
     PerfilUtilizador.RECECIONISTA,
 )
 
+def get_trotinete_service(db: Session = Depends(get_db)) -> TrotineteService:
+    return TrotineteService(db)
 
-@router.get(
-    "",
-    response_model=PaginatedResponse[TrotineteResponse],
-    summary="Listar trotinetes",
-)
+@router.get("", response_model=PaginatedResponse[TrotineteResponse])
 def listar(
-    cliente_id: int | None = Query(None, description="Filtrar por cliente."),
-    numero_serie: str | None = Query(None, description="Pesquisa por número de série (exact match)."),
+    cliente_id: int | None = Query(None),
+    numero_serie: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: CurrentUserResponse = Depends(_todos),
-) -> PaginatedResponse[TrotineteResponse]:
-    return trotinete_service.listar(cliente_id, numero_serie, page, page_size, current_user)
+    service: TrotineteService = Depends(get_trotinete_service)
+):
+    return service.listar(cliente_id, numero_serie, page, page_size, current_user)
 
-
-@router.post(
-    "",
-    response_model=DataResponse[TrotineteResponse],
-    status_code=201,
-    summary="Registar trotinete",
-    responses={
-        403: {"description": "LOJA_MISMATCH"},
-        404: {"description": "Cliente não encontrado"},
-        409: {"description": "Número de série duplicado"},
-    },
-)
-def criar(
-    body: TrotineteCreate,
-    current_user: CurrentUserResponse = Depends(_escrita),
-) -> DataResponse[TrotineteResponse]:
-    return trotinete_service.criar(body, current_user)
-
-
-@router.get(
-    "/{trotinete_id}",
-    response_model=DataResponse[TrotineteDetalheResponse],
-    summary="Detalhe de trotinete",
-    responses={
-        403: {"description": "LOJA_MISMATCH"},
-        404: {"description": "Trotinete não encontrada"},
-    },
-)
+@router.get("/{trotinete_id}", response_model=DataResponse[TrotineteDetalheResponse])
 def obter(
     trotinete_id: int,
     current_user: CurrentUserResponse = Depends(_todos),
-) -> DataResponse[TrotineteDetalheResponse]:
-    return trotinete_service.obter(trotinete_id, current_user)
+    service: TrotineteService = Depends(get_trotinete_service)
+):
+    return service.obter(trotinete_id, current_user)
+
+@router.post("", response_model=DataResponse[TrotineteResponse], status_code=201)
+def criar(
+    body: TrotineteCreate,
+    current_user: CurrentUserResponse = Depends(_escrita),
+    service: TrotineteService = Depends(get_trotinete_service)
+):
+    return service.criar(body, current_user)

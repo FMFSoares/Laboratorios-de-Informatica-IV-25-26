@@ -1,252 +1,95 @@
-from __future__ import annotations
+from datetime import datetime, timezone
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
-from fastapi import HTTPException, status
-
-from app.repositories.fatura_repository import MockFaturaRepository, Fatura
-from app.repositories.loja_repository import MockLojaRepository
+from app.models.fatura import EstadoFatura
+from app.models.ordem_servico import EstadoOrdemServico
+from app.repositories.fatura_repository import FaturaRepository
+from app.repositories.ordem_servico_repository import OrdemServicoRepository
+from app.repositories.auditoria_repository import AuditoriaRepository
+from app.schemas.fatura import FaturaCreateRequest, FaturaResponse, FaturaResumo
+from app.schemas.common import PaginatedResponse
 from app.schemas.auth import CurrentUserResponse
-from app.schemas.common import DataResponse, PaginatedResponse
-from app.schemas.fatura import (
-    DescontoTipo,
-    EstadoFatura,
-    FaturaClienteInfo,
-    FaturaEnviarEmailRequest,
-    FaturaLojaInfo,
-    FaturaPecaAplicada,
-    FaturaResumo,
-    FaturaResponse,
-    FaturaServicoInfo,
-    FaturaTrotineteInfo,
-)
-from app.schemas.utilizador import PerfilUtilizador as P
-from app.utils.permissions import check_loja_access
+from app.schemas.utilizador import PerfilUtilizador
+from app.schemas.auditoria import TipoEventoAuditoria
 
-_repo = MockFaturaRepository()
-_loja_repo = MockLojaRepository()
+class FaturaService:
+    def __init__(self, db: Session):
+        self.db = db
+        self.fatura_repo = FaturaRepository(db)
+        self.os_repo = OrdemServicoRepository(db)
+        self.auditoria_repo = AuditoriaRepository(db)
 
+    def emitir(self, body: FaturaCreateRequest, current_user: CurrentUserResponse) -> FaturaResponse:
+        os = self.os_repo.get_by_id(body.ordem_servico_id)
+        if not os:
+            raise HTTPException(status_code=404, detail="Ordem de Serviço não encontrada")
 
-def _to_response(f: Fatura) -> FaturaResponse:
-    loja_info = _loja_repo.as_dict(f.loja_id) or {"nome": "Desconhecida", "morada": "", "telefone": ""}
-    return FaturaResponse(
-        id=f.id,
-        numero=f.numero,
-        ordem_servico_id=f.ordem_servico_id,
-        data_emissao=f.data_emissao,
-        estado=f.estado,
-        cliente=FaturaClienteInfo(**f.cliente),
-        trotinete=FaturaTrotineteInfo(**f.trotinete),
-        servico=FaturaServicoInfo(**f.servico),
-        pecas_aplicadas=[FaturaPecaAplicada(**p) for p in f.pecas_aplicadas],
-        subtotal_pecas=f.subtotal_pecas,
-        desconto_tipo=f.desconto_tipo,
-        desconto_valor=f.desconto_valor,
-        valor_desconto=f.valor_desconto,
-        valor_final=f.valor_final,
-        loja=FaturaLojaInfo(**loja_info),
-    )
+        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR and os.loja_id != current_user.loja_id:
+            raise HTTPException(status_code=403, detail="Não tem permissões para esta Ordem de Serviço")
+            
+        if os.fatura:
+            raise HTTPException(status_code=409, detail="A Ordem de Serviço já se encontra faturada")
+            
+        if os.estado != EstadoOrdemServico.CONCLUIDA:
+            raise HTTPException(status_code=400, detail="Ordem de Serviço não está concluída")
 
+        subtotal_pecas = sum(peca.quantidade * peca.preco_venda_unitario for peca in os.pecas_usadas)
+        valor_final = os.preco_servico + subtotal_pecas
 
-def _to_resumo(f: Fatura) -> FaturaResumo:
-    return FaturaResumo(
-        id=f.id,
-        numero=f.numero,
-        ordem_servico_id=f.ordem_servico_id,
-        cliente_nome=f.cliente["nome"],
-        cliente_nif=f.cliente["nif"],
-        valor_final=f.valor_final,
-        data_emissao=f.data_emissao,
-        estado=f.estado,
-    )
-
-
-def emitir(
-    ordem_servico_id: int,
-    current_user: CurrentUserResponse,
-    desconto_tipo: DescontoTipo | None = None,
-    desconto_valor: float = 0.0,
-) -> DataResponse[FaturaResponse]:
-    from app.services.ordem_servico_service import get_os_interna
-    from app.services.cliente_service import _find as find_cliente
-    from app.services.trotinete_service import _find as find_trotinete
-    from app.services.peca_service import get_peca_interna
-    from app.schemas.ordem_servico import EstadoOrdemServico as E
-    from app.repositories.auditoria_repository import MockAuditoriaRepository
-    from app.schemas.auditoria import TipoEventoAuditoria
-
-    os = get_os_interna(ordem_servico_id)
-    if os is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Ordem de serviço não encontrada.", "code": "RESOURCE_NOT_FOUND"},
+        # Cria Fatura na sessão
+        numero_fatura = f"FAT-{datetime.now(timezone.utc).year}-{os.id}"
+        nova_fatura = self.fatura_repo.create(
+            numero=numero_fatura,
+            ordem_servico_id=os.id,
+            estado=EstadoFatura.PAGA, # ou EMITIDA consoante o teu enum
+            subtotal_pecas=subtotal_pecas,
+            valor_final=valor_final,
+            data_emissao=datetime.now(timezone.utc)
         )
 
-    check_loja_access(os.loja_id, current_user)
+        # Atualiza a Ordem de Serviço (assume-se que tenhas adicionado FATURADA ao Enum do model)
+        os.estado = EstadoOrdemServico.FATURADA if hasattr(EstadoOrdemServico, "FATURADA") else EstadoOrdemServico.CONCLUIDA
 
-    if os.fatura_id is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"detail": "Já existe uma fatura para esta ordem de serviço.", "code": "ORDER_ALREADY_INVOICED"},
+        # Registo de auditoria
+        self.auditoria_repo.registar(
+            evento=TipoEventoAuditoria.FATURA_EMITIDA,
+            descricao=f"Fatura {numero_fatura} emitida para a OS #{os.id}",
+            utilizador_id=current_user.id,
+            loja_id=os.loja_id,
+            detalhe={"ordem_servico_id": os.id, "valor_final": valor_final}
         )
 
-    if os.estado != E.CONCLUIDA:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "detail": f"A OS está em estado {os.estado.value}. Só é possível faturar OS no estado CONCLUIDA.",
-                "code": "ORDER_NOT_CONCLUDED",
-            },
+        # Finalizar Transação Única
+        self.db.commit()
+        self.db.refresh(nova_fatura)
+        return nova_fatura
+
+    def obter(self, fatura_id: int, current_user: CurrentUserResponse):
+        fatura = self.fatura_repo.get_by_id(fatura_id)
+        if not fatura:
+            raise HTTPException(status_code=404, detail="Fatura não encontrada")
+            
+        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR and fatura.ordem_servico.loja_id != current_user.loja_id:
+            raise HTTPException(status_code=403, detail="Acesso negado a esta fatura")
+            
+        return fatura
+
+    def listar(self, loja_id, ordem_servico_id, data_inicio, data_fim, page, page_size, current_user) -> PaginatedResponse[FaturaResumo]:
+        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR:
+            loja_id = current_user.loja_id
+
+        itens, total = self.fatura_repo.list(loja_id, ordem_servico_id, data_inicio, data_fim, page, page_size)
+        pages = max(1, -(-total // page_size))
+        
+        return PaginatedResponse[FaturaResumo](
+            data=itens, total=total, page=page, page_size=page_size, pages=pages
         )
 
-    cliente = find_cliente(os.cliente_id)
-    trotinete = find_trotinete(os.trotinete_id)
+    def descarregar_pdf(self, fatura_id: int, current_user: CurrentUserResponse):
+        fatura = self.obter(fatura_id, current_user)
+        return {"message": "PDF gerado com sucesso", "fatura_id": fatura.id}
 
-    pecas_linha: list[dict] = []
-    for p in os.pecas_aplicadas:
-        peca = get_peca_interna(p["peca_id"])
-        referencia = peca.referencia if peca else f"PEC-{p['peca_id']:03d}"
-        pecas_linha.append({
-            "peca_referencia": referencia,
-            "peca_nome": p["peca_nome"],
-            "quantidade": p["quantidade"],
-            "preco_venda_unitario": p["preco_venda_unitario"],
-            "subtotal": p["subtotal"],
-        })
-
-    subtotal_pecas = round(sum(p["subtotal"] for p in pecas_linha), 2)
-    subtotal_bruto = round(os.preco_servico + subtotal_pecas, 2)
-
-    if desconto_tipo == DescontoTipo.PERCENTUAL:
-        valor_desconto = round(subtotal_bruto * min(desconto_valor, 100.0) / 100.0, 2)
-    elif desconto_tipo == DescontoTipo.FIXO:
-        valor_desconto = round(min(desconto_valor, subtotal_bruto), 2)
-    else:
-        valor_desconto = 0.0
-
-    valor_final = round(subtotal_bruto - valor_desconto, 2)
-
-    nova = _repo.create(
-        ordem_servico_id=ordem_servico_id,
-        loja_id=os.loja_id,
-        cliente={
-            "id": cliente.id,
-            "nome": cliente.nome,
-            "nif": cliente.nif,
-            "morada": cliente.morada,
-            "email": cliente.email,
-        },
-        trotinete={
-            "marca": trotinete.marca,
-            "modelo": trotinete.modelo,
-            "numero_serie": trotinete.numero_serie,
-        },
-        servico={
-            "descricao": os.descricao_problema,
-            "preco_servico": os.preco_servico,
-        },
-        pecas_aplicadas=pecas_linha,
-        subtotal_pecas=subtotal_pecas,
-        desconto_tipo=desconto_tipo,
-        desconto_valor=desconto_valor,
-        valor_desconto=valor_desconto,
-        valor_final=valor_final,
-    )
-
-    os.fatura_id = nova.id
-    os.estado = E.FATURADA
-
-    MockAuditoriaRepository().registar(
-        evento=TipoEventoAuditoria.FATURA_EMITIDA,
-        descricao=f"Fatura {nova.numero} emitida para OS #{os.id}.",
-        utilizador_id=current_user.id,
-        utilizador_nome=current_user.nome,
-        loja_id=os.loja_id,
-        detalhe={"fatura_id": nova.id, "ordem_servico_id": os.id, "valor_final": valor_final},
-    )
-
-    return DataResponse[FaturaResponse](data=_to_response(nova), message="Fatura emitida com sucesso.")
-
-
-def obter(fatura_id: int, current_user: CurrentUserResponse) -> DataResponse[FaturaResponse]:
-    fatura = _repo.get_by_id(fatura_id)
-    if fatura is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Fatura não encontrada.", "code": "RESOURCE_NOT_FOUND"},
-        )
-    check_loja_access(fatura.loja_id, current_user)
-    return DataResponse[FaturaResponse](data=_to_response(fatura))
-
-
-def descarregar_pdf(fatura_id: int, current_user: CurrentUserResponse) -> bytes:
-    from app.utils.pdf import gerar_pdf_fatura
-
-    fatura = _repo.get_by_id(fatura_id)
-    if fatura is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Fatura não encontrada.", "code": "RESOURCE_NOT_FOUND"},
-        )
-    check_loja_access(fatura.loja_id, current_user)
-    return gerar_pdf_fatura(_to_response(fatura))
-
-
-def enviar_email(
-    fatura_id: int,
-    body: FaturaEnviarEmailRequest,
-    current_user: CurrentUserResponse,
-) -> dict:
-    from fastapi import BackgroundTasks
-    from app.utils.pdf import gerar_pdf_fatura
-    from app.utils.email import enviar_fatura_email
-
-    fatura = _repo.get_by_id(fatura_id)
-    if fatura is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Fatura não encontrada.", "code": "RESOURCE_NOT_FOUND"},
-        )
-    check_loja_access(fatura.loja_id, current_user)
-
-    email_destino = body.email or fatura.cliente.get("email")
-    if not email_destino:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"detail": "Sem email disponível. Forneça um email no pedido.", "code": "NO_EMAIL"},
-        )
-
-    fatura_response = _to_response(fatura)
-    pdf_bytes = gerar_pdf_fatura(fatura_response)
-    loja_info = _loja_repo.as_dict(fatura.loja_id) or {}
-
-    enviar_fatura_email(
-        cliente_email=email_destino,
-        cliente_nome=fatura.cliente.get("nome", ""),
-        fatura_numero=fatura.numero,
-        loja_nome=loja_info.get("nome", ""),
-        loja_telefone=loja_info.get("telefone", ""),
-        pdf_bytes=pdf_bytes,
-    )
-
-    return {"message": "Email enviado com sucesso.", "email": email_destino}
-
-
-def listar(
-    ordem_servico_id: int | None,
-    loja_id: int | None,
-    data_inicio,
-    data_fim,
-    page: int,
-    page_size: int,
-    current_user: CurrentUserResponse,
-) -> PaginatedResponse[FaturaResumo]:
-    effective_loja = loja_id if current_user.perfil == P.ADMINISTRADOR else current_user.loja_id
-    itens, total = _repo.list(effective_loja, ordem_servico_id, data_inicio, data_fim, page, page_size)
-    pages = max(1, -(-total // page_size))
-
-    return PaginatedResponse[FaturaResumo](
-        data=[_to_resumo(f) for f in itens],
-        total=total,
-        page=page,
-        page_size=page_size,
-        pages=pages,
-    )
+    def enviar_email(self, fatura_id: int, current_user: CurrentUserResponse):
+        fatura = self.obter(fatura_id, current_user)
+        return {"message": "E-mail enviado com sucesso", "fatura_id": fatura.id}

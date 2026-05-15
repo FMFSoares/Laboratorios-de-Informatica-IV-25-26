@@ -1,94 +1,47 @@
-from __future__ import annotations
+from datetime import date
+from sqlalchemy.orm import Session
+from sqlalchemy import cast, Date
+from app.models.fatura import Fatura
+from app.models.ordem_servico import OrdemServico
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import ClassVar
-
-from app.schemas.fatura import DescontoTipo, EstadoFatura
-
-
-@dataclass
-class Fatura:
-    id: int
-    numero: str
-    ordem_servico_id: int
-    loja_id: int
-    data_emissao: datetime
-    estado: EstadoFatura
-    cliente: dict
-    trotinete: dict
-    servico: dict
-    subtotal_pecas: float
-    valor_desconto: float
-    valor_final: float
-    pecas_aplicadas: list = field(default_factory=list)
-    desconto_tipo: DescontoTipo | None = None
-    desconto_valor: float = 0.0
-
-
-class MockFaturaRepository:
-    _data: ClassVar[list[Fatura]] = []
-    _next_id: ClassVar[int] = 1
+class FaturaRepository:
+    def __init__(self, db: Session):
+        self.db = db
 
     def get_by_id(self, fatura_id: int) -> Fatura | None:
-        return next((f for f in self._data if f.id == fatura_id), None)
+        return self.db.query(Fatura).filter(Fatura.id == fatura_id).first()
 
     def list(
         self,
         loja_id: int | None,
         ordem_servico_id: int | None,
-        data_inicio,
-        data_fim,
+        data_inicio: date | None,
+        data_fim: date | None,
         page: int,
-        page_size: int,
+        page_size: int
     ) -> tuple[list[Fatura], int]:
-        itens = list(self._data)
+        query = self.db.query(Fatura).join(OrdemServico)
+        
         if loja_id is not None:
-            itens = [f for f in itens if f.loja_id == loja_id]
+            query = query.filter(OrdemServico.loja_id == loja_id)
+            
         if ordem_servico_id is not None:
-            itens = [f for f in itens if f.ordem_servico_id == ordem_servico_id]
+            query = query.filter(Fatura.ordem_servico_id == ordem_servico_id)
+            
         if data_inicio is not None:
-            itens = [f for f in itens if f.data_emissao.date() >= data_inicio]
+            query = query.filter(cast(Fatura.data_emissao, Date) >= data_inicio)
+            
         if data_fim is not None:
-            itens = [f for f in itens if f.data_emissao.date() <= data_fim]
-        total = len(itens)
-        start = (page - 1) * page_size
-        return itens[start : start + page_size], total
+            query = query.filter(cast(Fatura.data_emissao, Date) <= data_fim)
+            
+        total = query.count()
+        skip = (page - 1) * page_size
+        itens = query.order_by(Fatura.data_emissao.desc()).offset(skip).limit(page_size).all()
+        
+        return itens, total
 
-    def list_all(self) -> list[Fatura]:
-        return list(self._data)
-
-    def create(
-        self,
-        ordem_servico_id: int,
-        loja_id: int,
-        cliente: dict,
-        trotinete: dict,
-        servico: dict,
-        pecas_aplicadas: list,
-        subtotal_pecas: float,
-        desconto_tipo: DescontoTipo | None,
-        desconto_valor: float,
-        valor_desconto: float,
-        valor_final: float,
-    ) -> Fatura:
-        nova = Fatura(
-            id=self._next_id,
-            numero=f"FAT-2026-{self._next_id:04d}",
-            ordem_servico_id=ordem_servico_id,
-            loja_id=loja_id,
-            data_emissao=datetime.now(timezone.utc),
-            estado=EstadoFatura.EMITIDA,
-            cliente=cliente,
-            trotinete=trotinete,
-            servico=servico,
-            pecas_aplicadas=pecas_aplicadas,
-            subtotal_pecas=subtotal_pecas,
-            desconto_tipo=desconto_tipo,
-            desconto_valor=desconto_valor,
-            valor_desconto=valor_desconto,
-            valor_final=valor_final,
-        )
-        self._data.append(nova)
-        type(self)._next_id += 1
-        return nova
+    def create(self, **kwargs) -> Fatura:
+        fatura = Fatura(**kwargs)
+        self.db.add(fatura)
+        # O commit é feito no serviço para garantir a consistência da transação ACID (OS + Fatura + Auditoria)
+        return fatura

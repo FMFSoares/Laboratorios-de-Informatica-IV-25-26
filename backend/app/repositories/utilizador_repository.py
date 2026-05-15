@@ -1,112 +1,35 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import ClassVar
-
+from sqlalchemy.orm import Session, joinedload
+from app.models.utilizador import Utilizador
 from app.schemas.utilizador import PerfilUtilizador
 
-
-@dataclass
-class Utilizador:
-    id: int
-    nome: str
-    email: str
-    password_hash: str
-    perfil: PerfilUtilizador
-    loja_id: int | None
-    loja_nome: str | None
-    ativo: bool
-
-
-class MockUtilizadorRepository:
-    _data: ClassVar[list[Utilizador]] = [
-        Utilizador(
-            id=1,
-            nome="Admin DLMCare",
-            email="admin@dlmcare.pt",
-            password_hash="$2b$12$AhecmMsG0tcCWLwSSs0yu.KiMnReryFW6v/GLxTBtRbM.AmST1Ez6",
-            perfil=PerfilUtilizador.ADMINISTRADOR,
-            loja_id=None,
-            loja_nome=None,
-            ativo=True,
-        ),
-        Utilizador(
-            id=2,
-            nome="Gerente Porto",
-            email="gerente.porto@dlmcare.pt",
-            password_hash="$2b$12$JjmAMgoV2X24aNEFTrKatONRBiugcAB4nHDcO56o6iZy9MGyW1uze",
-            perfil=PerfilUtilizador.GERENTE_LOJA,
-            loja_id=1,
-            loja_nome="DLMCare Porto",
-            ativo=True,
-        ),
-        Utilizador(
-            id=3,
-            nome="Ana Rececionista",
-            email="ana.lisboa@dlmcare.pt",
-            password_hash="$2b$12$Q6/Xe4M6ULeAMKigwgPnUeUnQihPItPpYnZLkIW9UG2lb19CriInm",
-            perfil=PerfilUtilizador.RECECIONISTA,
-            loja_id=1,
-            loja_nome="DLMCare Porto",
-            ativo=True,
-        ),
-        Utilizador(
-            id=4,
-            nome="João Mecânico",
-            email="joao.mecanico@dlmcare.pt",
-            password_hash="$2b$12$vb7gBO55HoBkVSD5psUumuYhLzjPJe4a1kEK.Bm18783xwiYevcaG",
-            perfil=PerfilUtilizador.MECANICO,
-            loja_id=1,
-            loja_nome="DLMCare Porto",
-            ativo=True,
-        ),
-    ]
-    _next_id: ClassVar[int] = 5
+class UtilizadorRepository:
+    def __init__(self, db: Session):
+        self.db = db
 
     def get_by_id(self, utilizador_id: int) -> Utilizador | None:
-        return next((u for u in self._data if u.id == utilizador_id), None)
+        return self.db.query(Utilizador).options(joinedload(Utilizador.loja)).filter(Utilizador.id == utilizador_id).first()
 
     def get_by_email(self, email: str) -> Utilizador | None:
-        email_lower = email.lower()
-        return next((u for u in self._data if u.email.lower() == email_lower), None)
+        return self.db.query(Utilizador).options(joinedload(Utilizador.loja)).filter(Utilizador.email.ilike(email)).first()
 
-    def list(self, page: int, page_size: int) -> tuple[list[Utilizador], int]:
-        total = len(self._data)
-        start = (page - 1) * page_size
-        return self._data[start : start + page_size], total
+    def list(self, skip: int, limit: int) -> tuple[list[Utilizador], int]:
+        query = self.db.query(Utilizador).options(joinedload(Utilizador.loja))
+        total = query.count()
+        itens = query.offset(skip).limit(limit).all()
+        return itens, total
 
     def list_by_perfil(self, perfil: PerfilUtilizador, loja_id: int | None = None) -> list[Utilizador]:
-        itens = [u for u in self._data if u.perfil == perfil]
+        query = self.db.query(Utilizador).filter(Utilizador.perfil == perfil)
         if loja_id is not None:
-            itens = [u for u in itens if u.loja_id == loja_id]
-        return itens
-
-    def list_all(self) -> list[Utilizador]:
-        return list(self._data)
+            query = query.filter(Utilizador.loja_id == loja_id)
+        return query.all()
 
     def exists_email(self, email: str) -> bool:
-        return self.get_by_email(email) is not None
+        return self.db.query(Utilizador.id).filter(Utilizador.email.ilike(email)).first() is not None
 
-    def create(
-        self,
-        nome: str,
-        email: str,
-        password_hash: str,
-        perfil: PerfilUtilizador,
-        loja_id: int | None,
-        loja_nome: str | None,
-        ativo: bool,
-    ) -> Utilizador:
-        novo = Utilizador(
-            id=self._next_id,
-            nome=nome,
-            email=email,
-            password_hash=password_hash,
-            perfil=perfil,
-            loja_id=loja_id,
-            loja_nome=loja_nome,
-            ativo=ativo,
-        )
-        self._data.append(novo)
-        type(self)._next_id += 1
+    def create(self, **kwargs) -> Utilizador:
+        novo = Utilizador(**kwargs)
+        self.db.add(novo)
+        self.db.commit()
+        self.db.refresh(novo)
         return novo
