@@ -12,8 +12,7 @@ from app.config import settings
 from app.database import Base
 
 # Importar todos os modelos para que o Alembic os detete
-# (descomentar à medida que forem criados)
-# from app.models import utilizador, loja, cliente, trotinete, ordem_servico, peca, stock, fatura, auditoria
+from app.models import utilizador, loja, cliente, trotinete, ordem_servico, peca, stock, fatura, auditoria, notificacao, transferencia
 
 config = context.config
 

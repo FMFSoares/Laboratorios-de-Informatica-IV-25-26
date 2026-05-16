@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone, date
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import cast, Date
@@ -12,9 +14,15 @@ class OrdemServicoRepository:
             joinedload(OrdemServico.cliente),
             joinedload(OrdemServico.trotinete),
             joinedload(OrdemServico.mecanico),
-            joinedload(OrdemServico.pecas_usadas).joinedload(OSPeca.peca),
+            joinedload(OrdemServico.pecas_aplicadas).joinedload(OSPeca.peca),
             joinedload(OrdemServico.registos_tempo)
         ).filter(OrdemServico.id == os_id).first()
+
+    def list_by_cliente(self, cliente_id: int) -> list[OrdemServico]:
+        return self.db.query(OrdemServico).options(
+            joinedload(OrdemServico.trotinete),
+            joinedload(OrdemServico.fatura),
+        ).filter(OrdemServico.cliente_id == cliente_id).order_by(OrdemServico.data_entrada.desc()).all()
 
     def list(
         self, loja_id: int | None, estado: EstadoOrdemServico | None,

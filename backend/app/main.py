@@ -48,16 +48,19 @@ def health():
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────
-from app.routers import auth, clientes, trotinetes, pecas, stock, ordens_servico, faturas, dashboard, auditoria, utilizadores, lojas
+from app.routers import auth, clientes, trotinetes, pecas, stock, ordens_servico, faturas, dashboard, auditoria, utilizadores, lojas, notificacoes, transferencias, pedidos_peca
 
-app.include_router(auth.router,           prefix="/api/v1")
-app.include_router(clientes.router,       prefix="/api/v1")
-app.include_router(trotinetes.router,     prefix="/api/v1")
-app.include_router(pecas.router,          prefix="/api/v1")
-app.include_router(stock.router,          prefix="/api/v1")
-app.include_router(ordens_servico.router, prefix="/api/v1")
-app.include_router(faturas.router,        prefix="/api/v1")
-app.include_router(dashboard.router,      prefix="/api/v1")
-app.include_router(auditoria.router,      prefix="/api/v1")
-app.include_router(utilizadores.router,   prefix="/api/v1")
-app.include_router(lojas.router,          prefix="/api/v1")
+app.include_router(auth.router,            prefix="/api/v1")
+app.include_router(clientes.router,        prefix="/api/v1")
+app.include_router(trotinetes.router,      prefix="/api/v1")
+app.include_router(pecas.router,           prefix="/api/v1")
+app.include_router(stock.router,           prefix="/api/v1")
+app.include_router(ordens_servico.router,  prefix="/api/v1")
+app.include_router(faturas.router,         prefix="/api/v1")
+app.include_router(dashboard.router,       prefix="/api/v1")
+app.include_router(auditoria.router,       prefix="/api/v1")
+app.include_router(utilizadores.router,    prefix="/api/v1")
+app.include_router(lojas.router,           prefix="/api/v1")
+app.include_router(notificacoes.router,    prefix="/api/v1")
+app.include_router(transferencias.router,  prefix="/api/v1")
+app.include_router(pedidos_peca.router,    prefix="/api/v1")

@@ -5,7 +5,7 @@ from fastapi import HTTPException
 
 from app.repositories.ordem_servico_repository import OrdemServicoRepository
 from app.repositories.auditoria_repository import AuditoriaRepository
-from app.repositories.peca_repository import MockPecaRepository  # Atualizar para o real quando disponível
+from app.repositories.peca_repository import PecaRepository
 from app.models.ordem_servico import OrdemServico, EstadoOrdemServico, RegistoTempo
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.utilizador import PerfilUtilizador
@@ -13,19 +13,25 @@ from app.schemas.auditoria import TipoEventoAuditoria
 from app.schemas.common import PaginatedResponse, DataResponse
 
 class OrdemServicoService:
-    # Adaptação das transições aos Estados existentes no Model fornecido:
     _TRANSICOES = {
-        (EstadoOrdemServico.PENDENTE, EstadoOrdemServico.EM_ANDAMENTO): {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
-        (EstadoOrdemServico.PENDENTE, EstadoOrdemServico.CANCELADA): {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.RECECIONISTA},
-        (EstadoOrdemServico.EM_ANDAMENTO, EstadoOrdemServico.CONCLUIDA): {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
-        (EstadoOrdemServico.EM_ANDAMENTO, EstadoOrdemServico.CANCELADA): {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
+        (EstadoOrdemServico.PENDENTE,           EstadoOrdemServico.EM_DIAGNOSTICO):   {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.RECECIONISTA, PerfilUtilizador.MECANICO},
+        (EstadoOrdemServico.PENDENTE,           EstadoOrdemServico.CANCELADA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.RECECIONISTA},
+        (EstadoOrdemServico.EM_DIAGNOSTICO,     EstadoOrdemServico.AGUARDA_APROVACAO): {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
+        (EstadoOrdemServico.EM_DIAGNOSTICO,     EstadoOrdemServico.CANCELADA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
+        (EstadoOrdemServico.AGUARDA_APROVACAO,  EstadoOrdemServico.EM_REPARACAO):      {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
+        (EstadoOrdemServico.AGUARDA_APROVACAO,  EstadoOrdemServico.CANCELADA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
+        (EstadoOrdemServico.EM_REPARACAO,       EstadoOrdemServico.AGUARDA_PECAS):     {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
+        (EstadoOrdemServico.EM_REPARACAO,       EstadoOrdemServico.CONCLUIDA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
+        (EstadoOrdemServico.EM_REPARACAO,       EstadoOrdemServico.CANCELADA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
+        (EstadoOrdemServico.AGUARDA_PECAS,      EstadoOrdemServico.EM_REPARACAO):      {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
+        (EstadoOrdemServico.CONCLUIDA,          EstadoOrdemServico.FATURADA):          {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.RECECIONISTA},
     }
 
     def __init__(self, db: Session):
         self.db = db
         self.repo = OrdemServicoRepository(db)
         self.auditoria_repo = AuditoriaRepository(db)
-        self.peca_repo = MockPecaRepository() # Idealmente: PecaRepository(db)
+        self.peca_repo = PecaRepository(db)
 
     def obter(self, os_id: int, current_user: CurrentUserResponse) -> OrdemServico:
         os = self.repo.get_by_id(os_id)

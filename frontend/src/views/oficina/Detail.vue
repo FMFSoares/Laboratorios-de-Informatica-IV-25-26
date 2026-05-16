@@ -11,6 +11,7 @@ import {
   removerPeca,
 } from '../../services/ordensServico.js'
 import { getPecas } from '../../services/pecas.js'
+import { criarPedidoPeca } from '../../services/pedidosPeca.js'
 import { useAuthStore } from '../../store/auth.js'
 import { useWorkshopStore } from '../../store/workshop.js'
 import StatusBadge from '../../components/ui/StatusBadge.vue'
@@ -286,6 +287,66 @@ async function submitPeca() {
 
 const removingPecaId = ref(null)
 
+// Part request (pedido de peça ao gerente)
+const showPedidoPeca   = ref(false)
+const pedidoPecaSearch = ref('')
+const pedidoPecaResults = ref([])
+const pedidoPecaSelected = ref(null)
+const pedidoPecaQty    = ref(1)
+const pedidoPecaObs    = ref('')
+const pedidoPecaLoading = ref(false)
+const pedidoPecaError  = ref('')
+const pedidoPecaSuccess = ref(false)
+let pedidoPecaTimer
+
+const canRequestPeca = computed(() =>
+  os.value && ['EM_REPARACAO', 'AGUARDA_PECAS'].includes(os.value.estado)
+)
+
+async function searchPedidoPeca() {
+  if (!pedidoPecaSearch.value.trim()) { pedidoPecaResults.value = []; return }
+  try {
+    const { data } = await getPecas({ query: pedidoPecaSearch.value.trim(), page_size: 8 })
+    pedidoPecaResults.value = data.data
+  } catch { pedidoPecaResults.value = [] }
+}
+
+function watchPedidoPecaSearch() {
+  clearTimeout(pedidoPecaTimer)
+  pedidoPecaSelected.value = null
+  pedidoPecaTimer = setTimeout(searchPedidoPeca, 300)
+}
+
+function selectPedidoPeca(p) {
+  pedidoPecaSelected.value = p
+  pedidoPecaSearch.value = p.nome
+  pedidoPecaResults.value = []
+  pedidoPecaQty.value = 1
+}
+
+async function submitPedidoPeca() {
+  if (!pedidoPecaSelected.value) return
+  pedidoPecaError.value = ''
+  pedidoPecaLoading.value = true
+  try {
+    await criarPedidoPeca({
+      ordem_servico_id: os.value.id,
+      peca_id: pedidoPecaSelected.value.id,
+      quantidade: pedidoPecaQty.value,
+      observacoes: pedidoPecaObs.value || null,
+    })
+    pedidoPecaSuccess.value = true
+    pedidoPecaSearch.value = ''
+    pedidoPecaSelected.value = null
+    pedidoPecaQty.value = 1
+    pedidoPecaObs.value = ''
+  } catch (e) {
+    pedidoPecaError.value = e.response?.data?.detail?.detail || 'Erro ao enviar pedido.'
+  } finally {
+    pedidoPecaLoading.value = false
+  }
+}
+
 async function removePeca(pecaId) {
   removingPecaId.value = pecaId
   try {
@@ -445,6 +506,60 @@ function fmtDateTime(dt) {
                 </div>
               </div>
               <p v-if="pecaError" class="form-error">{{ pecaError }}</p>
+            </div>
+          </div>
+
+          <!-- Pedir Peça ao Gerente -->
+          <div class="card" v-if="canRequestPeca">
+            <button class="collapsible-header" @click="showPedidoPeca = !showPedidoPeca; pedidoPecaSuccess = false">
+              <span class="card-title" style="margin:0">Pedir Peça ao Gerente</span>
+              <span class="chevron">{{ showPedidoPeca ? '▲' : '▼' }}</span>
+            </button>
+            <div v-if="showPedidoPeca" class="pedido-peca-body">
+              <div v-if="pedidoPecaSuccess" class="success-msg">
+                Pedido enviado! O gerente receberá uma notificação.
+              </div>
+              <template v-else>
+                <div class="peca-search-wrap" style="margin-bottom: 0.5rem">
+                  <input
+                    v-model="pedidoPecaSearch"
+                    placeholder="Pesquisar peça em falta..."
+                    @input="watchPedidoPecaSearch"
+                    autocomplete="off"
+                  />
+                  <div v-if="pedidoPecaResults.length > 0" class="peca-dropdown">
+                    <div
+                      v-for="p in pedidoPecaResults"
+                      :key="p.id"
+                      class="peca-option"
+                      @mousedown.prevent="selectPedidoPeca(p)"
+                    >
+                      <span class="peca-nome">{{ p.nome }}</span>
+                      <span class="peca-ref">{{ p.referencia }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div v-if="pedidoPecaSelected" class="peca-selected">
+                  <span>{{ pedidoPecaSelected.nome }}</span>
+                  <div class="qty-row">
+                    <label>Quantidade</label>
+                    <input v-model.number="pedidoPecaQty" type="number" min="1" style="width: 80px" />
+                  </div>
+                </div>
+                <div class="field" style="margin-top: 0.5rem">
+                  <label style="font-size:0.8rem;font-weight:600;color:#6b7280">Observações (opcional)</label>
+                  <textarea v-model="pedidoPecaObs" rows="2" placeholder="Motivo ou notas..." />
+                </div>
+                <p v-if="pedidoPecaError" class="form-error">{{ pedidoPecaError }}</p>
+                <button
+                  class="btn btn--primary btn--sm"
+                  style="margin-top: 0.5rem"
+                  :disabled="pedidoPecaLoading || !pedidoPecaSelected"
+                  @click="submitPedidoPeca"
+                >
+                  {{ pedidoPecaLoading ? 'A enviar...' : 'Enviar Pedido' }}
+                </button>
+              </template>
             </div>
           </div>
 
@@ -634,4 +749,9 @@ function fmtDateTime(dt) {
 .os-num { font-family: 'Courier New', monospace; font-size: 0.85rem; font-weight: 700; color: #1abc9c; }
 .os-detail { font-size: 0.82rem; color: #6b7280; }
 .dialog-body { font-size: 0.9rem; color: #374151; margin-bottom: 1.5rem; line-height: 1.5; }
+
+.collapsible-header { display: flex; align-items: center; justify-content: space-between; background: none; border: none; width: 100%; cursor: pointer; padding: 0; }
+.chevron { font-size: 0.75rem; color: #9ca3af; }
+.pedido-peca-body { margin-top: 1rem; }
+.success-msg { background: #dcfce7; color: #166534; border-radius: 6px; padding: 0.75rem 1rem; font-size: 0.875rem; font-weight: 500; }
 </style>

@@ -18,7 +18,8 @@ async function handleLogin() {
     await authStore.login(email.value, password.value)
     router.push({ name: 'Dashboard' })
   } catch (error) {
-    errorMessage.value = error.response?.data?.detail || 'Credenciais inválidas. Tente novamente.'
+    const detail = error.response?.data?.detail
+    errorMessage.value = (detail && typeof detail === 'object' ? detail.detail : detail) || 'Credenciais inválidas. Tente novamente.'
   } finally {
     isLoading.value = false
   }

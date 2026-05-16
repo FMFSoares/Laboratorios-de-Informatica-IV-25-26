@@ -25,19 +25,19 @@ INSERT INTO lojas (id, nome, cidade, morada, telefone, email, ativo) VALUES
 -- Hash Bcrypt para a password comum: "123456"
 -- Nota: O Enum respeita o contrato do projeto (ADMINISTRADOR, GERENTE_LOJA, RECECIONISTA, MECANICO)
 INSERT INTO utilizadores (id, nome, email, password_hash, perfil, loja_id, ativo, comissao) VALUES
-(1, 'David Lopes Machado', 'david@dlmcare.pt', '$2b$12$L74.1w1v0P6Y829z/W488uH2P8M2z8518/A68z.44Z8Zz0y00Z00.', 'ADMINISTRADOR', NULL, 1, NULL),
+(1, 'David Lopes Machado', 'david@dlmcare.pt', '$2b$12$VzA.1mbIMc7KAnR4qvJpCOB7Tti/XtP258Pus7wg8hd/BKEynrmSC', 'ADMINISTRADOR', NULL, 1, NULL),
 
 -- Equipa Lisboa (Loja 1)
-(2, 'José Barros', 'jose.barros@dlmcare.pt', '$2b$12$L74.1w1v0P6Y829z/W488uH2P8M2z8518/A68z.44Z8Zz0y00Z00.', 'GERENTE_LOJA', 1, 1, NULL),
-(3, 'Inês Carvalho', 'ines.carvalho@dlmcare.pt', '$2b$12$L74.1w1v0P6Y829z/W488uH2P8M2z8518/A68z.44Z8Zz0y00Z00.', 'RECECIONISTA', 1, 1, NULL),
-(4, 'Tiago Mendes', 'tiago.mendes@dlmcare.pt', '$2b$12$L74.1w1v0P6Y829z/W488uH2P8M2z8518/A68z.44Z8Zz0y00Z00.', 'MECANICO', 1, 1, 10),
-(5, 'João Ruca Silva', 'joao.silva@dlmcare.pt', '$2b$12$L74.1w1v0P6Y829z/W488uH2P8M2z8518/A68z.44Z8Zz0y00Z00.', 'MECANICO', 1, 1, 10),
+(2, 'José Barros', 'jose.barros@dlmcare.pt', '$2b$12$VzA.1mbIMc7KAnR4qvJpCOB7Tti/XtP258Pus7wg8hd/BKEynrmSC', 'GERENTE_LOJA', 1, 1, NULL),
+(3, 'Inês Carvalho', 'ines.carvalho@dlmcare.pt', '$2b$12$VzA.1mbIMc7KAnR4qvJpCOB7Tti/XtP258Pus7wg8hd/BKEynrmSC', 'RECECIONISTA', 1, 1, NULL),
+(4, 'Tiago Mendes', 'tiago.mendes@dlmcare.pt', '$2b$12$VzA.1mbIMc7KAnR4qvJpCOB7Tti/XtP258Pus7wg8hd/BKEynrmSC', 'MECANICO', 1, 1, 10),
+(5, 'João Ruca Silva', 'joao.silva@dlmcare.pt', '$2b$12$VzA.1mbIMc7KAnR4qvJpCOB7Tti/XtP258Pus7wg8hd/BKEynrmSC', 'MECANICO', 1, 1, 10),
 
 -- Equipa Porto (Loja 2)
-(6, 'Miguel Torres', 'miguel.torres@dlmcare.pt', '$2b$12$L74.1w1v0P6Y829z/W488uH2P8M2z8518/A68z.44Z8Zz0y00Z00.', 'GERENTE_LOJA', 2, 1, NULL),
+(6, 'Miguel Torres', 'miguel.torres@dlmcare.pt', '$2b$12$VzA.1mbIMc7KAnR4qvJpCOB7Tti/XtP258Pus7wg8hd/BKEynrmSC', 'GERENTE_LOJA', 2, 1, NULL),
 
 -- Equipa Braga (Loja 3)
-(7, 'Sofia Almeida', 'sofia.almeida@dlmcare.pt', '$2b$12$L74.1w1v0P6Y829z/W488uH2P8M2z8518/A68z.44Z8Zz0y00Z00.', 'GERENTE_LOJA', 3, 1, NULL);
+(7, 'Sofia Almeida', 'sofia.almeida@dlmcare.pt', '$2b$12$VzA.1mbIMc7KAnR4qvJpCOB7Tti/XtP258Pus7wg8hd/BKEynrmSC', 'GERENTE_LOJA', 3, 1, NULL);
 
 
 -- 3. PEÇAS (Catálogo base com 12 peças representativas)

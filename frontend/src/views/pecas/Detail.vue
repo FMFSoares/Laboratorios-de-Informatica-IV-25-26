@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getPeca } from '../../services/pecas.js'
 import { getStock, updateStockMinimo } from '../../services/stock.js'
+import { criarTransferencia } from '../../services/transferencias.js'
 import { useAuthStore } from '../../store/auth.js'
 import LoadingSpinner from '../../components/ui/LoadingSpinner.vue'
 
@@ -74,6 +75,67 @@ async function saveMin(lojaId) {
 
 function fmtEur(v) {
   return v != null ? `${Number(v).toFixed(2)} €` : '—'
+}
+
+// ── Transfer request modal ────────────────────────────────────────────
+const canRequest     = computed(() => perfil === 'GERENTE_LOJA')
+const showModal      = ref(false)
+const modalLojaId    = ref('')
+const modalQty       = ref(1)
+const modalObs       = ref('')
+const modalLoading   = ref(false)
+const modalError     = ref('')
+const modalSuccess   = ref(false)
+
+const availableLojas = computed(() =>
+  otherLojasStock.value
+    .map(s => ({ ...s, disponivel: Math.max(0, s.quantidade - s.limite_minimo) }))
+    .filter(s => s.disponivel > 0)
+)
+
+const selectedLoja = computed(() =>
+  availableLojas.value.find(s => s.loja_id === Number(modalLojaId.value)) ?? null
+)
+
+function openModal() {
+  modalLojaId.value  = String(availableLojas.value[0]?.loja_id ?? '')
+  modalQty.value     = 1
+  modalObs.value     = ''
+  modalError.value   = ''
+  modalSuccess.value = false
+  showModal.value    = true
+}
+
+async function submitModal() {
+  modalError.value   = ''
+  modalLoading.value = true
+  try {
+    await criarTransferencia({
+      loja_origem_id: Number(modalLojaId.value),
+      peca_id:        peca.value.id,
+      quantidade:     modalQty.value,
+      observacoes:    modalObs.value || null,
+    })
+    modalSuccess.value = true
+  } catch (e) {
+    console.error('[submitModal] error:', e)
+    const detail = e.response?.data?.detail
+    let msg
+    if (typeof detail === 'string') {
+      msg = detail
+    } else if (Array.isArray(detail)) {
+      msg = detail.map(d => d.msg ?? JSON.stringify(d)).join('; ')
+    } else if (detail) {
+      msg = JSON.stringify(detail)
+    } else if (e.message) {
+      msg = e.message
+    } else {
+      msg = 'Erro ao enviar pedido.'
+    }
+    modalError.value = msg
+  } finally {
+    modalLoading.value = false
+  }
 }
 </script>
 
@@ -189,7 +251,12 @@ function fmtEur(v) {
         <!-- ── Right column — other lojas ─────────────────────────── -->
         <div class="right">
           <div class="card">
-            <div class="card-title">Outras Lojas</div>
+            <div class="card-header-row">
+              <div class="card-title">Outras Lojas</div>
+              <button v-if="canRequest && availableLojas.length > 0" class="btn-request" @click="openModal">
+                Pedir Transferência
+              </button>
+            </div>
             <div v-if="otherLojasStock.length === 0" class="empty-msg">
               {{ stock.length === 0 ? 'Sem stock registado.' : 'Sem stock noutras lojas.' }}
             </div>
@@ -201,10 +268,7 @@ function fmtEur(v) {
                   'stock-row',
                   s.quantidade === 0 && 'stock-row--esgotado',
                   s.alerta && s.quantidade > 0 && isGestao && 'stock-row--alerta',
-                  isGestao && editingLojaId !== s.loja_id && 'stock-row--clickable',
                 ]"
-                :title="isGestao && editingLojaId !== s.loja_id ? 'Clique para editar o mínimo' : undefined"
-                @click="startEdit(s)"
               >
                 <div class="stock-loja">{{ s.loja_nome }}</div>
                 <div class="stock-sep"></div>
@@ -214,40 +278,74 @@ function fmtEur(v) {
                       <span class="stock-num" :class="s.quantidade === 0 && 'num--zero'">{{ s.quantidade }}</span>
                       <span class="stock-unit">em stock</span>
                     </div>
-                    <div v-if="isGestao" class="stock-min">
-                      <template v-if="editingLojaId === s.loja_id">
-                        <input
-                          v-model.number="editMinValue"
-                          type="number" min="0"
-                          class="min-input"
-                          @click.stop
-                          @keyup.enter="saveMin(s.loja_id)"
-                          @keyup.esc="cancelEdit"
-                        />
-                        <button class="btn-icon btn-icon--ok" @click.stop="saveMin(s.loja_id)">✓</button>
-                        <button class="btn-icon btn-icon--cancel" @click.stop="cancelEdit">✕</button>
-                      </template>
-                      <template v-else>
-                        <span class="stock-num stock-num--min">{{ s.limite_minimo }}</span>
-                        <span class="stock-unit">mínimo</span>
-                        <span class="edit-hint">✎</span>
-                      </template>
-                    </div>
                   </div>
-                  <div v-if="isGestao" class="stock-badge-wrap">
+                  <div class="stock-badge-wrap" v-if="isGestao">
                     <span v-if="s.quantidade === 0" class="sbadge sbadge--esgotado">Esgotado</span>
                     <span v-else-if="s.alerta"      class="sbadge sbadge--alerta">Alerta</span>
-                    <span v-else                     class="sbadge sbadge--ok">OK</span>
+                    <span v-else                    class="sbadge sbadge--ok">OK</span>
                   </div>
                 </div>
               </div>
-              <p v-if="editMinError && otherLojasStock.some(s => s.loja_id === editingLojaId)" class="edit-error">{{ editMinError }}</p>
             </div>
           </div>
         </div>
       </div>
     </template>
   </div>
+
+  <!-- Transfer request modal -->
+  <Teleport to="body">
+    <div v-if="showModal" class="overlay" @click.self="showModal = false">
+      <div class="modal">
+        <h2 class="modal-title">Pedir Transferência</h2>
+        <p class="modal-sub">{{ peca?.nome }}</p>
+
+        <div v-if="modalSuccess" class="modal-success">
+          Pedido enviado! O gerente da loja de origem receberá uma notificação.
+          <div class="modal-footer">
+            <button class="btn btn--primary" @click="showModal = false">Fechar</button>
+          </div>
+        </div>
+
+        <template v-else>
+          <div class="field">
+            <label>Loja de origem</label>
+            <select v-model="modalLojaId">
+              <option v-for="s in availableLojas" :key="s.loja_id" :value="String(s.loja_id)">
+                {{ s.loja_nome }} — {{ s.disponivel }} disponível{{ s.disponivel !== 1 ? 'is' : '' }}
+              </option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Quantidade</label>
+            <input
+              v-model.number="modalQty"
+              type="number" min="1"
+              :max="selectedLoja?.disponivel ?? 999"
+            />
+            <span v-if="selectedLoja" class="field-hint">Máximo pedível: {{ selectedLoja.disponivel }}</span>
+          </div>
+          <div class="field">
+            <label>Observações (opcional)</label>
+            <textarea v-model="modalObs" rows="2" placeholder="Motivo ou notas..." />
+          </div>
+
+          <p v-if="modalError" class="field-error">{{ modalError }}</p>
+
+          <div class="modal-footer">
+            <button class="btn btn--ghost" @click="showModal = false">Cancelar</button>
+            <button
+              class="btn btn--primary"
+              :disabled="modalLoading || !modalLojaId || modalQty < 1"
+              @click="submitModal"
+            >
+              {{ modalLoading ? 'A enviar...' : 'Enviar Pedido' }}
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -358,4 +456,26 @@ function fmtEur(v) {
 .edit-error { color: #dc2626; font-size: 0.82rem; margin-top: 0.5rem; }
 .empty-msg  { color: #6b7280; font-size: 0.875rem; }
 .empty      { padding: 2rem; color: #6b7280; }
+
+.card-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.card-header-row .card-title { margin-bottom: 0; }
+.btn-request { background: #1abc9c; color: #fff; border: none; font-size: 0.8rem; font-weight: 600; padding: 0.35rem 0.85rem; border-radius: 6px; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; }
+.btn-request:hover { opacity: 0.85; }
+
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { background: #fff; border-radius: 12px; padding: 1.75rem; width: 100%; max-width: 440px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
+.modal-title { font-size: 1.1rem; font-weight: 700; color: #1e293b; margin: 0 0 0.15rem; }
+.modal-sub { font-size: 0.85rem; color: #6b7280; margin: 0 0 1.25rem; }
+.modal-success { background: #dcfce7; color: #166534; border-radius: 8px; padding: 1rem; font-size: 0.9rem; line-height: 1.5; }
+.modal-footer { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem; }
+.field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.9rem; }
+.field label { font-size: 0.82rem; font-weight: 600; color: #374151; }
+.field input, .field select, .field textarea { padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 7px; font-size: 0.875rem; outline: none; font-family: inherit; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: #1abc9c; }
+.field-hint { font-size: 0.78rem; color: #6b7280; }
+.field-error { color: #dc2626; font-size: 0.85rem; margin: 0; }
+.btn { padding: 0.5rem 1.1rem; border-radius: 7px; font-size: 0.875rem; font-weight: 500; cursor: pointer; border: none; }
+.btn--primary { background: #1abc9c; color: #fff; }
+.btn--ghost { background: #f1f5f9; color: #374151; border: 1px solid #d1d5db; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

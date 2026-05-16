@@ -21,11 +21,15 @@ from app.utils.permissions import check_loja_access
 def _calcular_fidelizacao(cliente_id: int) -> tuple[int, float]:
     """Returns (nivel, desconto_pct). nivel = floor(log2(n_concluidas+1)), capped at 5."""
     from math import floor, log2
-    from app.repositories.ordem_servico_repository import MockOrdemServicoRepository
-    oss = MockOrdemServicoRepository().list_by_cliente(cliente_id)
-    n = sum(1 for o in oss if o.estado.value in ("CONCLUIDA", "FATURADA"))
-    nivel = min(5, int(floor(log2(n + 1))))
-    return nivel, float(nivel * 2)
+    from app.repositories.ordem_servico_repository import OrdemServicoRepository
+    db = SessionLocal()
+    try:
+        oss = OrdemServicoRepository(db).list_by_cliente(cliente_id)
+        n = sum(1 for o in oss if o.estado.value in ("CONCLUIDA", "FATURADA"))
+        nivel = min(5, int(floor(log2(n + 1))))
+        return nivel, float(nivel * 2)
+    finally:
+        db.close()
 
 
 def _find(cliente_id: int) -> Cliente | None:
@@ -109,9 +113,7 @@ class ClienteService:
         return DataResponse[ClienteResponse](data=resp, message="Cliente atualizado com sucesso.")
 
     def historico(self, cliente_id: int, page: int, page_size: int, current_user: CurrentUserResponse) -> PaginatedResponse[ClienteHistoricoItem]:
-        from app.repositories.ordem_servico_repository import MockOrdemServicoRepository
-        from app.repositories.trotinete_repository import MockTrotineteRepository
-        from app.repositories.fatura_repository import MockFaturaRepository
+        from app.repositories.ordem_servico_repository import OrdemServicoRepository
 
         cliente = self.repo.get_by_id(cliente_id)
         if not cliente:
@@ -121,24 +123,14 @@ class ClienteService:
             )
         check_loja_access(cliente.loja_id, current_user)
 
-        os_repo = MockOrdemServicoRepository()
-        trot_repo = MockTrotineteRepository()
-        fat_repo = MockFaturaRepository()
-
-        oss = os_repo.list_by_cliente(cliente_id)
-        oss.sort(key=lambda o: o.data_entrada, reverse=True)
+        oss = OrdemServicoRepository(self.repo.db).list_by_cliente(cliente_id)
 
         items: list[ClienteHistoricoItem] = []
         for os in oss:
-            trot = trot_repo.get_by_id(os.trotinete_id)
-            valor_final = None
-            if os.fatura_id is not None:
-                fat = fat_repo.get_by_id(os.fatura_id)
-                if fat:
-                    valor_final = fat.valor_final
+            valor_final = os.fatura.valor_final if os.fatura else None
             items.append(ClienteHistoricoItem(
                 id=os.id,
-                trotinete_numero_serie=trot.numero_serie if trot else "—",
+                trotinete_numero_serie=os.trotinete.numero_serie if os.trotinete else "—",
                 descricao=os.descricao_problema,
                 estado=os.estado.value,
                 data_entrada=os.data_entrada,

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sqlalchemy.orm import Session, joinedload
 from app.models.utilizador import Utilizador
 from app.schemas.utilizador import PerfilUtilizador

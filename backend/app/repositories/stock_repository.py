@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sqlalchemy.orm import Session, joinedload
 from app.models.stock import StockLoja
 

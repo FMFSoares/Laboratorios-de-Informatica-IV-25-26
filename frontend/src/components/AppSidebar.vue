@@ -3,10 +3,12 @@ import { computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth.js'
 import { useWorkshopStore } from '../store/workshop.js'
+import { useNotificationsStore } from '../store/notifications.js'
 
 const authStore = useAuthStore()
 const router = useRouter()
 const workshop = useWorkshopStore()
+const notifStore = useNotificationsStore()
 
 const PERFIL_LABEL = {
   ADMINISTRADOR: 'Administrador',
@@ -15,16 +17,23 @@ const PERFIL_LABEL = {
   MECANICO: 'Mecânico',
 }
 
-// Background sync — keeps the dot accurate if the user opened another tab
-// or if some other session changed the timer state
 let pollInterval
 onMounted(() => {
   workshop.refresh()
   pollInterval = setInterval(workshop.refresh, 30000)
+  const perfil = authStore.getCurrentUser?.perfil
+  if (perfil === 'GERENTE_LOJA' || perfil === 'ADMINISTRADOR') {
+    notifStore.fetchCount()
+    pollInterval = setInterval(() => {
+      workshop.refresh()
+      notifStore.fetchCount()
+    }, 30000)
+  }
 })
 onUnmounted(() => clearInterval(pollInterval))
 
 const hasActiveOS = computed(() => workshop.hasActiveOS)
+const notifCount  = computed(() => notifStore.count)
 
 function logout() {
   authStore.logout()
@@ -36,7 +45,9 @@ const ALL_NAV = [
   { label: 'Dashboard',          to: '/dashboard',       roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
   { label: 'Clientes',           to: '/clientes',        roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
   { label: 'Ordens de Serviço',  to: '/ordens-servico',  roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
-  { label: 'Stock',              to: '/stock',           roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+  { label: 'Inventário',         to: '/stock',           roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+  { label: 'Transferências',     to: '/transferencias',  roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+  { label: 'Notificações',       to: '/notificacoes',    roles: ['ADMINISTRADOR', 'GERENTE_LOJA'], badge: true },
   { label: 'Faturas',            to: '/faturas',         roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
   { label: 'Utilizadores',       to: '/utilizadores',    roles: ['ADMINISTRADOR'] },
 
@@ -72,6 +83,7 @@ const userRole = computed(() => PERFIL_LABEL[user.value?.perfil] ?? user.value?.
           <RouterLink :to="item.to" class="nav-link">
             <span class="nav-label">{{ item.label }}</span>
             <span v-if="item.to === '/oficina/ativa' && hasActiveOS" class="active-dot" />
+            <span v-if="item.badge && notifCount > 0" class="notif-badge">{{ notifCount > 99 ? '99+' : notifCount }}</span>
           </RouterLink>
         </li>
       </ul>
@@ -179,6 +191,16 @@ const userRole = computed(() => PERFIL_LABEL[user.value?.perfil] ?? user.value?.
 }
 .router-link-active .active-dot {
   background: #1abc9c;
+}
+.notif-badge {
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 99px;
+  flex-shrink: 0;
+  line-height: 1.4;
 }
 
 /* User footer */

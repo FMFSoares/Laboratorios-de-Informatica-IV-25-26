@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -33,7 +34,7 @@ class OrdemServico(Base):
     mecanico: Mapped["Utilizador"] = relationship(back_populates="ordens_mecanico")
     pecas_aplicadas: Mapped[list["OSPeca"]] = relationship(back_populates="ordem_servico")
     registos_tempo: Mapped[list["RegistoTempo"]] = relationship(back_populates="ordem_servico")
-    fatura: Mapped["Fatura" | None] = relationship(back_populates="ordem_servico")
+    fatura: Mapped[Optional["Fatura"]] = relationship(back_populates="ordem_servico")
 
 
 class OSPeca(Base):

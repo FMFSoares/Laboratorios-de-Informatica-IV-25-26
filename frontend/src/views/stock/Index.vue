@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '../../store/auth.js'
-import { getStock, registarEntrada, transferirStock } from '../../services/stock.js'
+import { getStock, registarEntrada } from '../../services/stock.js'
 import { getLojas } from '../../services/lojas.js'
 import { getPecas, createPeca } from '../../services/pecas.js'
 import LoadingSpinner from '../../components/ui/LoadingSpinner.vue'
@@ -217,50 +217,6 @@ async function submitEntrada() {
   }
 }
 
-// ── Transferência Modal ───────────────────────────────────────────────
-const showTransfer      = ref(false)
-const transferLoading   = ref(false)
-const transferError     = ref('')
-const transferPecaId    = ref('')
-const transferOrigemId  = ref('')
-const transferDestinoId = ref('')
-const transferQtd       = ref(1)
-
-function openTransfer() {
-  transferPecaId.value    = pecas.value[0]?.id ?? ''
-  transferOrigemId.value  = isAdmin.value ? (lojas.value[0]?.id ?? '') : lojaIdUsuario
-  transferDestinoId.value = lojas.value.find(l => l.id !== Number(transferOrigemId.value))?.id ?? ''
-  transferQtd.value       = 1
-  transferError.value     = ''
-  showTransfer.value      = true
-}
-
-async function submitTransfer() {
-  transferError.value = ''
-  if (!transferPecaId.value || !transferOrigemId.value || !transferDestinoId.value || transferQtd.value < 1) {
-    transferError.value = 'Preencha todos os campos.'
-    return
-  }
-  if (Number(transferOrigemId.value) === Number(transferDestinoId.value)) {
-    transferError.value = 'Loja de origem e destino têm de ser diferentes.'
-    return
-  }
-  transferLoading.value = true
-  try {
-    await transferirStock({
-      peca_id:         Number(transferPecaId.value),
-      loja_origem_id:  Number(transferOrigemId.value),
-      loja_destino_id: Number(transferDestinoId.value),
-      quantidade:      Number(transferQtd.value),
-    })
-    showTransfer.value = false
-    fetchStock()
-  } catch (e) {
-    transferError.value = e?.response?.data?.detail?.detail ?? 'Erro ao transferir stock.'
-  } finally {
-    transferLoading.value = false
-  }
-}
 </script>
 
 <template>
@@ -269,8 +225,7 @@ async function submitTransfer() {
     <div class="page-header">
       <h1>Stock</h1>
       <div v-if="isGestao" class="header-actions">
-        <button class="btn btn--secondary" @click="openTransfer">Transferir</button>
-        <button class="btn btn--primary"   @click="openEntrada">Registar Entrada</button>
+        <button class="btn btn--primary" @click="openEntrada">Registar Entrada</button>
       </div>
     </div>
 
@@ -458,57 +413,6 @@ async function submitTransfer() {
     </div>
   </Teleport>
 
-  <!-- ── Transferência Modal ────────────────────────────────────────── -->
-  <Teleport to="body">
-    <div v-if="showTransfer" class="modal-backdrop" @click.self="showTransfer = false">
-      <div class="modal">
-        <div class="modal-header">
-          <h2>Transferir Stock</h2>
-          <button class="modal-close" @click="showTransfer = false">×</button>
-        </div>
-        <div class="modal-body">
-          <div class="field">
-            <label>Peça</label>
-            <select v-model="transferPecaId">
-              <option value="" disabled>Selecionar peça…</option>
-              <option v-for="p in pecas" :key="p.id" :value="p.id">{{ p.nome }}</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Loja de Origem</label>
-            <select v-if="isAdmin" v-model="transferOrigemId">
-              <option value="" disabled>Selecionar loja…</option>
-              <option v-for="l in lojas" :key="l.id" :value="l.id">{{ l.nome }}</option>
-            </select>
-            <input v-else type="text" :value="lojas.find(l => l.id === Number(transferOrigemId))?.nome ?? 'A sua loja'" disabled />
-          </div>
-          <div class="field">
-            <label>Loja de Destino</label>
-            <select v-model="transferDestinoId">
-              <option value="" disabled>Selecionar loja…</option>
-              <option
-                v-for="l in lojas"
-                :key="l.id"
-                :value="l.id"
-                :disabled="l.id === Number(transferOrigemId)"
-              >{{ l.nome }}</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Quantidade</label>
-            <input type="number" v-model.number="transferQtd" min="1" />
-          </div>
-          <p v-if="transferError" class="field-error">{{ transferError }}</p>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn--ghost" @click="showTransfer = false">Cancelar</button>
-          <button class="btn btn--primary" :disabled="transferLoading" @click="submitTransfer">
-            {{ transferLoading ? 'A transferir…' : 'Transferir' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
 </template>
 
 <style scoped>

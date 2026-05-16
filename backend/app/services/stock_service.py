@@ -42,7 +42,7 @@ class StockService:
     def listar(
         self, loja_id: int | None, apenas_alertas: bool, page: int, page_size: int, current_user: CurrentUserResponse
     ) -> PaginatedResponse[StockItemResponse]:
-        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR:
+        if current_user.perfil not in (PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA):
             loja_id = current_user.loja_id
 
         skip = (page - 1) * page_size

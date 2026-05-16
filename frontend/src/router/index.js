@@ -123,6 +123,28 @@ const routes = [
         meta: { roles: ['ADMINISTRADOR'] },
       },
 
+      // ── Transferências ───────────────────────────────────────
+      {
+        path: 'transferencias',
+        name: 'Transferencias',
+        component: () => import('../views/transferencias/Index.vue'),
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+      },
+      {
+        path: 'transferencias/:id',
+        name: 'TransferenciaDetalhe',
+        component: () => import('../views/transferencias/Detalhe.vue'),
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+      },
+
+      // ── Notificações ─────────────────────────────────────────
+      {
+        path: 'notificacoes',
+        name: 'Notificacoes',
+        component: () => import('../views/notificacoes/Index.vue'),
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+      },
+
       // ── Conta ────────────────────────────────────────────────
       {
         path: 'conta',

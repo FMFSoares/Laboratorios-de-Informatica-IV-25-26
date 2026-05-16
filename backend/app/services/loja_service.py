@@ -27,7 +27,7 @@ class LojaService:
         page_size: int,
         current_user: CurrentUserResponse
     ) -> PaginatedResponse[LojaResumo]:
-        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR:
+        if current_user.perfil == PerfilUtilizador.MECANICO:
             loja_id_filtro = current_user.loja_id
 
         skip = (page - 1) * page_size
