@@ -68,15 +68,29 @@ class StockService:
 
         if not self.loja_repo.get_by_id(body.loja_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loja não encontrada")
-            
-        if not self.peca_repo.get_by_id(body.peca_id):
+
+        peca = self.peca_repo.get_by_id(body.peca_id)
+        if not peca:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Peça não encontrada")
+
+        stock_atual = self.repo.get_disponivel(body.peca_id, body.loja_id)
+        quantidade_anterior = stock_atual
 
         stock = self.repo.adicionar(body.peca_id, body.loja_id, body.quantidade)
         self.db.commit()
-        
+
+        quantidade_atual = stock.quantidade
+
         return DataResponse[StockEntradaResponse](
-            data=StockEntradaResponse(peca_id=stock.peca_id, loja_id=stock.loja_id, quantidade=body.quantidade),
+            data=StockEntradaResponse(
+                peca_id=stock.peca_id,
+                loja_id=stock.loja_id,
+                peca_nome=peca.nome,
+                quantidade_anterior=quantidade_anterior,
+                quantidade_adicionada=body.quantidade,
+                quantidade_atual=quantidade_atual,
+                alerta=quantidade_atual <= stock.limite_minimo,
+            ),
             message="Entrada de stock registada com sucesso."
         )
 
