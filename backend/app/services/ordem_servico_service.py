@@ -32,12 +32,10 @@ from app.schemas.ordem_servico import (
 
 class OrdemServicoService:
     _TRANSICOES = {
-        (EstadoOrdemServico.PENDENTE,           EstadoOrdemServico.EM_DIAGNOSTICO):   {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.RECECIONISTA, PerfilUtilizador.MECANICO},
-        (EstadoOrdemServico.PENDENTE,           EstadoOrdemServico.CANCELADA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.RECECIONISTA},
-        (EstadoOrdemServico.EM_DIAGNOSTICO,     EstadoOrdemServico.AGUARDA_APROVACAO): {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
+        (EstadoOrdemServico.PENDENTE,           EstadoOrdemServico.EM_DIAGNOSTICO):   {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
+        (EstadoOrdemServico.PENDENTE,           EstadoOrdemServico.CANCELADA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
+        (EstadoOrdemServico.EM_DIAGNOSTICO,     EstadoOrdemServico.EM_REPARACAO):      {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
         (EstadoOrdemServico.EM_DIAGNOSTICO,     EstadoOrdemServico.CANCELADA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
-        (EstadoOrdemServico.AGUARDA_APROVACAO,  EstadoOrdemServico.EM_REPARACAO):      {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
-        (EstadoOrdemServico.AGUARDA_APROVACAO,  EstadoOrdemServico.CANCELADA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
         (EstadoOrdemServico.EM_REPARACAO,       EstadoOrdemServico.AGUARDA_PECAS):     {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
         (EstadoOrdemServico.EM_REPARACAO,       EstadoOrdemServico.CONCLUIDA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
         (EstadoOrdemServico.EM_REPARACAO,       EstadoOrdemServico.CANCELADA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
@@ -233,7 +231,7 @@ class OrdemServicoService:
 
         estado_anterior = os.estado
         os.estado = novo_estado
-        
+
         if novo_estado == EstadoOrdemServico.CONCLUIDA:
             os.data_conclusao = datetime.now(timezone.utc)
 
@@ -247,6 +245,23 @@ class OrdemServicoService:
 
         self.db.commit()
         self.db.refresh(os)
+
+        if novo_estado == EstadoOrdemServico.EM_REPARACAO and estado_anterior == EstadoOrdemServico.EM_DIAGNOSTICO:
+            self._enviar_email_diagnostico(os)
+        elif novo_estado == EstadoOrdemServico.CONCLUIDA:
+            from app.utils.email import notificar_trotinete_pronta
+            try:
+                if os.cliente.email:
+                    notificar_trotinete_pronta(
+                        cliente_email=os.cliente.email,
+                        cliente_nome=os.cliente.nome,
+                        os_numero=os.numero,
+                        loja_nome=os.loja.nome if os.loja else "DLMCare",
+                        loja_telefone=os.loja.telefone if os.loja else "",
+                    )
+            except Exception:
+                pass
+
         return self._build_detalhe_response(os, estado_anterior=estado_anterior)
 
     def adicionar_peca(self, os_id: int, peca_id: int, quantidade: int, current_user: CurrentUserResponse) -> PecaAplicadaResponse:
@@ -351,14 +366,26 @@ class OrdemServicoService:
         self.db.refresh(os)
         return self._build_detalhe_response(os)
 
-    def submeter_diagnostico(self, os_id: int, body: DiagnosticoSubmit, current_user: CurrentUserResponse) -> OrdemServicoDetalheResponse:
+    def _enviar_email_diagnostico(self, os: OrdemServico) -> None:
         from app.utils.email import notificar_diagnostico_cliente
+        try:
+            if os.cliente.email:
+                notificar_diagnostico_cliente(
+                    cliente_email=os.cliente.email,
+                    cliente_nome=os.cliente.nome,
+                    os_numero=os.numero,
+                    loja_nome=os.loja.nome if os.loja else "DLMCare",
+                    loja_telefone=os.loja.telefone if os.loja else "",
+                    servicos=[s.nome for s in os.servicos_diagnostico],
+                )
+        except Exception:
+            pass
 
+    def submeter_diagnostico(self, os_id: int, body: DiagnosticoSubmit, current_user: CurrentUserResponse) -> OrdemServicoDetalheResponse:
         os = self._get_os_or_404(os_id, current_user)
         if os.estado != EstadoOrdemServico.EM_DIAGNOSTICO:
             raise HTTPException(status_code=409, detail="Só é possível submeter diagnóstico numa OS em diagnóstico.")
 
-        # Remove previous diagnostic items if resubmitting
         for s in list(os.servicos_diagnostico):
             self.db.delete(s)
 
@@ -387,23 +414,7 @@ class OrdemServicoService:
         self.db.flush()
         self.db.commit()
         self.db.refresh(os)
-
-        # Send email if client has email
-        try:
-            cliente_email = os.cliente.email if hasattr(os.cliente, 'email') else None
-            if cliente_email:
-                notificar_diagnostico_cliente(
-                    cliente_email=cliente_email,
-                    cliente_nome=os.cliente.nome,
-                    os_numero=os.numero,
-                    loja_nome=os.loja.nome if os.loja else "DLMCare",
-                    loja_telefone=os.loja.telefone if os.loja and hasattr(os.loja, 'telefone') else "",
-                    servicos=[{"nome": item.nome, "preco": item.preco} for item in body.itens],
-                    total=total,
-                )
-        except Exception:
-            pass
-
+        self._enviar_email_diagnostico(os)
         return self._build_detalhe_response(os, estado_anterior=EstadoOrdemServico.EM_DIAGNOSTICO)
 
     def adicionar_observacao(self, os_id: int, body: OrdemServicoObservacaoCreate, current_user: CurrentUserResponse) -> OrdemServicoObservacaoResponse:

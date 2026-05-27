@@ -42,16 +42,16 @@ function logout() {
 
 const ALL_NAV = [
   // ── Non-mechanic ──────────────────────────────────────────
-  { label: 'Dashboard',          to: '/dashboard',       roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
+  { label: 'Dashboard',          to: '/dashboard',       roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
   { label: 'Clientes',           to: '/clientes',        roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
-  { label: 'Trotinetes',         to: '/trotinetes',      roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+  { label: 'Trotinetes',         to: '/trotinetes',      roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
   { label: 'Ordens de Serviço',  to: '/ordens-servico',  roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
   { label: 'Catálogo Peças',    to: '/pecas',           roles: ['ADMINISTRADOR'] },
   { label: 'Inventário',         to: '/stock',           roles: ['GERENTE_LOJA'] },
   { label: 'Transferências',     to: '/transferencias',  roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
   { label: 'Notificações',       to: '/notificacoes',    roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'MECANICO'], badge: true },
-  { label: 'Faturas',            to: '/faturas',         roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
-  { label: 'Catálogo Serviços', to: '/servicos',        roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+  { label: 'Faturas',            to: '/faturas',         roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
+  { label: 'Catálogo Serviços', to: '/servicos',        roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
   { label: 'Utilizadores',       to: '/utilizadores',    roles: ['ADMINISTRADOR'] },
   { label: 'Lojas',              to: '/lojas',           roles: ['ADMINISTRADOR'] },
   { label: 'Auditoria',          to: '/auditoria',       roles: ['ADMINISTRADOR'] },

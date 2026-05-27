@@ -82,7 +82,25 @@ class FaturaService:
 
         self.db.commit()
         fatura_completa = self.fatura_repo.get_by_id(nova_fatura.id)
-        return self._build_fatura_response(fatura_completa)
+        response = self._build_fatura_response(fatura_completa)
+
+        try:
+            if response.cliente.email:
+                from app.utils.pdf import gerar_pdf_fatura
+                from app.utils.email import enviar_fatura_email
+                pdf_bytes = gerar_pdf_fatura(response)
+                enviar_fatura_email(
+                    cliente_email=response.cliente.email,
+                    cliente_nome=response.cliente.nome,
+                    fatura_numero=response.numero,
+                    loja_nome=response.loja.nome,
+                    loja_telefone=response.loja.telefone,
+                    pdf_bytes=pdf_bytes,
+                )
+        except Exception:
+            pass
+
+        return response
 
     def _build_fatura_response(self, fatura) -> FaturaResponse:
         from app.schemas.fatura import (

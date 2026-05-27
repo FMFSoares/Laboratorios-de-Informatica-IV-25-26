@@ -24,13 +24,13 @@ def get_trotinete_service(db: Session = Depends(get_db)) -> TrotineteService:
 @router.get("", response_model=PaginatedResponse[TrotineteResponse])
 def listar(
     cliente_id: int | None = Query(None),
-    numero_serie: str | None = Query(None),
+    query: str | None = Query(None, description="Pesquisa por série, marca, modelo ou nome do cliente (partial match)."),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: CurrentUserResponse = Depends(_todos),
     service: TrotineteService = Depends(get_trotinete_service)
 ):
-    return service.listar(cliente_id, numero_serie, page, page_size, current_user)
+    return service.listar(cliente_id, query, page, page_size, current_user)
 
 @router.get("/{trotinete_id}", response_model=DataResponse[TrotineteDetalheResponse])
 def obter(

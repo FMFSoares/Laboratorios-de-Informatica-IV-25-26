@@ -6,7 +6,6 @@ defineProps({
 const LABELS = {
   PENDENTE: 'Pendente',
   EM_DIAGNOSTICO: 'Em Diagnóstico',
-  AGUARDA_APROVACAO: 'Aguarda Aprovação',
   EM_REPARACAO: 'Em Reparação',
   AGUARDA_PECAS: 'Aguarda Peças',
   CONCLUIDA: 'Concluída',
@@ -19,7 +18,6 @@ const LABELS = {
 const COLORS = {
   PENDENTE: 'badge--grey',
   EM_DIAGNOSTICO: 'badge--blue',
-  AGUARDA_APROVACAO: 'badge--orange',
   EM_REPARACAO: 'badge--indigo',
   AGUARDA_PECAS: 'badge--yellow',
   CONCLUIDA: 'badge--green',

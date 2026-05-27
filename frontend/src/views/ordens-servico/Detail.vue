@@ -44,39 +44,22 @@ const TRANSICOES = {
       { estado: 'EM_DIAGNOSTICO', label: 'Iniciar Diagnóstico', danger: false },
       { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
     ],
-    RECECIONISTA: [
-      { estado: 'EM_DIAGNOSTICO', label: 'Iniciar Diagnóstico', danger: false },
-      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
-    ],
+    RECECIONISTA: [],
     MECANICO: [{ estado: 'EM_DIAGNOSTICO', label: 'Iniciar Diagnóstico', danger: false }],
   },
   EM_DIAGNOSTICO: {
     ADMINISTRADOR: [
-      { estado: 'AGUARDA_APROVACAO', label: 'Concluir Diagnóstico', danger: false },
+      { estado: 'EM_REPARACAO', label: 'Concluir Diagnóstico', danger: false },
       { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
     ],
     GERENTE_LOJA: [
-      { estado: 'AGUARDA_APROVACAO', label: 'Concluir Diagnóstico', danger: false },
+      { estado: 'EM_REPARACAO', label: 'Concluir Diagnóstico', danger: false },
       { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
     ],
     RECECIONISTA: [],
     MECANICO: [
-      { estado: 'AGUARDA_APROVACAO', label: 'Concluir Diagnóstico', danger: false },
+      { estado: 'EM_REPARACAO', label: 'Concluir Diagnóstico', danger: false },
     ],
-  },
-  AGUARDA_APROVACAO: {
-    ADMINISTRADOR: [
-      { estado: 'EM_REPARACAO', label: 'Aprovar — Iniciar Reparação', danger: false },
-      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
-    ],
-    GERENTE_LOJA: [
-      { estado: 'EM_REPARACAO', label: 'Aprovar — Iniciar Reparação', danger: false },
-      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
-    ],
-    RECECIONISTA: [
-      { estado: 'CANCELADA', label: 'Recusar / Cancelar', danger: true },
-    ],
-    MECANICO: [],
   },
   EM_REPARACAO: {
     ADMINISTRADOR: [
@@ -211,7 +194,6 @@ function openFaturaModal() {
 const ESTADO_LABELS = {
   PENDENTE: 'Pendente',
   EM_DIAGNOSTICO: 'Em Diagnóstico',
-  AGUARDA_APROVACAO: 'Aguarda Aprovação',
   EM_REPARACAO: 'Em Reparação',
   AGUARDA_PECAS: 'Aguarda Peças',
   CONCLUIDA: 'Concluída',

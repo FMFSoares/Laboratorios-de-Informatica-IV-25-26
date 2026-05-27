@@ -23,7 +23,6 @@ const ESTADOS = [
   { value: '', label: 'Todos os estados' },
   { value: 'PENDENTE', label: 'Pendente' },
   { value: 'EM_DIAGNOSTICO', label: 'Em Diagnóstico' },
-  { value: 'AGUARDA_APROVACAO', label: 'Aguarda Aprovação' },
   { value: 'EM_REPARACAO', label: 'Em Reparação' },
   { value: 'AGUARDA_PECAS', label: 'Aguarda Peças' },
   { value: 'CONCLUIDA', label: 'Concluída' },
@@ -38,6 +37,7 @@ const columns = [
   { key: 'cliente_nome',          label: 'Cliente',   sortable: true },
   { key: 'trotinete_numero_serie',label: 'Trotinete', sortable: true },
   { key: 'estado',                label: 'Estado',    sortable: true },
+  { key: 'mecanico_nome',         label: 'Mecânico',  sortable: true },
   { key: 'prioridade',            label: 'Prioridade',sortable: true },
   { key: 'data_entrada',          label: 'Entrada',   sortable: true },
   { key: 'em_atraso',             label: 'Atraso',    sortable: true },
@@ -180,6 +180,11 @@ function resetFilters() {
       <template #cell-estado="{ value }">
         <StatusBadge :estado="value" />
       </template>
+      <template #cell-mecanico_nome="{ value, row }">
+        <span v-if="['EM_DIAGNOSTICO','EM_REPARACAO'].includes(row.estado) && value" class="mecanico-chip">{{ value }}</span>
+        <span v-else-if="value" class="mecanico-dim">{{ value }}</span>
+        <span v-else class="dim">—</span>
+      </template>
       <template #cell-prioridade="{ value }">
         <span :style="{ color: PRIORIDADE_LABELS[value]?.color, fontWeight: 600 }">
           {{ PRIORIDADE_LABELS[value]?.label || value }}
@@ -261,6 +266,15 @@ function resetFilters() {
 .btn--sm { padding: 0.4rem 0.8rem; font-size: 0.825rem; }
 
 .mono { font-family: 'Courier New', monospace; font-size: 0.85rem; }
+.mecanico-chip {
+  background: #ecfdf5; color: #065f46;
+  border: 1px solid #6ee7b7;
+  font-size: 0.78rem; font-weight: 600;
+  padding: 0.15rem 0.55rem; border-radius: 999px;
+  white-space: nowrap;
+}
+.mecanico-dim { font-size: 0.85rem; color: #6b7280; }
+.dim { color: #d1d5db; font-size: 0.85rem; }
 
 .atraso-badge {
   background: #fef3c7;

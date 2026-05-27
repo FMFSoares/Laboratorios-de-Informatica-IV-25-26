@@ -30,14 +30,14 @@ class TrotineteService:
     def listar(
         self,
         cliente_id: int | None,
-        numero_serie: str | None,
+        query_str: str | None,
         page: int,
         page_size: int,
         current_user: CurrentUserResponse
     ) -> PaginatedResponse[TrotineteResponse]:
         loja_id = current_user.loja_id if current_user.perfil != PerfilUtilizador.ADMINISTRADOR else None
         skip = (page - 1) * page_size
-        itens, total = self.repo.list(loja_id, cliente_id, numero_serie, skip, page_size)
+        itens, total = self.repo.list(loja_id, cliente_id, query_str, skip, page_size)
         pages = max(1, -(-total // page_size))
 
         return PaginatedResponse[TrotineteResponse](
@@ -68,6 +68,8 @@ class TrotineteService:
             detalhe={"numero_serie": body.numero_serie, "marca": body.marca, "modelo": body.modelo, "cliente_id": body.cliente_id},
         )
         self.db.commit()
+        # Reload with client eagerly loaded so the model_validator can read cliente.nome
+        nova = self.repo.get_by_id(nova.id)
         return DataResponse[TrotineteResponse](data=TrotineteResponse.model_validate(nova), message="Trotinete registada com sucesso.")
 
     def obter(self, trotinete_id: int, current_user: CurrentUserResponse) -> DataResponse[TrotineteDetalheResponse]:
