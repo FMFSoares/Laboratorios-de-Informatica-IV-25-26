@@ -1077,3 +1077,26 @@ Three fixes in the OS detail view: (1) on mobile the quantity input for adding a
 - **Remove applied part — frontend** (`frontend/`):
   - `services/ordensServico.js`: added `removerPeca(id, pecaId)` calling `DELETE /ordens-servico/{id}/pecas/{pecaId}`.
   - `Detail.vue`: parts table now has a `✕` remove button column (only rendered when `canAddParts`). Calls `removerPecaOS(peca_id)` which hits the new endpoint and calls `load()` to refresh.
+
+---
+
+### [2026-05-27] Bug fixes — salario_base lost on user creation, transfers table empty, admin missing stock nav, timer leak, timezone crash on timer stop, login redirect, stale store after logout
+
+**Prompt:**
+Fix the following bugs: salario_base is not being saved when creating a user; the transfers table is always empty; the administrator has no Inventário link in the sidebar; there is a timer leak in the sidebar polling; stopping the work timer can crash with a timezone error; after login the page always redirects to the dashboard regardless of role; after logout and re-login as a different user, the previous user's notification count and active OS state are still visible.
+
+**What was done:**
+
+- **`backend/app/services/utilizador_service.py`** — `criar_utilizador` never passed `salario_base` to `repo.create()`, causing every new user to be saved with `salario_base=NULL`. Added `salario_base=body.salario_base` to the `repo.create()` call.
+
+- **`frontend/src/views/transferencias/Index.vue`** — `getTransferencias` already unwraps the Axios response via `.then(r => r.data)`, returning the JSON body directly. The component was then accessing `r.data.data` — a double-unwrap producing `undefined`. The table was permanently empty. Fixed: `r.data.data ?? []` → `r.data ?? []`.
+
+- **`frontend/src/components/AppSidebar.vue`** — The `Inventário` nav item had `roles: ['GERENTE_LOJA']`, excluding ADMINISTRADOR. Fixed by adding `'ADMINISTRADOR'` to the roles array.
+
+- **`frontend/src/components/AppSidebar.vue`** — `onMounted` assigned `pollInterval` to a first `setInterval`, then immediately overwrote it with a second one. The first timer was never cleared by `onUnmounted`. Fixed: removed the leaked first `setInterval`; added an `else` branch so RECECIONISTA also gets a proper poll interval.
+
+- **`backend/app/services/ordem_servico_service.py`** — `parar_tempo` and `atualizar_mecanico` computed elapsed time as `agora - rt.inicio.replace(tzinfo=timezone.utc)`. MySQL `DATETIME` columns return timezone-naive values on read; if `rt.inicio` already has timezone info the subtraction raises `TypeError`. Fixed with a guard: `inicio_utc = rt.inicio if rt.inicio.tzinfo else rt.inicio.replace(tzinfo=timezone.utc)` in both locations.
+
+- **`frontend/src/views/Login.vue`** — After login the redirect was always `router.push({ name: 'Dashboard' })` regardless of role, causing an extra navigation cycle and route flash for MECANICO and RECECIONISTA. Fixed: MECANICO → `/oficina/ativa`, RECECIONISTA → `/ordens-servico`, others → `/dashboard`.
+
+- **`frontend/src/store/auth.js` / `workshop.js` / `notifications.js`** — `logout()` cleared auth state but left `workshop.hasActiveOS` and `notifStore.count`/`notifications` with the previous user's data until the next poll. Added a `reset()` function to both setup stores; `logout()` now calls both after clearing session storage.
