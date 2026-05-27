@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getOrdemServico, atualizarEstado, deletarOS } from '../../services/ordensServico.js'
+import { getOrdemServico, atualizarEstado, deletarOS, getHistoricoOS } from '../../services/ordensServico.js'
 import { getCliente } from '../../services/clientes.js'
 import { useAuthStore } from '../../store/auth.js'
 import StatusBadge from '../../components/ui/StatusBadge.vue'
@@ -30,6 +30,9 @@ const showEmitirModal = ref(false)
 
 const nivelFidelizacao = ref(0)
 const descontoSugerido = ref(0)
+
+const historico = ref([])
+const historicoLoading = ref(false)
 
 const perfil = computed(() => auth.getCurrentUser?.perfil)
 
@@ -124,9 +127,23 @@ async function loadOS() {
   }
 }
 
+async function loadHistorico() {
+  if (!os.value) return
+  historicoLoading.value = true
+  try {
+    const { data } = await getHistoricoOS(os.value.id)
+    historico.value = data.data ?? []
+  } catch {
+    historico.value = []
+  } finally {
+    historicoLoading.value = false
+  }
+}
+
 let pollInterval
-onMounted(() => {
-  loadOS()
+onMounted(async () => {
+  await loadOS()
+  loadHistorico()
   pollInterval = setInterval(() => { if (!showEstadoModal.value) loadOS() }, 30000)
 })
 onUnmounted(() => clearInterval(pollInterval))
@@ -156,6 +173,7 @@ async function confirmTransition() {
   } finally {
     actionLoading.value = false
     await loadOS()
+    loadHistorico()
   }
 }
 
@@ -319,6 +337,21 @@ function fmtDateTime(dt) {
                 </tr>
               </tbody>
             </table>
+          </div>
+          <!-- Histórico -->
+          <div class="card">
+            <h3 class="card-title">Histórico</h3>
+            <div v-if="historicoLoading" class="dim">A carregar…</div>
+            <div v-else-if="historico.length === 0" class="dim">Sem eventos registados.</div>
+            <div v-else class="history-list">
+              <div v-for="item in historico" :key="item.id" class="history-item">
+                <div class="history-meta">
+                  <span class="history-time">{{ fmtDateTime(item.timestamp) }}</span>
+                  <span v-if="item.utilizador_nome" class="history-user">{{ item.utilizador_nome }}</span>
+                </div>
+                <span class="history-desc">{{ item.descricao }}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -526,6 +559,22 @@ function fmtDateTime(dt) {
 .btn--secondary { background: #e5e7eb; color: #374151; }
 .btn--ghost { background: transparent; border: 1px solid #d1d5db; color: #374151; }
 .btn--sm { padding: 0.4rem 0.8rem; font-size: 0.825rem; }
+
+/* History */
+.history-list { display: flex; flex-direction: column; gap: 0; }
+.history-item {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid #f3f4f6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.history-item:last-child { border-bottom: none; }
+.history-meta { display: flex; justify-content: space-between; align-items: center; }
+.history-time { font-size: 0.75rem; color: #9ca3af; }
+.history-user { font-size: 0.75rem; color: #6b7280; font-weight: 500; }
+.history-desc { font-size: 0.85rem; color: #374151; }
+.dim { color: #9ca3af; font-size: 0.85rem; }
 
 .mono { font-family: 'Courier New', monospace; }
 

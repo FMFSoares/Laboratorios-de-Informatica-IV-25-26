@@ -63,3 +63,12 @@ class AuditoriaRepository:
         itens = query.order_by(Auditoria.timestamp.desc()).offset(skip).limit(page_size).all()
         
         return itens, total
+
+    def listar_por_os(self, os_id: int) -> list[Auditoria]:
+        return (
+            self.db.query(Auditoria)
+            .options(joinedload(Auditoria.utilizador))
+            .filter(func.json_extract(Auditoria.detalhe, '$.os_id') == os_id)
+            .order_by(Auditoria.timestamp.desc())
+            .all()
+        )

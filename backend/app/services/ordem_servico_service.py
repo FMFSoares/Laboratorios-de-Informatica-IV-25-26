@@ -10,7 +10,7 @@ from app.models.ordem_servico import OrdemServico, OSPeca, EstadoOrdemServico, R
 from app.models.servico import OSServico
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.utilizador import PerfilUtilizador
-from app.schemas.auditoria import TipoEventoAuditoria
+from app.schemas.auditoria import TipoEventoAuditoria, AuditoriaItemResponse
 from app.schemas.common import PaginatedResponse, DataResponse
 from app.schemas.ordem_servico import (
     OrdemServicoCreate,
@@ -229,6 +229,22 @@ class OrdemServicoService:
         if current_user.perfil not in perfis_permitidos:
             raise HTTPException(status_code=403, detail="Sem permissão para realizar esta transição.")
 
+        if (current_user.perfil == PerfilUtilizador.MECANICO
+                and novo_estado == EstadoOrdemServico.EM_DIAGNOSTICO):
+            conflito = self.db.query(OrdemServico.id).filter(
+                OrdemServico.mecanico_id == current_user.id,
+                OrdemServico.estado.in_([
+                    EstadoOrdemServico.EM_DIAGNOSTICO,
+                    EstadoOrdemServico.EM_REPARACAO,
+                ]),
+                OrdemServico.id != os.id,
+            ).first()
+            if conflito:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Já tens uma OS activa. Conclui o trabalho antes de iniciar outra.",
+                )
+
         estado_anterior = os.estado
         os.estado = novo_estado
 
@@ -443,6 +459,24 @@ class OrdemServicoService:
             autor_nome=obs.autor.nome,
             criado_em=obs.criado_em,
         )
+
+    def historico_os(self, os_id: int, current_user: CurrentUserResponse) -> list[AuditoriaItemResponse]:
+        self._get_os_or_404(os_id, current_user)
+        itens = self.auditoria_repo.listar_por_os(os_id)
+        return [
+            AuditoriaItemResponse(
+                id=item.id,
+                evento=item.evento,
+                descricao=item.descricao,
+                utilizador_id=item.utilizador_id,
+                utilizador_nome=item.utilizador.nome if item.utilizador else None,
+                loja_id=item.loja_id,
+                ip_origem=item.ip_origem,
+                timestamp=item.timestamp,
+                detalhe=item.detalhe,
+            )
+            for item in itens
+        ]
 
     def apagar(self, os_id: int, current_user: CurrentUserResponse) -> None:
         os = self.repo.get_by_id(os_id)

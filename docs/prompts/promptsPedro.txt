@@ -942,4 +942,36 @@ Can you improve the trotinetes endpoint? Do we have a DB for trotinetes? Because
   - Uses the `DataTable` component (consistent with all other list views)
   - Server-side search: debounced 300 ms, sends `?query=...` to the backend, resets to page 1 on new input — no more client-side filtering over 200 records
   - Real server-side pagination via `@update:page`
+
+---
+
+### [2026-05-27] Enforce one active OS per mechanic and add OS audit history
+
+**Prompt:**
+A mechanic can only have one OS active at a time — not two. When there is already a mechanic with more than one active OS (Em Diagnóstico or Em Reparação) in the list, that shouldn't be possible. Implement the constraint on the first option (state transition guard). Also, does the auditing include changes to OSs? There should be some place to see logs for an OS.
+
+**What was done:**
+
+- **Mechanic single-active-OS guard** — `backend/app/services/ordem_servico_service.py` — `atualizar_estado`: added a check that fires when a MECANICO transitions any OS to `EM_DIAGNOSTICO`; queries `OrdemServico` for any other OS where `mecanico_id == current_user.id` AND `estado IN (EM_DIAGNOSTICO, EM_REPARACAO)` AND `id != os.id`; raises HTTP 409 `"Já tens uma OS activa. Conclui o trabalho antes de iniciar outra."` if a conflict is found
+
+- **OS audit history — backend**:
+  - `backend/app/repositories/auditoria_repository.py`: added `listar_por_os(os_id)` method that queries the `auditoria` table using `func.json_extract(Auditoria.detalhe, '$.os_id') == os_id` (MySQL JSON extract); all OS audit events store `os_id` in the `detalhe` JSON column
+  - `backend/app/services/ordem_servico_service.py`: added `historico_os(os_id, current_user)` that access-checks the OS then returns a list of `AuditoriaItemResponse` (including `utilizador_nome` from the eagerly-loaded `utilizador` relationship)
+  - `backend/app/routers/ordens_servico.py`: added `GET /{os_id}/historico` endpoint (accessible to all authenticated roles that can see the OS)
+
+- **OS audit history — frontend**:
+  - `frontend/src/services/ordensServico.js`: added `getHistoricoOS(id)` service function
+  - `frontend/src/views/ordens-servico/Detail.vue`: added `historico` and `historicoLoading` refs; `loadHistorico()` fires on mount (in parallel with `loadOS`) and also refreshes after any state transition; new **Histórico** card in the left column shows each audit event with timestamp, description, and user name
+
+---
+
+### [2026-05-27] Fix mechanic OS history navigating to wrong route
+
+**Prompt:**
+When I click on an old OS while an OS is active it automatically redirects to that OS. I don't want that.
+
+**What was done:**
+
+- **Root cause**: `frontend/src/views/oficina/Historico.vue` (the mechanic's completed-OS history page) was navigating to `/ordens-servico/${o.id}` on row click. MECANICOs don't have access to the `ordens-servico/:id` route (restricted to ADMINISTRADOR, GERENTE_LOJA, RECECIONISTA). The RBAC guard redirected them to `/oficina/ativa`, which then found the active OS and redirected there
+- **Fix**: changed the row click handler in `Historico.vue` to navigate to `/oficina/${o.id}` instead — a route accessible to both MECANICO and ADMINISTRADOR
   - Marca + Modelo displayed stacked in one column; client name highlighted
