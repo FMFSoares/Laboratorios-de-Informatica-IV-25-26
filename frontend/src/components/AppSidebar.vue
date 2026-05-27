@@ -20,7 +20,6 @@ const PERFIL_LABEL = {
 let pollInterval
 onMounted(() => {
   workshop.refresh()
-  pollInterval = setInterval(workshop.refresh, 30000)
   const perfil = authStore.getCurrentUser?.perfil
   if (['ADMINISTRADOR', 'GERENTE_LOJA', 'MECANICO'].includes(perfil)) {
     notifStore.fetchCount()
@@ -28,6 +27,8 @@ onMounted(() => {
       workshop.refresh()
       notifStore.fetchCount()
     }, 30000)
+  } else {
+    pollInterval = setInterval(workshop.refresh, 30000)
   }
 })
 onUnmounted(() => clearInterval(pollInterval))
@@ -47,7 +48,7 @@ const ALL_NAV = [
   { label: 'Trotinetes',         to: '/trotinetes',      roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
   { label: 'Ordens de Serviço',  to: '/ordens-servico',  roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
   { label: 'Catálogo Peças',    to: '/pecas',           roles: ['ADMINISTRADOR'] },
-  { label: 'Inventário',         to: '/stock',           roles: ['GERENTE_LOJA'] },
+  { label: 'Inventário',         to: '/stock',           roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
   { label: 'Transferências',     to: '/transferencias',  roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
   { label: 'Salários',           to: '/salarios',        roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
   { label: 'Notificações',       to: '/notificacoes',    roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'MECANICO'], badge: true },

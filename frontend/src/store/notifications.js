@@ -46,5 +46,10 @@ export const useNotificationsStore = defineStore('notifications', () => {
     count.value = 0
   }
 
-  return { count, notifications, fetchCount, fetchAll, markRead, markAllRead, deleteOne, clearAll }
+  function reset() {
+    count.value = 0
+    notifications.value = []
+  }
+
+  return { count, notifications, fetchCount, fetchAll, markRead, markAllRead, deleteOne, clearAll, reset }
 })

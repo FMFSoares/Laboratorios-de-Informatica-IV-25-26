@@ -374,7 +374,8 @@ class OrdemServicoService:
             raise HTTPException(status_code=409, detail="Não há timer ativo nesta OS.")
         agora = datetime.now(timezone.utc)
         rt.fim = agora
-        minutos = int((agora - rt.inicio.replace(tzinfo=timezone.utc)).total_seconds() / 60)
+        inicio_utc = rt.inicio if rt.inicio.tzinfo else rt.inicio.replace(tzinfo=timezone.utc)
+        minutos = int((agora - inicio_utc).total_seconds() / 60)
         rt.minutos_esta_sessao = minutos
         acumulado = (os.tempo_total_minutos or 0) + minutos
         rt.tempo_total_acumulado_minutos = acumulado
@@ -396,7 +397,8 @@ class OrdemServicoService:
         for rt in os.registos_tempo:
             if rt.fim is None:
                 rt.fim = agora
-                minutos = int((agora - rt.inicio.replace(tzinfo=timezone.utc)).total_seconds() / 60)
+                inicio_utc = rt.inicio if rt.inicio.tzinfo else rt.inicio.replace(tzinfo=timezone.utc)
+                minutos = int((agora - inicio_utc).total_seconds() / 60)
                 rt.minutos_esta_sessao = minutos
                 acumulado = (os.tempo_total_minutos or 0) + minutos
                 rt.tempo_total_acumulado_minutos = acumulado

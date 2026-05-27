@@ -74,6 +74,7 @@ class UtilizadorService:
             loja_id=body.loja_id,
             ativo=body.ativo,
             comissao=body.comissao if body.perfil == PerfilUtilizador.MECANICO else None,
+            salario_base=body.salario_base,
         )
 
         data = {k: v for k, v in novo.__dict__.items() if not k.startswith("_")}

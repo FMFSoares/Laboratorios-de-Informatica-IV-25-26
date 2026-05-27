@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia';
 import api from '../services/api';
+import { useWorkshopStore } from './workshop';
+import { useNotificationsStore } from './notifications';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -53,6 +55,8 @@ export const useAuthStore = defineStore('auth', {
       this.isAuthenticated = false;
       sessionStorage.removeItem('access_token');
       sessionStorage.removeItem('user_data');
+      useWorkshopStore().reset();
+      useNotificationsStore().reset();
     },
 
     /**

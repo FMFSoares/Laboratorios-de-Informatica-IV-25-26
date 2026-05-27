@@ -124,7 +124,7 @@ async function loadTransferencias() {
   loading.value = true
   try {
     const r = await getTransferencias({ page_size: 200 })
-    transferencias.value = r.data.data ?? []
+    transferencias.value = r.data ?? []
   } catch { error.value = 'Erro ao carregar transferências.' }
   finally { loading.value = false }
 }
