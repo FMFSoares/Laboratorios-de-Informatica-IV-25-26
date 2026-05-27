@@ -1041,3 +1041,16 @@ Fix the following issues in the mobile mechanic UI: (1) landscape orientation on
 - **Back button hidden on mobile** (`frontend/src/views/oficina/Detail.vue`): added `.back-row { display: none }` to the mobile media query. Navigation back to the OS list is done via the bottom nav tabs.
 
 - **"Conta" tab added to bottom nav** (`frontend/src/components/MobileBottomNav.vue`): added a 6th tab with a person SVG icon labelled "Conta" linking to `/conta`. The `/conta` page already has a "Terminar sessão" button, giving mechanics a way to log out on mobile.
+
+---
+
+### [2026-05-27] OS Detail — timer UTC offset bug + parts dropdown scroll
+
+**Prompt:**
+Two bugs in the OS detail page: (1) when concluding a diagnosis the timer jumps instantly to ~59 minutes; after concluding the OS it resets to the correct time. (2) The parts search dropdown can't be scrolled on mobile — the screen is too small to see all results.
+
+**What was done:**
+
+- **Timer UTC offset fix** (`frontend/src/views/oficina/Detail.vue`, `minutosTrabalhadosLive`): the backend returns `inicio_tempo_atual` as a naive datetime string (no timezone suffix, e.g. `"2026-05-27T14:00:00"`). JavaScript's `new Date()` was parsing this as *local time* (Portugal = UTC+1), while `Date.now()` is always UTC — producing a ~60-minute phantom elapsed time. Fix: append `'Z'` to the string before parsing if it has no timezone info, so it is correctly treated as UTC. Guard checks for existing `'Z'` or `'+'` to avoid double-applying.
+
+- **Parts dropdown scroll** (`frontend/src/views/oficina/Detail.vue`, `.peca-dropdown`): changed `overflow: hidden` to `overflow-y: auto`, added `max-height: 260px` and `-webkit-overflow-scrolling: touch`. The dropdown now scrolls independently within a fixed height, so all results are reachable on small screens without scrolling the whole page.

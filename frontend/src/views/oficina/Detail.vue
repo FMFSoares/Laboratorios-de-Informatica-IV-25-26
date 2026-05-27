@@ -156,7 +156,10 @@ let clockInterval = null
 const minutosTrabalhadosLive = computed(() => {
   const base = os.value?.tempo_total_minutos ?? 0
   if (!os.value?.inicio_tempo_atual) return base
-  const sessao = Math.max(0, Math.floor((now.value - new Date(os.value.inicio_tempo_atual).getTime()) / 60000))
+  const ts = os.value.inicio_tempo_atual
+  // Backend returns naive datetimes (no tz suffix) — treat as UTC
+  const start = new Date(ts.endsWith('Z') || ts.includes('+') ? ts : ts + 'Z')
+  const sessao = Math.max(0, Math.floor((now.value - start.getTime()) / 60000))
   return base + sessao
 })
 const canResume = computed(() =>
@@ -808,7 +811,9 @@ function fmtDateTime(dt) {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.1);
   z-index: 100;
-  overflow: hidden;
+  max-height: 260px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .peca-option { padding: 0.75rem 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
 .peca-option:hover { background: #f0fdf4; }
