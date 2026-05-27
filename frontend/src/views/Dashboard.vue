@@ -55,7 +55,7 @@ async function load() {
 onMounted(load)
 
 // ── Derived values ─────────────────────────────────────────────────────────
-const ACTIVE_STATES = ['PENDENTE', 'EM_DIAGNOSTICO', 'AGUARDA_APROVACAO', 'EM_REPARACAO', 'AGUARDA_PECAS']
+const ACTIVE_STATES = ['PENDENTE', 'EM_DIAGNOSTICO', 'EM_REPARACAO', 'AGUARDA_PECAS']
 
 const osAtivas = computed(() => {
   if (!data.value) return 0
@@ -84,14 +84,13 @@ function fmtMin(m) {
 }
 
 const ESTADO_CONFIG = {
-  PENDENTE:          { label: 'Pendente',          color: '#6b7280', bg: '#f3f4f6' },
-  EM_DIAGNOSTICO:    { label: 'Em Diagnóstico',    color: '#2563eb', bg: '#dbeafe' },
-  AGUARDA_APROVACAO: { label: 'Aguarda Aprovação', color: '#d97706', bg: '#fef3c7' },
-  EM_REPARACAO:      { label: 'Em Reparação',      color: '#7c3aed', bg: '#ede9fe' },
-  AGUARDA_PECAS:     { label: 'Aguarda Peças',     color: '#dc2626', bg: '#fee2e2' },
-  CONCLUIDA:         { label: 'Concluída',         color: '#059669', bg: '#d1fae5' },
-  FATURADA:          { label: 'Faturada',          color: '#0f766e', bg: '#ccfbf1' },
-  CANCELADA:         { label: 'Cancelada',         color: '#9ca3af', bg: '#f9fafb' },
+  PENDENTE:       { label: 'Pendente',       color: '#6b7280', bg: '#f3f4f6' },
+  EM_DIAGNOSTICO: { label: 'Em Diagnóstico', color: '#2563eb', bg: '#dbeafe' },
+  EM_REPARACAO:   { label: 'Em Reparação',   color: '#7c3aed', bg: '#ede9fe' },
+  AGUARDA_PECAS:  { label: 'Aguarda Peças',  color: '#dc2626', bg: '#fee2e2' },
+  CONCLUIDA:      { label: 'Concluída',      color: '#059669', bg: '#d1fae5' },
+  FATURADA:       { label: 'Faturada',       color: '#0f766e', bg: '#ccfbf1' },
+  CANCELADA:      { label: 'Cancelada',      color: '#9ca3af', bg: '#f9fafb' },
 }
 
 const estadoEntries = computed(() => {

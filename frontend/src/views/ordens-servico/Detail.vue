@@ -1,9 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getOrdemServico, atualizarEstado, atualizarMecanico } from '../../services/ordensServico.js'
+import { getOrdemServico, atualizarEstado, deletarOS, getHistoricoOS } from '../../services/ordensServico.js'
 import { getCliente } from '../../services/clientes.js'
-import { getUtilizadores } from '../../services/utilizadores.js'
 import { useAuthStore } from '../../store/auth.js'
 import StatusBadge from '../../components/ui/StatusBadge.vue'
 import LoadingSpinner from '../../components/ui/LoadingSpinner.vue'
@@ -29,13 +28,11 @@ const faturaModalId = ref(null)
 
 const showEmitirModal = ref(false)
 
-const showMecanicoModal   = ref(false)
-const mecanicos           = ref([])
-const selectedMecanicoId  = ref(null)
-const mecanicoLoading     = ref(false)
-const mecanicoError       = ref('')
 const nivelFidelizacao = ref(0)
 const descontoSugerido = ref(0)
+
+const historico = ref([])
+const historicoLoading = ref(false)
 
 const perfil = computed(() => auth.getCurrentUser?.perfil)
 
@@ -50,40 +47,22 @@ const TRANSICOES = {
       { estado: 'EM_DIAGNOSTICO', label: 'Iniciar Diagnóstico', danger: false },
       { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
     ],
-    RECECIONISTA: [
-      { estado: 'EM_DIAGNOSTICO', label: 'Iniciar Diagnóstico', danger: false },
-      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
-    ],
+    RECECIONISTA: [],
     MECANICO: [{ estado: 'EM_DIAGNOSTICO', label: 'Iniciar Diagnóstico', danger: false }],
   },
   EM_DIAGNOSTICO: {
     ADMINISTRADOR: [
-      { estado: 'AGUARDA_APROVACAO', label: 'Enviar para Aprovação', danger: false },
-      { estado: 'EM_REPARACAO', label: 'Iniciar Reparação Direta', danger: false },
+      { estado: 'EM_REPARACAO', label: 'Concluir Diagnóstico', danger: false },
+      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
     ],
     GERENTE_LOJA: [
-      { estado: 'AGUARDA_APROVACAO', label: 'Enviar para Aprovação', danger: false },
-      { estado: 'EM_REPARACAO', label: 'Iniciar Reparação Direta', danger: false },
+      { estado: 'EM_REPARACAO', label: 'Concluir Diagnóstico', danger: false },
+      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
     ],
     RECECIONISTA: [],
     MECANICO: [
-      { estado: 'AGUARDA_APROVACAO', label: 'Enviar para Aprovação', danger: false },
-      { estado: 'EM_REPARACAO', label: 'Iniciar Reparação Direta', danger: false },
+      { estado: 'EM_REPARACAO', label: 'Concluir Diagnóstico', danger: false },
     ],
-  },
-  AGUARDA_APROVACAO: {
-    ADMINISTRADOR: [
-      { estado: 'EM_REPARACAO', label: 'Aprovar — Iniciar Reparação', danger: false },
-      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
-    ],
-    GERENTE_LOJA: [
-      { estado: 'EM_REPARACAO', label: 'Aprovar — Iniciar Reparação', danger: false },
-      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
-    ],
-    RECECIONISTA: [
-      { estado: 'CANCELADA', label: 'Recusar / Cancelar', danger: true },
-    ],
-    MECANICO: [],
   },
   EM_REPARACAO: {
     ADMINISTRADOR: [
@@ -132,26 +111,39 @@ const canEmitirFatura = computed(() =>
   !os.value?.fatura_id
 )
 
-const canAssignMecanico = computed(() =>
-  ['ADMINISTRADOR', 'GERENTE_LOJA'].includes(perfil.value) &&
-  !['CANCELADA', 'FATURADA'].includes(os.value?.estado)
-)
+const canDeleteOS = computed(() => perfil.value === 'ADMINISTRADOR')
 
+const initialized = ref(false)
 async function loadOS() {
-  loading.value = true
+  if (!initialized.value) loading.value = true
   try {
     const { data } = await getOrdemServico(route.params.id)
     os.value = data.data
   } catch {
-    os.value = null
+    if (!initialized.value) os.value = null
   } finally {
     loading.value = false
+    initialized.value = true
+  }
+}
+
+async function loadHistorico() {
+  if (!os.value) return
+  historicoLoading.value = true
+  try {
+    const { data } = await getHistoricoOS(os.value.id)
+    historico.value = data.data ?? []
+  } catch {
+    historico.value = []
+  } finally {
+    historicoLoading.value = false
   }
 }
 
 let pollInterval
-onMounted(() => {
-  loadOS()
+onMounted(async () => {
+  await loadOS()
+  loadHistorico()
   pollInterval = setInterval(() => { if (!showEstadoModal.value) loadOS() }, 30000)
 })
 onUnmounted(() => clearInterval(pollInterval))
@@ -181,33 +173,17 @@ async function confirmTransition() {
   } finally {
     actionLoading.value = false
     await loadOS()
+    loadHistorico()
   }
 }
 
-async function openMecanicoModal() {
-  mecanicoError.value = ''
-  selectedMecanicoId.value = os.value.mecanico?.id ?? null
-  mecanicos.value = []
-  showMecanicoModal.value = true
-  mecanicoLoading.value = true
+async function deleteOS() {
+  if (!confirm('Eliminar definitivamente esta OS? Esta ação não pode ser desfeita.')) return
   try {
-    const { data } = await getUtilizadores({ page_size: 100 })
-    mecanicos.value = (data.data ?? []).filter(u => u.perfil === 'MECANICO' && u.ativo)
-  } catch {
-    mecanicoError.value = 'Não foi possível carregar a lista de mecânicos.'
-  } finally {
-    mecanicoLoading.value = false
-  }
-}
-
-async function confirmMecanico() {
-  mecanicoError.value = ''
-  try {
-    await atualizarMecanico(os.value.id, { mecanico_id: selectedMecanicoId.value || null })
-    showMecanicoModal.value = false
-    await loadOS()
+    await deletarOS(os.value.id)
+    router.push('/ordens-servico')
   } catch (e) {
-    mecanicoError.value = e.response?.data?.detail?.detail || 'Erro ao atribuir mecânico.'
+    actionError.value = e.response?.data?.detail?.detail || 'Erro ao eliminar.'
   }
 }
 
@@ -236,7 +212,6 @@ function openFaturaModal() {
 const ESTADO_LABELS = {
   PENDENTE: 'Pendente',
   EM_DIAGNOSTICO: 'Em Diagnóstico',
-  AGUARDA_APROVACAO: 'Aguarda Aprovação',
   EM_REPARACAO: 'Em Reparação',
   AGUARDA_PECAS: 'Aguarda Peças',
   CONCLUIDA: 'Concluída',
@@ -363,6 +338,21 @@ function fmtDateTime(dt) {
               </tbody>
             </table>
           </div>
+          <!-- Histórico -->
+          <div class="card">
+            <h3 class="card-title">Histórico</h3>
+            <div v-if="historicoLoading" class="dim">A carregar…</div>
+            <div v-else-if="historico.length === 0" class="dim">Sem eventos registados.</div>
+            <div v-else class="history-list">
+              <div v-for="item in historico" :key="item.id" class="history-item">
+                <div class="history-meta">
+                  <span class="history-time">{{ fmtDateTime(item.timestamp) }}</span>
+                  <span v-if="item.utilizador_nome" class="history-user">{{ item.utilizador_nome }}</span>
+                </div>
+                <span class="history-desc">{{ item.descricao }}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Right column -->
@@ -392,21 +382,18 @@ function fmtDateTime(dt) {
             <p v-if="actionError" class="form-error" style="margin-top:0.75rem">{{ actionError }}</p>
           </div>
 
-          <!-- Mecânico -->
-          <div class="card" v-if="canAssignMecanico">
-            <h3 class="card-title">Mecânico</h3>
-            <p class="mecanico-nome">{{ os.mecanico?.nome || 'Não atribuído' }}</p>
-            <button class="btn btn--ghost btn--sm" style="margin-top:0.75rem; width:100%" @click="openMecanicoModal">
-              {{ os.mecanico ? 'Alterar mecânico' : 'Atribuir mecânico' }}
-            </button>
-          </div>
-
           <!-- Fatura emitida -->
           <div class="card" v-if="os.fatura_id">
             <h3 class="card-title">Fatura</h3>
             <button class="btn btn--ghost" @click="openFaturaModal">
               Ver Fatura →
             </button>
+          </div>
+
+          <!-- Eliminar (admin only) -->
+          <div class="card" v-if="canDeleteOS">
+            <h3 class="card-title">Zona de Perigo</h3>
+            <button class="btn btn--danger" style="width:100%" @click="deleteOS">Eliminar OS</button>
           </div>
 
           <!-- Observações -->
@@ -439,28 +426,6 @@ function fmtDateTime(dt) {
     @close="showEmitirModal = false"
     @emitida="onFaturaEmitida"
   />
-
-  <!-- Atribuir mecânico modal -->
-  <Teleport to="body">
-    <div v-if="showMecanicoModal" class="overlay" @click.self="showMecanicoModal = false">
-      <div class="dialog">
-        <h2 class="dialog-title">Atribuir Mecânico</h2>
-        <div class="field" style="margin-top:1rem">
-          <label>Mecânico</label>
-          <div v-if="mecanicoLoading" style="padding:0.5rem 0; color:#6b7280; font-size:0.875rem">A carregar...</div>
-          <select v-else v-model="selectedMecanicoId">
-            <option :value="null">— Sem mecânico —</option>
-            <option v-for="m in mecanicos" :key="m.id" :value="m.id">{{ m.nome }}</option>
-          </select>
-        </div>
-        <p v-if="mecanicoError" class="form-error" style="margin-top:0.5rem">{{ mecanicoError }}</p>
-        <div class="dialog-actions">
-          <button class="btn btn--secondary" @click="showMecanicoModal = false">Cancelar</button>
-          <button class="btn btn--primary" :disabled="mecanicoLoading" @click="confirmMecanico">Confirmar</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
 
   <!-- Estado transition modal -->
   <Teleport to="body">
@@ -548,7 +513,6 @@ function fmtDateTime(dt) {
 .prio-urgente { color: #dc2626; }
 
 .problem-text { color: #374151; line-height: 1.6; font-size: 0.9rem; }
-.mecanico-nome { font-size: 0.9rem; font-weight: 600; color: #111827; }
 
 .price-rows { display: flex; flex-direction: column; gap: 0.6rem; }
 .price-row { display: flex; justify-content: space-between; font-size: 0.9rem; color: #374151; }
@@ -595,6 +559,22 @@ function fmtDateTime(dt) {
 .btn--secondary { background: #e5e7eb; color: #374151; }
 .btn--ghost { background: transparent; border: 1px solid #d1d5db; color: #374151; }
 .btn--sm { padding: 0.4rem 0.8rem; font-size: 0.825rem; }
+
+/* History */
+.history-list { display: flex; flex-direction: column; gap: 0; }
+.history-item {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid #f3f4f6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.history-item:last-child { border-bottom: none; }
+.history-meta { display: flex; justify-content: space-between; align-items: center; }
+.history-time { font-size: 0.75rem; color: #9ca3af; }
+.history-user { font-size: 0.75rem; color: #6b7280; font-weight: 500; }
+.history-desc { font-size: 0.85rem; color: #374151; }
+.dim { color: #9ca3af; font-size: 0.85rem; }
 
 .mono { font-family: 'Courier New', monospace; }
 

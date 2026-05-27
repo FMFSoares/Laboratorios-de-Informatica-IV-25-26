@@ -7,6 +7,7 @@ from app.schemas.auth import CurrentUserResponse
 from app.auth.dependencies import get_current_user, require_roles
 from app.schemas.utilizador import PerfilUtilizador
 from app.schemas.common import PaginatedResponse, DataResponse
+from app.schemas.auditoria import AuditoriaItemResponse
 from app.schemas.ordem_servico import (
     OrdemServicoCreate,
     OrdemServicoResumo,
@@ -141,6 +142,24 @@ def submeter_diagnostico(
     service: OrdemServicoService = Depends(get_os_service),
 ):
     return DataResponse[OrdemServicoDetalheResponse](data=service.submeter_diagnostico(os_id, body, current_user))
+
+
+@router.get("/{os_id}/historico", response_model=DataResponse[list[AuditoriaItemResponse]])
+def historico_os(
+    os_id: int,
+    current_user: CurrentUserResponse = Depends(get_current_user),
+    service: OrdemServicoService = Depends(get_os_service),
+):
+    return DataResponse(data=service.historico_os(os_id, current_user))
+
+
+@router.delete("/{os_id}", status_code=204)
+def apagar_os(
+    os_id: int,
+    current_user: CurrentUserResponse = Depends(require_roles(PerfilUtilizador.ADMINISTRADOR)),
+    service: OrdemServicoService = Depends(get_os_service),
+):
+    service.apagar(os_id, current_user)
 
 
 @router.post("/{os_id}/observacoes", response_model=DataResponse[OrdemServicoObservacaoResponse], status_code=status.HTTP_201_CREATED)

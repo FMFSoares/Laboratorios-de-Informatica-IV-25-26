@@ -17,14 +17,17 @@ const routes = [
     meta: { requiresAuth: true },
     redirect: () => {
       const auth = useAuthStore()
-      return auth.getCurrentUser?.perfil === 'MECANICO' ? '/oficina/ativa' : '/dashboard'
+      const perfil = auth.getCurrentUser?.perfil
+      if (perfil === 'MECANICO') return '/oficina/ativa'
+      if (perfil === 'RECECIONISTA') return '/ordens-servico'
+      return '/dashboard'
     },
     children: [
       {
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('../views/Dashboard.vue'),
-        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
       },
 
       // ── Clientes ───────────────────────────────────────────
@@ -106,13 +109,13 @@ const routes = [
         path: 'faturas',
         name: 'Faturas',
         component: () => import('../views/faturas/Index.vue'),
-        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
       },
       {
         path: 'faturas/:id',
         name: 'FaturaDetalhe',
         component: () => import('../views/faturas/Detail.vue'),
-        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
       },
 
       // ── Utilizadores ─────────────────────────────────────────
@@ -153,6 +156,12 @@ const routes = [
 
       // ── Trotinetes ───────────────────────────────────────────
       {
+        path: 'trotinetes',
+        name: 'Trotinetes',
+        component: () => import('../views/trotinetes/Index.vue'),
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
+      },
+      {
         path: 'trotinetes/:id',
         name: 'TrotineteDetalhe',
         component: () => import('../views/trotinetes/Detail.vue'),
@@ -164,13 +173,13 @@ const routes = [
         path: 'servicos',
         name: 'Servicos',
         component: () => import('../views/servicos/Index.vue'),
-        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
       },
       {
         path: 'servicos/:id',
         name: 'ServicoDetalhe',
         component: () => import('../views/servicos/Detail.vue'),
-        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
       },
 
       // ── Auditoria ────────────────────────────────────────────
@@ -213,7 +222,10 @@ const routes = [
   },
   { path: '/:pathMatch(.*)*', redirect: () => {
     const auth = useAuthStore()
-    return auth.getCurrentUser?.perfil === 'MECANICO' ? '/oficina/ativa' : '/dashboard'
+    const perfil = auth.getCurrentUser?.perfil
+    if (perfil === 'MECANICO') return '/oficina/ativa'
+    if (perfil === 'RECECIONISTA') return '/ordens-servico'
+    return '/dashboard'
   }},
 ]
 
@@ -228,7 +240,10 @@ router.beforeEach((to, from, next) => {
   if (to.meta.requiresAuth === false) {
     // Public route — redirect authenticated users away from login
     if (to.name === 'Login' && authStore.getIsAuthenticated) {
-      return next(authStore.getCurrentUser?.perfil === 'MECANICO' ? '/oficina/ativa' : '/dashboard')
+      const perfil = authStore.getCurrentUser?.perfil
+      if (perfil === 'MECANICO') return next('/oficina/ativa')
+      if (perfil === 'RECECIONISTA') return next('/ordens-servico')
+      return next('/dashboard')
     }
     return next()
   }
@@ -242,7 +257,9 @@ router.beforeEach((to, from, next) => {
   if (to.meta.roles) {
     const perfil = authStore.getCurrentUser?.perfil
     if (!to.meta.roles.includes(perfil)) {
-      return next(perfil === 'MECANICO' ? '/oficina/ativa' : '/dashboard')
+      if (perfil === 'MECANICO') return next('/oficina/ativa')
+      if (perfil === 'RECECIONISTA') return next('/ordens-servico')
+      return next('/dashboard')
     }
   }
 

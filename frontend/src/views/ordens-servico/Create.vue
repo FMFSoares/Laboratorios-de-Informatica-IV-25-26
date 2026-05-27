@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getClientes, getCliente, createCliente } from '../../services/clientes.js'
 import { getTrotinetes, createTrotinete } from '../../services/trotinetes.js'
@@ -27,34 +27,86 @@ if (isAdmin) {
   }).catch(() => {})
 }
 
-// ── Step 1: cliente ────────────────────────────────────────────
+// ── Step 1: cliente autocomplete ───────────────────────────────
 const clienteSearch = ref('')
 const clienteResults = ref([])
 const searchLoading = ref(false)
+const showDropdown = ref(false)
+const focusedIdx = ref(-1)
 const clienteSelecionado = ref(null)
 const criandoCliente = ref(false)
 const novoCliente = ref({ nome: '', nif: '', telemovel: '', email: '', morada: '', consentimento_rgpd: false })
 
-async function searchClientes() {
-  if (!clienteSearch.value.trim()) return
-  searchLoading.value = true
-  error.value = ''
-  try {
-    const { data } = await getClientes({ query: clienteSearch.value.trim(), page_size: 10 })
-    clienteResults.value = data.data
-    if (clienteResults.value.length === 0) criandoCliente.value = true
-  } catch {
+const comboRef = ref(null)
+let debounceTimer = null
+
+function onSearchInput() {
+  clienteSelecionado.value = null
+  focusedIdx.value = -1
+  clearTimeout(debounceTimer)
+  if (clienteSearch.value.trim().length < 2) {
     clienteResults.value = []
-  } finally {
-    searchLoading.value = false
+    showDropdown.value = false
+    return
+  }
+  searchLoading.value = true
+  showDropdown.value = true
+  debounceTimer = setTimeout(async () => {
+    try {
+      const { data } = await getClientes({ query: clienteSearch.value.trim(), page_size: 8 })
+      clienteResults.value = data.data ?? []
+    } catch {
+      clienteResults.value = []
+    } finally {
+      searchLoading.value = false
+    }
+  }, 300)
+}
+
+function onSearchFocus() {
+  if (clienteSearch.value.trim().length >= 2) showDropdown.value = true
+}
+
+function onKeyDown(e) {
+  if (!showDropdown.value) return
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    focusedIdx.value = Math.min(focusedIdx.value + 1, clienteResults.value.length - 1)
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    focusedIdx.value = Math.max(focusedIdx.value - 1, -1)
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    if (focusedIdx.value >= 0 && clienteResults.value[focusedIdx.value]) {
+      selectCliente(clienteResults.value[focusedIdx.value])
+    }
+  } else if (e.key === 'Escape') {
+    showDropdown.value = false
   }
 }
 
+function onClickOutside(e) {
+  if (comboRef.value && !comboRef.value.contains(e.target)) {
+    showDropdown.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('mousedown', onClickOutside))
+onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
+
 async function selectCliente(c) {
   clienteSelecionado.value = c
+  clienteSearch.value = c.nome
+  showDropdown.value = false
   criandoCliente.value = false
   await fetchTrotinetes(c.id)
   step.value = 2
+}
+
+function clearSelection() {
+  clienteSelecionado.value = null
+  clienteSearch.value = ''
+  clienteResults.value = []
 }
 
 async function createAndSelectCliente() {
@@ -168,6 +220,7 @@ onMounted(async () => {
     try {
       const { data } = await getCliente(clienteId)
       clienteSelecionado.value = data.data
+      clienteSearch.value = data.data.nome
       await fetchTrotinetes(clienteId)
       step.value = 2
     } catch {
@@ -178,349 +231,561 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page">
-    <div class="back-row">
-      <button class="btn-back" @click="router.push('/ordens-servico')">← Ordens de Serviço</button>
-    </div>
-    <h1 style="margin-bottom: 2rem">Nova Ordem de Serviço</h1>
-
-    <!-- Step indicator -->
-    <div class="steps">
-      <div v-for="n in 3" :key="n" class="step-item" :class="{ active: step === n, done: step > n }">
-        <div class="step-circle">{{ step > n ? '✓' : n }}</div>
-        <span class="step-label">
-          {{ n === 1 ? 'Cliente' : n === 2 ? 'Trotinete' : 'Detalhes' }}
-        </span>
+  <div class="page-wrap">
+    <div class="page">
+      <!-- Header -->
+      <div class="page-header">
+        <button class="btn-back" @click="router.push('/ordens-servico')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Ordens de Serviço
+        </button>
+        <h1 class="page-title">Nova Ordem de Serviço</h1>
       </div>
-      <div class="step-line" />
-    </div>
 
-    <div class="card form-card">
-      <!-- ── Step 1 ── -->
-      <template v-if="step === 1">
-        <h2 class="step-title">Selecionar Cliente</h2>
+      <!-- Step indicator -->
+      <div class="steps">
+        <div class="step-track" />
+        <div v-for="n in 3" :key="n" class="step-item" :class="{ active: step === n, done: step > n }">
+          <div class="step-circle">
+            <svg v-if="step > n" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            <span v-else>{{ n }}</span>
+          </div>
+          <span class="step-label">{{ n === 1 ? 'Cliente' : n === 2 ? 'Trotinete' : 'Detalhes' }}</span>
+        </div>
+      </div>
 
-        <div v-if="!criandoCliente">
-          <div class="search-row">
-            <input
-              v-model="clienteSearch"
-              placeholder="NIF ou telemóvel do cliente..."
-              @keydown.enter="searchClientes"
-            />
-            <button class="btn btn--primary" :disabled="searchLoading" @click="searchClientes">
-              {{ searchLoading ? '...' : 'Pesquisar' }}
+      <!-- Card -->
+      <div class="card">
+
+        <!-- ── Step 1 ── -->
+        <template v-if="step === 1">
+          <div v-if="!criandoCliente">
+            <div class="card-header">
+              <h2 class="card-title">Selecionar Cliente</h2>
+              <p class="card-sub">Pesquise por nome, NIF ou telemóvel</p>
+            </div>
+
+            <!-- Autocomplete combobox -->
+            <div class="combo" ref="comboRef">
+              <div class="combo-input-wrap">
+                <svg class="combo-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input
+                  class="combo-input"
+                  v-model="clienteSearch"
+                  placeholder="Nome, NIF ou telemóvel..."
+                  autocomplete="off"
+                  spellcheck="false"
+                  @input="onSearchInput"
+                  @focus="onSearchFocus"
+                  @keydown="onKeyDown"
+                />
+                <div v-if="searchLoading" class="combo-spinner" />
+              </div>
+
+              <!-- Dropdown results -->
+              <div v-if="showDropdown" class="combo-dropdown">
+                <template v-if="clienteResults.length > 0">
+                  <div
+                    v-for="(c, i) in clienteResults"
+                    :key="c.id"
+                    class="combo-item"
+                    :class="{ focused: i === focusedIdx }"
+                    @mousedown.prevent="selectCliente(c)"
+                    @mouseenter="focusedIdx = i"
+                  >
+                    <div class="combo-item-name">{{ c.nome }}</div>
+                    <div class="combo-item-sub">NIF {{ c.nif }} · {{ c.telemovel }}</div>
+                  </div>
+                </template>
+                <div v-else-if="!searchLoading" class="combo-empty">
+                  <span>Nenhum cliente encontrado para "{{ clienteSearch }}"</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="divider-or"><span>ou</span></div>
+
+            <button class="btn-new-client" @click="criandoCliente = true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Registar novo cliente
             </button>
           </div>
 
-          <div v-if="clienteResults.length > 0" class="results-list">
-            <div
-              v-for="c in clienteResults"
-              :key="c.id"
-              class="result-item"
-              @click="selectCliente(c)"
-            >
-              <div class="result-name">{{ c.nome }}</div>
-              <div class="result-sub">NIF {{ c.nif }} · {{ c.telemovel }}</div>
-            </div>
-          </div>
-
-          <button class="btn-link-block" @click="criandoCliente = true">
-            + Registar novo cliente
-          </button>
-        </div>
-
-        <div v-else>
-          <div class="back-link" @click="criandoCliente = false">← Voltar à pesquisa</div>
-          <div class="form-grid">
-            <div class="field field--full">
-              <label>Nome completo *</label>
-              <input v-model="novoCliente.nome" required placeholder="João Silva" />
-            </div>
-            <div class="field">
-              <label>NIF *</label>
-              <input v-model="novoCliente.nif" required placeholder="123456789" maxlength="9" />
-            </div>
-            <div class="field">
-              <label>Telemóvel *</label>
-              <input v-model="novoCliente.telemovel" required placeholder="912345678" maxlength="9" />
-            </div>
-            <div class="field">
-              <label>Email</label>
-              <input v-model="novoCliente.email" type="email" placeholder="joao@email.com" />
-            </div>
-            <div class="field">
-              <label>Morada</label>
-              <input v-model="novoCliente.morada" placeholder="Rua das Flores 10, Lisboa" />
-            </div>
-            <div class="field field--full">
-              <label class="rgpd-check">
-                <input type="checkbox" v-model="novoCliente.consentimento_rgpd" />
-                <span>Consentimento RGPD *</span>
-              </label>
-            </div>
-            <p v-if="error" class="form-error field--full">{{ error }}</p>
-            <div class="field--full step-actions">
-              <button class="btn btn--primary" :disabled="loading" @click="createAndSelectCliente">
-                {{ loading ? 'A criar...' : 'Criar e Continuar →' }}
+          <!-- New client form -->
+          <div v-else>
+            <div class="card-header">
+              <button class="btn-back-inline" @click="criandoCliente = false">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                Voltar à pesquisa
               </button>
+              <h2 class="card-title" style="margin-top: 0.5rem">Novo Cliente</h2>
+            </div>
+            <div class="form-grid">
+              <div class="field field--full">
+                <label>Nome completo *</label>
+                <input v-model="novoCliente.nome" required placeholder="João Silva" />
+              </div>
+              <div class="field">
+                <label>NIF *</label>
+                <input v-model="novoCliente.nif" required placeholder="123456789" maxlength="9" />
+              </div>
+              <div class="field">
+                <label>Telemóvel *</label>
+                <input v-model="novoCliente.telemovel" required placeholder="912345678" maxlength="9" />
+              </div>
+              <div class="field">
+                <label>Email</label>
+                <input v-model="novoCliente.email" type="email" placeholder="joao@email.com" />
+              </div>
+              <div class="field">
+                <label>Morada</label>
+                <input v-model="novoCliente.morada" placeholder="Rua das Flores 10, Lisboa" />
+              </div>
+              <div class="field field--full">
+                <label class="rgpd-check">
+                  <input type="checkbox" v-model="novoCliente.consentimento_rgpd" />
+                  <span>Li e aceito o tratamento dos dados pessoais (RGPD) *</span>
+                </label>
+              </div>
+              <p v-if="error" class="form-error field--full">{{ error }}</p>
+              <div class="field--full step-actions">
+                <button class="btn btn--primary" :disabled="loading" @click="createAndSelectCliente">
+                  {{ loading ? 'A criar...' : 'Criar e Continuar →' }}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </template>
+        </template>
 
-      <!-- ── Step 2 ── -->
-      <template v-else-if="step === 2">
-        <h2 class="step-title">Selecionar Trotinete</h2>
-        <p class="step-sub">Cliente: <strong>{{ clienteSelecionado?.nome }}</strong></p>
-
-        <div v-if="!criandoTrot">
-          <div
-            v-if="clienteTrotinetes.length > 0"
-            class="results-list"
-          >
-            <div
-              v-for="t in clienteTrotinetes"
-              :key="t.id"
-              class="result-item"
-              @click="selectTrot(t)"
-            >
-              <div class="result-name">{{ t.marca }} {{ t.modelo }}</div>
-              <div class="result-sub mono">{{ t.numero_serie }}</div>
+        <!-- ── Step 2 ── -->
+        <template v-else-if="step === 2">
+          <div class="card-header">
+            <h2 class="card-title">Selecionar Trotinete</h2>
+            <div class="client-pill">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              {{ clienteSelecionado?.nome }}
             </div>
           </div>
-          <div v-else class="empty-hint">Este cliente não tem trotinetes registadas.</div>
 
-          <button class="btn-link-block" @click="criandoTrot = true">
-            + Registar nova trotinete
-          </button>
-          <button class="btn btn--ghost btn--sm" style="margin-top:0.5rem" @click="step = 1">← Voltar</button>
-        </div>
+          <div v-if="!criandoTrot">
+            <div v-if="clienteTrotinetes.length > 0" class="trot-list">
+              <div
+                v-for="t in clienteTrotinetes"
+                :key="t.id"
+                class="trot-item"
+                @click="selectTrot(t)"
+              >
+                <div class="trot-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="17" r="3"/><circle cx="19" cy="17" r="3"/><path d="M12 17V7l-7 4"/><path d="M14 7h6l-3 4h-3"/></svg>
+                </div>
+                <div class="trot-info">
+                  <div class="trot-name">{{ t.marca }} {{ t.modelo }}</div>
+                  <div class="trot-serial">{{ t.numero_serie }}</div>
+                </div>
+                <svg class="trot-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </div>
+            </div>
+            <div v-else class="empty-state">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5"><circle cx="5" cy="17" r="3"/><circle cx="19" cy="17" r="3"/><path d="M12 17V7l-7 4"/><path d="M14 7h6l-3 4h-3"/></svg>
+              <p>Este cliente não tem trotinetes registadas.</p>
+            </div>
 
-        <div v-else>
-          <div class="back-link" @click="criandoTrot = false">← Voltar à lista</div>
-          <div class="form-grid">
-            <div class="field">
-              <label>Marca *</label>
-              <input v-model="novaTrot.marca" required placeholder="Xiaomi" />
-            </div>
-            <div class="field">
-              <label>Modelo *</label>
-              <input v-model="novaTrot.modelo" required placeholder="Mi Electric Scooter 3" />
-            </div>
-            <div class="field field--full">
-              <label>Número de Série *</label>
-              <input v-model="novaTrot.numero_serie" required placeholder="XM2024ABC123" />
-            </div>
-            <div class="field">
-              <label>Ano de Compra</label>
-              <input v-model="novaTrot.ano_compra" type="number" placeholder="2024" min="2000" max="2100" />
-            </div>
-            <div class="field">
-              <label>Cor</label>
-              <input v-model="novaTrot.cor" placeholder="Preto" />
-            </div>
-            <p v-if="error" class="form-error field--full">{{ error }}</p>
-            <div class="field--full step-actions">
-              <button class="btn btn--primary" :disabled="loading" @click="createAndSelectTrot">
-                {{ loading ? 'A registar...' : 'Registar e Continuar →' }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </template>
+            <div class="divider-or" style="margin-top: 1rem"><span>ou</span></div>
 
-      <!-- ── Step 3 ── -->
-      <template v-else>
-        <h2 class="step-title">Detalhes da Ordem de Serviço</h2>
-        <div class="summary-chips">
-          <span class="chip">{{ clienteSelecionado?.nome }}</span>
-          <span class="chip mono">{{ trotSelecionada?.numero_serie }}</span>
-          <span class="chip-sub">{{ trotSelecionada?.marca }} {{ trotSelecionada?.modelo }}</span>
-        </div>
-
-        <div class="form-grid" style="margin-top: 1.25rem">
-          <div v-if="isAdmin" class="field field--full">
-            <label>Loja *</label>
-            <select v-model="lojaIdSelecionada" required>
-              <option :value="null" disabled>Selecione a loja...</option>
-              <option v-for="l in lojas" :key="l.id" :value="l.id">{{ l.nome }}</option>
-            </select>
-          </div>
-          <div class="field field--full">
-            <label>Descrição do problema *</label>
-            <textarea
-              v-model="osForm.descricao_problema"
-              rows="4"
-              placeholder="Descreva o problema reportado pelo cliente..."
-            />
-          </div>
-          <div class="field">
-            <label>Prioridade *</label>
-            <select v-model="osForm.prioridade">
-              <option v-for="p in PRIORIDADES" :key="p.value" :value="p.value">{{ p.label }}</option>
-            </select>
-          </div>
-          <p v-if="error" class="form-error field--full">{{ error }}</p>
-          <div class="field--full step-actions">
-            <button class="btn btn--ghost btn--sm" @click="step = 2">← Voltar</button>
-            <button class="btn btn--primary" :disabled="loading" @click="submitOS">
-              {{ loading ? 'A criar...' : 'Criar Ordem de Serviço' }}
+            <button class="btn-new-client" @click="criandoTrot = true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Registar nova trotinete
             </button>
+            <button class="btn btn--ghost btn--sm" style="margin-top: 0.5rem; width: 100%" @click="step = 1; clearSelection()">← Voltar ao cliente</button>
           </div>
-        </div>
-      </template>
+
+          <div v-else>
+            <button class="btn-back-inline" @click="criandoTrot = false">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+              Voltar à lista
+            </button>
+            <div class="form-grid" style="margin-top: 1rem">
+              <div class="field">
+                <label>Marca *</label>
+                <input v-model="novaTrot.marca" required placeholder="Xiaomi" />
+              </div>
+              <div class="field">
+                <label>Modelo *</label>
+                <input v-model="novaTrot.modelo" required placeholder="Mi Electric Scooter 3" />
+              </div>
+              <div class="field field--full">
+                <label>Número de Série *</label>
+                <input v-model="novaTrot.numero_serie" required placeholder="XM2024ABC123" />
+              </div>
+              <div class="field">
+                <label>Ano de Compra</label>
+                <input v-model="novaTrot.ano_compra" type="number" placeholder="2024" min="2000" max="2100" />
+              </div>
+              <div class="field">
+                <label>Cor</label>
+                <input v-model="novaTrot.cor" placeholder="Preto" />
+              </div>
+              <p v-if="error" class="form-error field--full">{{ error }}</p>
+              <div class="field--full step-actions">
+                <button class="btn btn--primary" :disabled="loading" @click="createAndSelectTrot">
+                  {{ loading ? 'A registar...' : 'Registar e Continuar →' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- ── Step 3 ── -->
+        <template v-else>
+          <div class="card-header">
+            <h2 class="card-title">Detalhes da Ordem de Serviço</h2>
+          </div>
+
+          <div class="summary-row">
+            <div class="summary-chip">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              {{ clienteSelecionado?.nome }}
+            </div>
+            <div class="summary-chip">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="17" r="3"/><circle cx="19" cy="17" r="3"/><path d="M12 17V7l-7 4"/><path d="M14 7h6l-3 4h-3"/></svg>
+              {{ trotSelecionada?.marca }} {{ trotSelecionada?.modelo }}
+            </div>
+            <div class="summary-chip summary-chip--mono">{{ trotSelecionada?.numero_serie }}</div>
+          </div>
+
+          <div class="form-grid" style="margin-top: 1.25rem">
+            <div v-if="isAdmin" class="field field--full">
+              <label>Loja *</label>
+              <select v-model="lojaIdSelecionada" required>
+                <option :value="null" disabled>Selecione a loja...</option>
+                <option v-for="l in lojas" :key="l.id" :value="l.id">{{ l.nome }}</option>
+              </select>
+            </div>
+            <div class="field field--full">
+              <label>Descrição do problema *</label>
+              <textarea
+                v-model="osForm.descricao_problema"
+                rows="4"
+                placeholder="Descreva o problema reportado pelo cliente..."
+              />
+            </div>
+            <div class="field">
+              <label>Prioridade *</label>
+              <select v-model="osForm.prioridade">
+                <option v-for="p in PRIORIDADES" :key="p.value" :value="p.value">{{ p.label }}</option>
+              </select>
+            </div>
+            <p v-if="error" class="form-error field--full">{{ error }}</p>
+            <div class="field--full step-actions">
+              <button class="btn btn--ghost btn--sm" @click="step = 2">← Voltar</button>
+              <button class="btn btn--primary" :disabled="loading" @click="submitOS">
+                {{ loading ? 'A criar...' : 'Criar Ordem de Serviço' }}
+              </button>
+            </div>
+          </div>
+        </template>
+
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.page { padding: 2rem; max-width: 680px; }
-
-.back-row { margin-bottom: 1rem; }
-.btn-back {
-  background: none; border: none;
-  color: #1abc9c; font-size: 0.9rem; font-weight: 500;
-  cursor: pointer; padding: 0;
+/* ── Layout ──────────────────────────────────────────────────── */
+.page-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 2rem 1rem;
+  min-height: 100%;
 }
-.btn-back:hover { text-decoration: underline; }
 
-/* Steps */
+.page {
+  width: 100%;
+  max-width: 580px;
+}
+
+/* ── Page header ─────────────────────────────────────────────── */
+.page-header { margin-bottom: 2rem; }
+.btn-back {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  background: none; border: none;
+  color: #64748b; font-size: 0.825rem; font-weight: 500;
+  cursor: pointer; padding: 0; margin-bottom: 0.75rem;
+  transition: color 0.15s;
+}
+.btn-back:hover { color: #1abc9c; }
+
+.page-title {
+  font-size: 1.5rem; font-weight: 700;
+  color: #111827; margin: 0;
+}
+
+/* ── Steps ───────────────────────────────────────────────────── */
 .steps {
   display: flex;
-  align-items: center;
-  gap: 0;
+  align-items: flex-start;
   margin-bottom: 2rem;
   position: relative;
 }
-.step-line {
+.step-track {
   position: absolute;
-  top: 18px;
-  left: 18px;
-  right: 18px;
+  top: 17px;
+  left: calc(16.67% - 0px);
+  right: calc(16.67% - 0px);
   height: 2px;
   background: #e5e7eb;
   z-index: 0;
 }
 .step-item {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
-  flex: 1;
+  gap: 0.5rem;
   position: relative;
   z-index: 1;
 }
 .step-circle {
-  width: 36px; height: 36px;
+  width: 34px; height: 34px;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 0.9rem;
-  background: #e5e7eb; color: #6b7280;
+  font-weight: 700; font-size: 0.85rem;
+  background: #fff;
   border: 2px solid #e5e7eb;
+  color: #9ca3af;
   transition: all 0.2s;
 }
 .step-item.active .step-circle {
-  background: #1abc9c; color: #fff; border-color: #1abc9c;
+  background: #1abc9c; border-color: #1abc9c; color: #fff;
+  box-shadow: 0 0 0 4px rgba(26,188,156,0.15);
 }
 .step-item.done .step-circle {
-  background: #d1fae5; color: #065f46; border-color: #6ee7b7;
+  background: #ecfdf5; border-color: #6ee7b7; color: #059669;
 }
-.step-label { font-size: 0.8rem; font-weight: 500; color: #6b7280; }
-.step-item.active .step-label { color: #1abc9c; }
+.step-label {
+  font-size: 0.78rem; font-weight: 500; color: #9ca3af;
+  white-space: nowrap;
+}
+.step-item.active .step-label { color: #1abc9c; font-weight: 600; }
+.step-item.done .step-label { color: #059669; }
 
+/* ── Card ────────────────────────────────────────────────────── */
 .card {
   background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.05);
   padding: 2rem;
 }
 
-.step-title { margin-bottom: 1.25rem; }
-.step-sub { color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem; }
+.card-header { margin-bottom: 1.5rem; }
+.card-title { font-size: 1.1rem; font-weight: 700; color: #111827; margin: 0 0 0.25rem; }
+.card-sub { font-size: 0.85rem; color: #6b7280; margin: 0; }
 
-/* Search */
-.search-row {
-  display: flex; gap: 0.75rem; margin-bottom: 1rem;
+/* ── Autocomplete combobox ───────────────────────────────────── */
+.combo { position: relative; }
+
+.combo-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0 0.75rem;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.search-row input { flex: 1; }
+.combo-input-wrap:focus-within {
+  border-color: #1abc9c;
+  box-shadow: 0 0 0 3px rgba(26,188,156,0.12);
+}
+.combo-icon { color: #9ca3af; flex-shrink: 0; }
+.combo-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 0.7rem 0;
+  font-size: 0.9rem;
+  color: #111827;
+  background: transparent;
+}
+.combo-input::placeholder { color: #9ca3af; }
+.combo-spinner {
+  width: 16px; height: 16px;
+  border: 2px solid #e5e7eb;
+  border-top-color: #1abc9c;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
-.results-list {
+.combo-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  margin-bottom: 1rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  z-index: 100;
   overflow: hidden;
 }
-.result-item {
-  padding: 0.9rem 1rem;
+.combo-item {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  border-bottom: 1px solid #f9fafb;
+  transition: background 0.1s;
+}
+.combo-item:last-child { border-bottom: none; }
+.combo-item:hover, .combo-item.focused { background: #f0fdf4; }
+.combo-item-name { font-weight: 600; font-size: 0.9rem; color: #111827; }
+.combo-item-sub { font-size: 0.8rem; color: #6b7280; margin-top: 0.1rem; }
+.combo-empty {
+  padding: 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #9ca3af;
+}
+
+/* ── Divider ─────────────────────────────────────────────────── */
+.divider-or {
+  display: flex; align-items: center; gap: 0.75rem;
+  margin: 1.25rem 0;
+  color: #d1d5db; font-size: 0.8rem;
+}
+.divider-or::before, .divider-or::after {
+  content: ''; flex: 1; height: 1px; background: #e5e7eb;
+}
+.divider-or span { color: #9ca3af; }
+
+/* ── New client/trotinete button ─────────────────────────────── */
+.btn-new-client {
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  width: 100%;
+  padding: 0.65rem 1rem;
+  border: 1.5px dashed #d1d5db;
+  border-radius: 8px;
+  background: none;
+  color: #6b7280;
+  font-size: 0.875rem; font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.btn-new-client:hover { border-color: #1abc9c; color: #1abc9c; }
+
+/* ── Client pill (step 2 header) ─────────────────────────────── */
+.client-pill {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  background: #f0fdf4; border: 1px solid #6ee7b7;
+  color: #065f46; font-size: 0.8rem; font-weight: 600;
+  padding: 0.25rem 0.65rem; border-radius: 999px;
+  margin-top: 0.5rem;
+}
+
+/* ── Trotinete list ──────────────────────────────────────────── */
+.trot-list {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.trot-item {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.85rem 1rem;
   cursor: pointer;
   border-bottom: 1px solid #f3f4f6;
   transition: background 0.1s;
 }
-.result-item:last-child { border-bottom: none; }
-.result-item:hover { background: #f0fdf4; }
-.result-name { font-weight: 600; color: #111827; }
-.result-sub { font-size: 0.82rem; color: #6b7280; margin-top: 0.15rem; }
-
-.btn-link-block {
-  display: block;
-  background: none; border: 1px dashed #d1d5db;
-  color: #1abc9c; font-size: 0.875rem; font-weight: 500;
-  cursor: pointer; padding: 0.65rem 1rem;
-  border-radius: 6px; width: 100%;
-  text-align: left; margin-top: 0.5rem;
-  transition: border-color 0.15s;
+.trot-item:last-child { border-bottom: none; }
+.trot-item:hover { background: #f0fdf4; }
+.trot-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  color: #6b7280;
 }
-.btn-link-block:hover { border-color: #1abc9c; }
+.trot-info { flex: 1; min-width: 0; }
+.trot-name { font-weight: 600; font-size: 0.9rem; color: #111827; }
+.trot-serial { font-size: 0.8rem; color: #6b7280; font-family: 'Courier New', monospace; margin-top: 0.1rem; }
+.trot-chevron { color: #d1d5db; flex-shrink: 0; }
 
-.back-link {
-  color: #6b7280; font-size: 0.875rem;
-  cursor: pointer; margin-bottom: 1rem;
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 0.5rem; padding: 2rem 0;
+  color: #9ca3af; font-size: 0.875rem;
 }
-.back-link:hover { color: #374151; }
 
-.empty-hint { color: #6b7280; font-size: 0.9rem; margin-bottom: 0.75rem; }
+/* ── Summary chips (step 3) ──────────────────────────────────── */
+.summary-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.summary-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  background: #f8fafc; border: 1px solid #e5e7eb;
+  color: #374151; font-size: 0.8rem; font-weight: 500;
+  padding: 0.25rem 0.65rem; border-radius: 999px;
+}
+.summary-chip--mono { font-family: 'Courier New', monospace; color: #6b7280; }
 
-/* Form */
+/* ── Back inline button ──────────────────────────────────────── */
+.btn-back-inline {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  background: none; border: none;
+  color: #6b7280; font-size: 0.825rem; font-weight: 500;
+  cursor: pointer; padding: 0; margin-bottom: 0.5rem;
+  transition: color 0.15s;
+}
+.btn-back-inline:hover { color: #374151; }
+
+/* ── Form ────────────────────────────────────────────────────── */
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
 }
-.field { display: flex; flex-direction: column; }
+.field { display: flex; flex-direction: column; gap: 0.35rem; }
 .field--full { grid-column: 1 / -1; }
+.field label {
+  font-size: 0.8rem; font-weight: 600;
+  color: #374151; letter-spacing: 0.01em;
+}
+.field input, .field select, .field textarea {
+  padding: 0.55rem 0.75rem;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 7px;
+  font-size: 0.875rem;
+  color: #111827;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  background: #fff;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  outline: none;
+  border-color: #1abc9c;
+  box-shadow: 0 0 0 3px rgba(26,188,156,0.1);
+}
+.field textarea { resize: vertical; }
 
 .rgpd-check {
   display: flex; align-items: flex-start; gap: 0.5rem;
-  cursor: pointer; font-size: 0.875rem; font-weight: 400;
-  color: #374151; margin-bottom: 0;
+  cursor: pointer; font-size: 0.85rem; font-weight: 400;
+  color: #374151;
 }
-.rgpd-check input { width: auto; margin-top: 3px; }
+.rgpd-check input[type="checkbox"] { width: auto; margin-top: 2px; accent-color: #1abc9c; }
 
 .step-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
+  display: flex; justify-content: flex-end; gap: 0.75rem;
   margin-top: 0.5rem;
 }
 
-/* Summary chips */
-.summary-chips {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;
-}
-.chip {
-  background: #f0fdf4; color: #065f46;
-  border: 1px solid #6ee7b7;
-  padding: 0.2rem 0.75rem; border-radius: 999px;
-  font-size: 0.82rem; font-weight: 600;
-}
-.chip-sub { color: #6b7280; font-size: 0.82rem; }
+.form-error { color: #dc2626; font-size: 0.82rem; margin: 0; }
 
-.form-error { color: #dc2626; font-size: 0.85rem; }
-
+/* ── Buttons ─────────────────────────────────────────────────── */
 .btn {
   padding: 0.6rem 1.2rem;
-  border: none; border-radius: 6px;
-  font-size: 0.9rem; font-weight: 600;
+  border: none; border-radius: 7px;
+  font-size: 0.875rem; font-weight: 600;
   cursor: pointer; transition: opacity 0.15s;
   white-space: nowrap;
 }
@@ -528,7 +793,5 @@ onMounted(async () => {
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn--primary { background: #1abc9c; color: #fff; }
 .btn--ghost { background: transparent; border: 1px solid #d1d5db; color: #374151; }
-.btn--sm { padding: 0.4rem 0.8rem; font-size: 0.825rem; }
-
-.mono { font-family: 'Courier New', monospace; font-size: 0.85rem; }
+.btn--sm { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
 </style>

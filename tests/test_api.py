@@ -1,5 +1,6 @@
 # backend/test_api.py
 import pytest
+import uuid
 
 def test_login_sucesso_e_falha(client):
     # Caso Normal: Login correto
@@ -12,159 +13,268 @@ def test_login_sucesso_e_falha(client):
     assert response_fail.status_code == 401
     assert response_fail.json()["detail"]["code"] == "INVALID_CREDENTIALS"
 
-def test_criar_cliente_nif_duplicado(client):
-    # Fazemos login para ter o token
-    token = client.post("/api/v1/auth/login", json={"email": "rec@teste.pt", "password": "rec123"}).json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-
+def test_criar_cliente_nif_duplicado(rec_client):
     cliente_data = {
         "nome": "João Ninguém",
         "nif": "123456789",
         "telemovel": "912345678",
         "email": "joao@teste.pt",
-        "consentimento_rgpd": True
+        "consentimento_rgpd": True,
     }
 
     # Caso Normal: Criar cliente
-    res1 = client.post("/api/v1/clientes", json=cliente_data, headers=headers)
+    res1 = rec_client.post("/api/v1/clientes", json=cliente_data)
     assert res1.status_code == 201
 
     # Edge Case: Tentar criar outro cliente com o MESMO NIF
-    res2 = client.post("/api/v1/clientes", json=cliente_data, headers=headers)
-    assert res2.status_code in [400, 409] 
+    res2 = rec_client.post("/api/v1/clientes", json=cliente_data)
+    assert res2.status_code in [400, 409]
     assert res2.json()["detail"]["code"] == "DUPLICATE_ENTRY"
 
-def test_transferencia_stock_insuficiente(client):
-    token = client.post("/api/v1/auth/login", json={"email": "admin@teste.pt", "password": "admin123"}).json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    # Criar uma peça falsa para testar
-    client.post("/api/v1/pecas", json={
-        "referencia": "PNEU-001", "nome": "Pneu", "categoria": "PNEU", 
-        "unidade": "unidade", "preco_custo": 10.0, "preco_venda": 25.0
-    }, headers=headers)
-
-    # Edge Case: Tentar transferir stock que não existe (Quantidade 999)
+def test_transferencia_stock_insuficiente(admin_client):
+    # A peça 1 e a loja 1 são criadas no conftest. A peça 1 tem 10 de stock na loja 1.
+    # Tentamos transferir 11 unidades, o que deve falhar.
     transferencia_data = {
-        "peca_id": 1,
-        "loja_origem_id": 1,
-        "loja_destino_id": 2,
-        "quantidade": 999
+        "peca_id": 1,  # Peca "PNEU-001"
+        "loja_origem_id": 1,  # Loja "Braga"
+        "loja_destino_id": 2,  # Loja "Porto"
+        "quantidade": 11,  # Mais do que o stock de 10
     }
-    
-    # Vai falhar a validação de lojas distintas primeiro ou de falta de stock
-    res = client.post("/api/v1/stock/transferencias", json=transferencia_data, headers=headers)
-    
-    # Esperamos que seja travado pelo erro 404 (Loja destino não existe) ou 400 (stock insuficiente)
-    # Dependendo da ordem de validação no vosso TransferenciaService
-    assert res.status_code in [400, 404]
 
-def test_faturacao_rejeita_os_nao_concluida(client):
-    token = client.post("/api/v1/auth/login", json={"email": "rec@teste.pt", "password": "rec123"}).json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    res = admin_client.post("/api/v1/stock/transferencias", json=transferencia_data)
 
+    # A validação de stock deve ser prioritária e falhar.
+    assert res.status_code == 400
+    assert "insuficiente" in res.json()["detail"].lower()
+
+def test_faturacao_rejeita_os_nao_concluida(rec_client):
     # Edge Case: Tentar faturar uma OS que não está no estado CONCLUIDA (ex. OS inventada ID 999)
-    res = client.post("/api/v1/faturas", json={"ordem_servico_id": 999}, headers=headers)
-    
+    res = rec_client.post("/api/v1/faturas", json={"ordem_servico_id": 999})
+
     # Como a OS 999 não existe, o vosso serviço deve cuspir 404
     assert res.status_code == 404
 
-def test_cobertura_lojas_e_utilizadores(client):
+    # Caso 2: Tentar faturar a OS 1, que foi criada no conftest em estado 'ABERTA'
+    res_nao_concluida = rec_client.post("/api/v1/faturas", json={"ordem_servico_id": 1})
+    assert res_nao_concluida.status_code == 400  # Ou 409, dependendo da implementação
+    assert res_nao_concluida.json()["detail"]["code"] == "ORDER_NOT_CONCLUDED"
+
+def test_cobertura_lojas_e_utilizadores(admin_client):
     # Passar por todos os endpoints de leitura base
-    token = client.post("/api/v1/auth/login", json={"email": "admin@teste.pt", "password": "admin123"}).json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-    
     # Bater no endpoint /me (Auth Service)
-    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
-    
+    assert admin_client.get("/api/v1/auth/me").status_code == 200
+
     # Bater nas Lojas
-    assert client.get("/api/v1/lojas", headers=headers).status_code == 200
-    
+    assert admin_client.get("/api/v1/lojas").status_code == 200
+
     # Bater nos Utilizadores
-    assert client.get("/api/v1/utilizadores", headers=headers).status_code == 200
+    assert admin_client.get("/api/v1/utilizadores").status_code == 200
 
-def test_cobertura_pecas_e_stock(client):
+def test_cobertura_pecas_e_stock(admin_client):
     # Simular o ciclo de vida do inventário
-    token = client.post("/api/v1/auth/login", json={"email": "admin@teste.pt", "password": "admin123"}).json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-    
     # 1. Criar Peça com sucesso
-    res_peca = client.post("/api/v1/pecas", json={
-        "referencia": "PNEU-COV-01", "nome": "Pneu Coverage", "categoria": "PNEU", 
-        "unidade": "unidade", "preco_custo": 10.0, "preco_venda": 20.0
-    }, headers=headers)
-    assert res_peca.status_code == 201
-    peca_id = res_peca.json()["data"]["id"]
-    
-    # 2. Listar Peças e Obter Peça
-    client.get("/api/v1/pecas", headers=headers)
-    client.get(f"/api/v1/pecas/{peca_id}", headers=headers)
-    
-    # 3. Entrada de Stock (Passar pelo Stock Service)
-    res_stock = client.post("/api/v1/stock/entradas", json={
-        "loja_id": 1, "peca_id": peca_id, "quantidade": 50, "observacoes": "Reposição Teste"
-    }, headers=headers)
-    assert res_stock.status_code == 201
-    
-    # 4. Listar Stock
-    client.get("/api/v1/stock", headers=headers)
-
-def test_cobertura_dashboard_auditoria(client):
-    # Simular a vista da gerência
-    token = client.post("/api/v1/auth/login", json={"email": "admin@teste.pt", "password": "admin123"}).json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    # Bater no Dashboard (calcula todas as estatísticas)
-    assert client.get("/api/v1/dashboard", headers=headers).status_code == 200
-    
-    # Bater na Auditoria (lista os logs gerados pelos testes anteriores)
-    assert client.get("/api/v1/auditoria", headers=headers).status_code == 200
-    
-def test_cobertura_ordens_e_trotinetes(client):
-    # --- 1. ADMIN prepara o terreno (Cria a Peça) ---
-    token_admin = client.post("/api/v1/auth/login", json={"email": "admin@teste.pt", "password": "admin123"}).json()["access_token"]
-    headers_admin = {"Authorization": f"Bearer {token_admin}"}
-    
-    admin_peca =client.post("/api/v1/pecas", json={
-                    "referencia": "PNEU-001", "nome": "Pneu", "categoria": "PNEU", 
-                    "unidade": "unidade", "preco_custo": 10.0, "preco_venda": 25.0
-                }, headers=headers_admin)
-    peca_id = admin_peca.json()["data"]["id"] # Captura o ID real criado
-
-    client.post("/api/v1/stock/entradas", json={
-        "loja_id": 1, 
-        "peca_id": peca_id, 
-        "quantidade": 10, 
-        "observacoes": "Stock inicial para testes"
-    }, headers=headers_admin)
-    
-    # --- 2. RECECIONISTA cria Cliente, Trotinete e OS ---
-    token_rec = client.post("/api/v1/auth/login", json={"email": "rec@teste.pt", "password": "rec123"}).json()["access_token"]
-    headers_rec = {"Authorization": f"Bearer {token_rec}"}
-    
-    res_cli = client.post("/api/v1/clientes", json={
-        "nome": "Cliente OS", "nif": "198968183", "telemovel": "919999999", "consentimento_rgpd": True
-    }, headers=headers_rec)
-    cli_id = res_cli.json()["data"]["id"]
-    
-    res_trot = client.post("/api/v1/trotinetes", json={
-        "cliente_id": cli_id, "marca": "Xiaomi", "modelo": "M365", "numero_serie": "SN12345"
-    }, headers=headers_rec)
-    trot_id = res_trot.json()["data"]["id"]
-    
-    res_os = client.post("/api/v1/ordens-servico", json={
-        "trotinete_id": trot_id, "loja_id": 1, "descricao_problema": "Pneu furado", 
-        "prioridade": "NORMAL", "preco_servico": 15.0
-    }, headers=headers_rec)
-    os_id = res_os.json()["data"]["id"]
-    
-    # --- 3. MECÂNICO adiciona a peça (agora sim, 201 Created!) ---
-    token_mec = client.post("/api/v1/auth/login", json={"email": "mecanico@teste.pt", "password": "mecanico123"}).json()["access_token"]
-    headers_mec = {"Authorization": f"Bearer {token_mec}"}
-    
-    res_peca = client.post(
-        f"/api/v1/ordens-servico/{os_id}/pecas", 
-        json={"peca_id": peca_id, "quantidade": 1}, 
-        headers=headers_mec # Usa o token do MECÂNICO
+    res_peca = admin_client.post(
+        "/api/v1/pecas",
+        json={
+            "referencia": "PNEU-COV-01",
+            "nome": "Pneu Coverage",
+            "categoria": "PNEU",
+            "unidade": "unidade",
+            "preco_custo": 10.0,
+            "preco_venda": 20.0,
+        },
     )
     assert res_peca.status_code == 201
+    peca_id = res_peca.json()["data"]["id"]
+
+    # 2. Listar Peças e Obter Peça
+    admin_client.get("/api/v1/pecas")
+    admin_client.get(f"/api/v1/pecas/{peca_id}")
+
+    # 3. Entrada de Stock (Passar pelo Stock Service)
+    res_stock = admin_client.post(
+        "/api/v1/stock/entradas",
+        json={
+            "loja_id": 1,
+            "peca_id": peca_id,
+            "quantidade": 50,
+            "observacoes": "Reposição Teste",
+        },
+    )
+    assert res_stock.status_code == 201
+
+    # 4. Listar Stock
+    admin_client.get("/api/v1/stock")
+
+def test_cobertura_dashboard_auditoria(admin_client):
+    # Simular a vista da gerência
+    # Bater no Dashboard (calcula todas as estatísticas)
+    assert admin_client.get("/api/v1/dashboard").status_code == 200
+
+    # Bater na Auditoria (lista os logs gerados pelos testes anteriores)
+    assert admin_client.get("/api/v1/auditoria").status_code == 200
+
+def test_rececionista_cria_os_para_cliente_existente(rec_client):
+    """ Testa se um rececionista pode criar uma OS para um cliente e trotinete já existentes (criados no conftest). """
+    res_os = rec_client.post(
+        "/api/v1/ordens-servico",
+        json={
+            "trotinete_id": 1,  # Usa a trotinete criada no conftest
+            "loja_id": 1,
+            "descricao_problema": "Pneu furado",
+            "prioridade": "NORMAL",
+            "preco_servico": 15.0,
+        },
+    )
+    assert res_os.status_code == 201
+    assert res_os.json()["data"]["descricao_problema"] == "Pneu furado"
+
+def test_mecanico_adiciona_peca_a_os(mec_client):
+    """ Testa se um mecânico pode adicionar uma peça com stock a uma OS existente. """
+    res_peca = mec_client.post(
+        "/api/v1/ordens-servico/1/pecas",  # Usa a OS 1 do conftest
+        json={"peca_id": 1, "quantidade": 1},  # Usa a Peça 1 do conftest (tem stock)
+    )
+    if res_peca.status_code != 201:
+        print(f"DEBUG ERRO POST: {res_peca.json()}")
+    assert res_peca.status_code == 201
+    assert res_peca.json()["data"]["quantidade"] == 1
+
+def test_mecanico_falha_adicionar_peca_sem_stock_suficiente(mec_client):
+    """ Testa a falha ao tentar adicionar mais peças do que as existentes em stock. """
+    # A peça 1 (Pneu) tem 10 unidades em stock no conftest. Tentar adicionar 11.
+    res_peca = mec_client.post(
+        "/api/v1/ordens-servico/1/pecas", json={"peca_id": 1, "quantidade": 11}
+    )
+    assert res_peca.status_code == 400
+    assert "insuficiente" in res_peca.json()["detail"].lower()
+
+
+# --- Testes de Permissões (RBAC) ---
+
+
+@pytest.mark.parametrize(
+    "user_fixture, expected_status",
+    [
+        ("admin_client", 201),
+        ("gerente_client", 201),
+        ("rec_client", 403),
+        ("mec_client", 403),
+    ],
+)
+def test_criar_peca_permissoes(user_fixture, expected_status, request):
+    """Testa a matriz de permissões para a criação de peças."""
+    client = request.getfixturevalue(user_fixture)
+
+    # Usar uma referência única para cada execução para evitar conflitos de BD
+    peca_ref = f"REF-{uuid.uuid4()}"
+
+    peca_data = {
+        "referencia": peca_ref,
+        "nome": "Peça de Teste de Permissão",
+        "categoria": "PNEU",
+        "unidade": "unidade",
+        "preco_custo": 5.0,
+        "preco_venda": 10.0,
+    }
+
+    response = client.post("/api/v1/pecas", json=peca_data)
+    assert response.status_code == expected_status
+
+
+@pytest.mark.parametrize(
+    "user_fixture, expected_status",
+    [
+        ("admin_client", 201),
+        ("gerente_client", 201),  # Gerentes podem precisar de adicionar peças
+        ("mec_client", 201),
+        ("rec_client", 403),
+    ],
+)
+def test_adicionar_peca_os_permissoes(user_fixture, expected_status, request):
+    """Testa a matriz de permissões para adicionar peças a uma Ordem de Serviço."""
+    client = request.getfixturevalue(user_fixture)
+
+    # Usa a OS 1 e a Peça 2 (Travão) do conftest. A Peça 2 tem 5 de stock.
+    os_peca_data = {"peca_id": 2, "quantidade": 1}
+
+    response = client.post("/api/v1/ordens-servico/1/pecas", json=os_peca_data)
+    assert response.status_code == expected_status
+
+def test_transferencia_peca_inexistente(admin_client):
+    """Tenta transferir uma peça que não existe no catálogo."""
+    res = admin_client.post("/api/v1/stock/transferencias", json={
+        "peca_id": 9999, "loja_origem_id": 1, "loja_destino_id": 2, "quantidade": 1
+    })
+    assert res.status_code == 404
+
+def test_transferencia_loja_inexistente(admin_client):
+    """Tenta transferir entre lojas inexistentes."""
+    res = admin_client.post("/api/v1/stock/transferencias", json={
+        "peca_id": 1, "loja_origem_id": 99, "loja_destino_id": 88, "quantidade": 1
+    })
+    assert res.status_code in [404, 400]
+
+def test_adicionar_peca_os_inexistente(mec_client):
+    """Testa a falha ao tentar adicionar peças numa OS que não existe."""
+    res = mec_client.post("/api/v1/ordens-servico/99999/pecas", json={"peca_id": 1, "quantidade": 1})
+    assert res.status_code == 404
+
+def test_atualizar_estado_os_invalido(admin_client):
+    """Testa a tentativa de mudar a OS para um estado inválido (se existir essa lógica)."""
+    res = admin_client.patch("/api/v1/ordens-servico/1/estado", json={"novo_estado": "ESTADO_INEXISTENTE"})
+    assert res.status_code == 422 # Erro de validação do Enum
+
+# Teste de Auditoria Completo (Cobre AuditoriaRepository)
+def test_cobertura_fluxo_auditoria(admin_client):
+    """Garante que ações de escrita geram entradas na auditoria."""
+    # Ação de escrita
+    admin_client.post("/api/v1/pecas", json={
+        "referencia": "AUDIT-001", "nome": "Peça Audit", "categoria": "PNEU",
+        "unidade": "unidade", "preco_custo": 1.0, "preco_venda": 2.0
+    })
+    
+    # Verifica se o log foi registado
+    res_auditoria = admin_client.get("/api/v1/auditoria")
+    assert res_auditoria.status_code == 200
+    logs = res_auditoria.json()["data"]
+    assert len(logs) > 0
+    # Verifica se a última ação foi a criação da peça
+    assert "PECA_CRIADA" in logs[0]["evento"]
+
+# Teste de Estado Inválido (Cobre OrdemServicoService - ramos de erro)
+def test_ordem_servico_transicao_estado_invalida(admin_client):
+    """Tenta atualizar estado para algo que não existe."""
+    # Usando o endpoint de atualização de estado
+    res = admin_client.patch(
+        "/api/v1/ordens-servico/1/estado", 
+        json={"estado": "ESTADO_INEXISTENTE"} # Isto vai falhar na validação do Pydantic
+    )
+    assert res.status_code == 422 
+
+# Teste de Paginação e Filtros (Cobre Repositories de Cliente e Peca)
+@pytest.mark.parametrize("page, page_size", [(1, 5), (2, 2)])
+def test_listagem_paginacao_e_filtros(admin_client, page, page_size):
+    """Testa os parâmetros de paginação nos repositórios."""
+    # Lista clientes com paginação
+    res = admin_client.get(f"/api/v1/clientes?page={page}&page_size={page_size}")
+    assert res.status_code == 200
+    data = res.json()
+    assert "data" in data
+    assert len(data["data"]) <= page_size
+
+# Teste de Erro de Stock no Service (Cobre StockService.consumir_stock)
+def test_stock_consumo_excessivo_service(mec_client):
+    """Força erro de stock insuficiente via service."""
+    # Peca 1 tem 10 de stock no conftest. Pedir 999.
+    res = mec_client.post("/api/v1/ordens-servico/1/pecas", json={"peca_id": 1, "quantidade": 999})
+    assert res.status_code == 400
+
+def test_ordem_servico_peca_cenarios_erro(admin_client):
+    # 1. Tentar adicionar peça em OS inexistente (404)
+    res = admin_client.post("/api/v1/ordens-servico/9999/pecas", json={"peca_id": 1, "quantidade": 1})
+    assert res.status_code == 404
+
+    # 2. Tentar adicionar peça com quantidade negativa (422 ou 400 dependendo da validação)
+    res = admin_client.post("/api/v1/ordens-servico/1/pecas", json={"peca_id": 1, "quantidade": -5})
+    assert res.status_code == 422

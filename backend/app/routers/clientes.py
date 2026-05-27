@@ -44,7 +44,7 @@ def get_cliente_service(db: Session = Depends(get_db)) -> ClienteService:
     summary="Listar clientes",
 )
 def listar(
-    query: str | None = Query(None, description="Pesquisa por NIF ou telemóvel (exact match)."),
+    query: str | None = Query(None, description="Pesquisa por nome, NIF, telemóvel ou email (partial match)."),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: CurrentUserResponse = Depends(_todos),

@@ -793,3 +793,185 @@ Four things: when a mechanic requests a part, the manager gets a notification th
 - **`backend/app/repositories/ordem_servico_repository.py` — mechanic OS list filter**: added optional `exclude_timer_not_for: int | None` parameter to `list()`; when set, appends a `~exists()` subquery that excludes any OS where `RegistoTempo.fim IS NULL AND RegistoTempo.mecanico_id != exclude_timer_not_for` — OS with no active timer or with the requesting mechanic's own timer remain visible
 - **`backend/app/services/ordem_servico_service.py` — mechanic OS list filter**: `listar()` now derives `exclude_timer_not_for = current_user.id if current_user.perfil == PerfilUtilizador.MECANICO else None` and passes it to the repository — mechanics only see OS that aren't locked by another mechanic's active timer
 - **`backend/app/utils/email.py` — diagnosis email text updated**: `notificar_diagnostico_cliente` body changed from "aguardam a sua aprovação para iniciar a reparação" to "a reparação foi iniciada … segue abaixo o resumo das operações que serão realizadas" and the closing paragraph from "Para autorizar a reparação, entre em contacto connosco" to "Avisaremos assim que a sua trotinete estiver pronta para levantamento" — matches the new flow where repair starts immediately after diagnosis
+
+---
+
+### [2026-05-27] TrotineteResponse — add client name field
+
+**Prompt:**
+Add the client name to the trotinete response so it's visible in the listing and detail views.
+
+**What was done:**
+
+- **`backend/app/schemas/trotinete.py`**: added `cliente_nome: str | None = None` field to `TrotineteResponse`; added a `@model_validator(mode='before')` that fires on ORM objects (non-dict input) and sets `data.cliente_nome = data.cliente.nome` before Pydantic reads attributes — avoids touching the DB query or repository; imported `Any` from `typing` and `model_validator` from `pydantic`
+
+---
+
+### [2026-05-27] Cascade delete — fix FK errors when deleting trotinetes and OS
+
+**Prompt:**
+Deleting a trotinete or a service order fails with a MySQL foreign key constraint error because the database has no CASCADE rules defined.
+
+**What was done:**
+
+- **`backend/app/models/ordem_servico.py`**: added `cascade="all, delete-orphan"` to all child relationships (`pecas_aplicadas`, `registos_tempo`, `observacoes`, `servicos_diagnostico`, `fatura`); added `single_parent=True` to the scalar `fatura` relationship; added the entirely missing `pedidos_peca` relationship (`Mapped[list["PedidoPeca"]]` with `foreign_keys="PedidoPeca.ordem_servico_id"` and `cascade="all, delete-orphan"`) — the `pedidos_peca` table had a FK to `ordens_servico` but no ORM relationship, causing SQLAlchemy to leave orphan rows
+- **`backend/app/models/trotinete.py`**: added `cascade="all, delete-orphan"` to `ordens_servico` relationship so deleting a trotinete cascades through its OS and then to all OS children
+
+---
+
+### [2026-05-27] Email system redesign — three separate transactional emails
+
+**Prompt:**
+The email system is broken. I want three distinct emails: (1) when the diagnosis is submitted, showing which services will be done but NOT the price; (2) when the OS is concluded (trotinete is ready for pickup); (3) when the invoice is issued, attaching the PDF. Redo the whole thing.
+
+**What was done:**
+
+- **`backend/app/utils/email.py` — `notificar_diagnostico_cliente`**: changed signature from `servicos: list[dict], total: float` to `servicos: list[str]`; removed the price column and total row from the HTML table; renders service names as a `<ul>` list without any price information
+- **`backend/app/services/ordem_servico_service.py` — `_enviar_email_diagnostico`**: extracted a private helper that loads `os.servicos_diagnostico`, builds the `list[str]` of names, and calls `notificar_diagnostico_cliente` inside a `try/except` — fire-and-forget so email failures never block the state transition
+- **`backend/app/services/ordem_servico_service.py` — `atualizar_estado`**: after commit and refresh, calls `_enviar_email_diagnostico(os)` when `novo_estado == AGUARDA_APROVACAO`; calls `notificar_trotinete_pronta(...)` when `novo_estado == CONCLUIDA` — this function existed in `email.py` but was never wired up
+- **`backend/app/services/fatura_service.py` — `emitir`**: after the fatura commit, fetches the complete fatura object, generates the PDF with `gerar_pdf_fatura`, and calls `enviar_fatura_email` with the PDF bytes attached — all inside a `try/except` so a SMTP failure does not roll back the invoice
+
+---
+
+### [2026-05-27] Remove rececionista ability to start diagnosis or cancel OS
+
+**Prompt:**
+Remove the option for the receptionist to start a diagnosis or cancel a service order from the PENDENTE state.
+
+**What was done:**
+
+- **`backend/app/services/ordem_servico_service.py` — `_TRANSICOES`**: removed `RECECIONISTA` from the allowed roles for the `PENDENTE → EM_DIAGNOSTICO` and `PENDENTE → CANCELADA` transitions; the backend now rejects those state changes from a receptionist even if called directly
+- **`frontend/src/views/ordens-servico/Detail.vue` — RECECIONISTA PENDENTE actions**: changed the `RECECIONISTA` entry in the `PENDENTE` block from a list with transition buttons to an empty array `[]`; the action bar renders nothing for a receptionist on a pending OS
+
+---
+
+### [2026-05-27] LAN access — let colleagues connect through the university network
+
+**Prompt:**
+Can my colleagues connect to this website from their computers? We are on the same LAN. Set it up and make sure it's safe since we're on a university network.
+
+**What was done:**
+
+- **`frontend/vite.config.js`**: added `server.host: true` (binds dev server to `0.0.0.0` so LAN requests are accepted) and `server.port: 5173`; added a proxy entry `'/api' → 'http://localhost:8000'` with `changeOrigin: true` — the frontend Node process forwards API calls server-side, so the backend stays on `127.0.0.1` and is never directly reachable from the network
+- **`frontend/.env.local`**: set `VITE_API_BASE_URL=` (empty string) so `api.js` falls back to the relative path `/api/v1`; all API requests go to the same origin (the Vite dev server) and are proxied invisibly
+- **`backend/.env`**: updated `ALLOWED_ORIGINS` to include the host machine's LAN IP (`172.26.14.4:5173`); kept `APP_DEBUG=false`
+- Colleagues connect to `http://172.26.14.4:5173`; their browsers never see port 8000 — safe because the backend is never exposed on the network interface
+
+---
+
+### [2026-05-27] Rececionista role overhaul — routes, sidebar, and default landing
+
+**Prompt:**
+Remove the dashboard from the receptionist. Add Catálogo de Serviços and Faturas. Make the default landing page for the receptionist be Ordens de Serviço. Also add Trotinetes.
+
+**What was done:**
+
+- **`frontend/src/router/index.js`**:
+  - `dashboard` meta.roles: removed `RECECIONISTA`
+  - `faturas` and `faturas/:id` meta.roles: added `RECECIONISTA`
+  - `servicos` and `servicos/:id` meta.roles: added `RECECIONISTA`
+  - `trotinetes` (index and detail) meta.roles: added `RECECIONISTA`
+  - Root redirect, catch-all, login guard, and `beforeEach` RBAC fallback: all now check `perfil === 'RECECIONISTA'` and redirect to `/ordens-servico` before falling through to `/dashboard`
+- **`frontend/src/components/AppSidebar.vue`**:
+  - `Dashboard` nav item: removed `RECECIONISTA` from roles
+  - `Trotinetes` nav item: added `RECECIONISTA`
+  - `Faturas` nav item: added `RECECIONISTA`
+  - `Catálogo Serviços` nav item: added `RECECIONISTA`
+
+---
+
+### [2026-05-27] README — complete colleague setup instructions
+
+**Prompt:**
+My colleague wants to run the project on their machine. Write complete setup instructions in the README covering everything they need to do, including requirements.txt freshness.
+
+**What was done:**
+
+- **`README.md`**: full rewrite with 9 numbered steps covering: prerequisites (Python 3.11+, Node 18+, MySQL), cloning the repo, creating the virtual environment and installing `requirements.txt`, creating `backend/.env` from template with DATABASE_URL and JWT secret generation command, MySQL database + user creation, running Alembic migrations, seeding data, starting backend and frontend, and login credentials for each role; Windows and macOS/Linux command variants shown side by side where they differ
+
+---
+
+### [2026-05-27] OS Create — client search autocomplete and centered layout
+
+**Prompt:**
+When clicking to search for a client you can't search by name. Also improve that whole view — I don't like how it's centred to the left. I want it centred and cleaner. Make the client search an actual search box that shows a dropdown with matching names, NIFs, or phone numbers.
+
+**What was done:**
+
+- **`frontend/src/views/ordens-servico/Create.vue`** — full redesign:
+  - **Centred layout**: wrapped content in `.page-wrap` with `display: flex; justify-content: center` so the form sits in the middle of the viewport; constrained to `max-width: 580px`
+  - **Autocomplete combobox**: replaced the `<input> + Pesquisar button` pattern with a self-contained combobox; `@input` fires a 300 ms debounced API call with `query=<text>` (minimum 2 characters); results appear in a floating dropdown with keyboard navigation (↑/↓, Enter to select, Escape to close); clicking outside closes the dropdown via a `mousedown` listener on `document` (cleaned up on `onBeforeUnmount`)
+  - **Search by name**: the backend already searched by nome/NIF/telemóvel via `ilike`, but the placeholder said "NIF ou telemóvel" — updated to "Nome, NIF ou telemóvel"; fixed the misleading `description` on the `query` param in `backend/app/routers/clientes.py` from "exact match" to "partial match"
+  - **Visual cleanup**: better step indicator (checkmark icon when done, glow ring on active), trotinete list with scooter icon + chevron, inline "or" dividers, summary chips on step 3, consistent focus rings on all inputs
+
+---
+
+### [2026-05-27] Remove AGUARDA_APROVACAO status and show mechanic name on active OSs
+
+**Prompt:**
+I don't want the Aguarda Aprovação state at all. Remove it entirely — when you conclude a diagnosis it just goes to Em Reparação. Also make all active OSs with Em Diagnóstico or Em Reparação show the name of the mechanic doing the work.
+
+**What was done:**
+
+- **`backend/app/services/ordem_servico_service.py` — `_TRANSICOES`**: removed `(EM_DIAGNOSTICO → AGUARDA_APROVACAO)`, `(AGUARDA_APROVACAO → EM_REPARACAO)`, and `(AGUARDA_APROVACAO → CANCELADA)`; added `(EM_DIAGNOSTICO → EM_REPARACAO)` for ADMINISTRADOR, GERENTE_LOJA, MECANICO
+- **`backend/app/services/ordem_servico_service.py` — `submeter_diagnostico`**: changed `os.estado = AGUARDA_APROVACAO` → `os.estado = EM_REPARACAO`
+- **`backend/app/services/ordem_servico_service.py` — `atualizar_estado`**: diagnosis email (previously triggered on `→ AGUARDA_APROVACAO`) now fires only when `novo_estado == EM_REPARACAO and estado_anterior == EM_DIAGNOSTICO`, so the "resuming from AGUARDA_PECAS" transition does not re-send the email
+- **`frontend/src/views/ordens-servico/Detail.vue`**: "Concluir Diagnóstico" button changed to target `EM_REPARACAO` for all roles; the entire `AGUARDA_APROVACAO` block removed from `TRANSICOES` and from `ESTADO_LABELS`
+- **`frontend/src/views/ordens-servico/Index.vue`**: removed `AGUARDA_APROVACAO` from the state filter dropdown; added a **Mecânico** column — shows a green pill for OSs in `EM_DIAGNOSTICO` or `EM_REPARACAO`, dimmed text for other states, dash if unassigned
+- **`frontend/src/views/oficina/Detail.vue`**: removed `AGUARDA_APROVACAO` from `TRANSICOES`, `ESTADOS_AUTO_STOP`, and `ESTADO_LABELS`
+- **`frontend/src/views/Dashboard.vue`**: removed from `ACTIVE_STATES` and `ESTADO_CONFIG`
+- **`frontend/src/components/ui/StatusBadge.vue`**: removed `AGUARDA_APROVACAO` label and colour entry
+
+---
+
+### [2026-05-27] Fix trotinetes listing (empty page) and improve endpoint
+
+**Prompt:**
+Can you improve the trotinetes endpoint? Do we have a DB for trotinetes? Because the clients have trotinetes, but in the trotinetes tab there are no trotinetes.
+
+**What was done:**
+
+- **Root cause**: `TrotineteRepository.list()` mixed `options(joinedload(Trotinete.cliente))` with an explicit `.join(Cliente)` for loja filtering. SQLAlchemy produces a broken count subquery when both are present — `count()` could fail, causing a 500 that the frontend catches silently and shows as an empty list
+- **`backend/app/repositories/trotinete_repository.py`**:
+  - Removed `joinedload` entirely; now always does an explicit `JOIN clientes ON trotinete.cliente_id = cliente.id` and uses `contains_eager(Trotinete.cliente)` — the correct pattern when the JOIN is already present for filtering; `count()` runs before `contains_eager` is attached so it stays reliable
+  - Added `query_str` parameter with `ilike` search across `numero_serie`, `marca`, `modelo`, and `Cliente.nome` (replaces the old exact-match `numero_serie` filter)
+  - Applied the same `contains_eager` fix to `get_by_id` and `list_by_cliente`
+- **`backend/app/services/trotinete_service.py`**: updated `listar` signature to accept `query_str`; fixed `criar` to reload via `get_by_id` after commit so `TrotineteResponse.model_validator` can read `cliente.nome` from an eagerly-loaded object
+- **`backend/app/routers/trotinetes.py`**: replaced `numero_serie` param with `query` (partial match on all fields)
+- **`frontend/src/views/trotinetes/Index.vue`** — full redesign:
+  - Uses the `DataTable` component (consistent with all other list views)
+  - Server-side search: debounced 300 ms, sends `?query=...` to the backend, resets to page 1 on new input — no more client-side filtering over 200 records
+  - Real server-side pagination via `@update:page`
+
+---
+
+### [2026-05-27] Enforce one active OS per mechanic and add OS audit history
+
+**Prompt:**
+A mechanic can only have one OS active at a time — not two. When there is already a mechanic with more than one active OS (Em Diagnóstico or Em Reparação) in the list, that shouldn't be possible. Implement the constraint on the first option (state transition guard). Also, does the auditing include changes to OSs? There should be some place to see logs for an OS.
+
+**What was done:**
+
+- **Mechanic single-active-OS guard** — `backend/app/services/ordem_servico_service.py` — `atualizar_estado`: added a check that fires when a MECANICO transitions any OS to `EM_DIAGNOSTICO`; queries `OrdemServico` for any other OS where `mecanico_id == current_user.id` AND `estado IN (EM_DIAGNOSTICO, EM_REPARACAO)` AND `id != os.id`; raises HTTP 409 `"Já tens uma OS activa. Conclui o trabalho antes de iniciar outra."` if a conflict is found
+
+- **OS audit history — backend**:
+  - `backend/app/repositories/auditoria_repository.py`: added `listar_por_os(os_id)` method that queries the `auditoria` table using `func.json_extract(Auditoria.detalhe, '$.os_id') == os_id` (MySQL JSON extract); all OS audit events store `os_id` in the `detalhe` JSON column
+  - `backend/app/services/ordem_servico_service.py`: added `historico_os(os_id, current_user)` that access-checks the OS then returns a list of `AuditoriaItemResponse` (including `utilizador_nome` from the eagerly-loaded `utilizador` relationship)
+  - `backend/app/routers/ordens_servico.py`: added `GET /{os_id}/historico` endpoint (accessible to all authenticated roles that can see the OS)
+
+- **OS audit history — frontend**:
+  - `frontend/src/services/ordensServico.js`: added `getHistoricoOS(id)` service function
+  - `frontend/src/views/ordens-servico/Detail.vue`: added `historico` and `historicoLoading` refs; `loadHistorico()` fires on mount (in parallel with `loadOS`) and also refreshes after any state transition; new **Histórico** card in the left column shows each audit event with timestamp, description, and user name
+
+---
+
+### [2026-05-27] Fix mechanic OS history navigating to wrong route
+
+**Prompt:**
+When I click on an old OS while an OS is active it automatically redirects to that OS. I don't want that.
+
+**What was done:**
+
+- **Root cause**: `frontend/src/views/oficina/Historico.vue` (the mechanic's completed-OS history page) was navigating to `/ordens-servico/${o.id}` on row click. MECANICOs don't have access to the `ordens-servico/:id` route (restricted to ADMINISTRADOR, GERENTE_LOJA, RECECIONISTA). The RBAC guard redirected them to `/oficina/ativa`, which then found the active OS and redirected there
+- **Fix**: changed the row click handler in `Historico.vue` to navigate to `/oficina/${o.id}` instead — a route accessible to both MECANICO and ADMINISTRADOR
+  - Marca + Modelo displayed stacked in one column; client name highlighted

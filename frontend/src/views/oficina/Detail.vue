@@ -107,7 +107,6 @@ let pecaSearchTimer
 const TRANSICOES = {
   PENDENTE: [{ estado: 'EM_DIAGNOSTICO', label: 'Iniciar Diagnóstico' }],
   EM_DIAGNOSTICO: [],
-  AGUARDA_APROVACAO: [],
   EM_REPARACAO: [
     { estado: 'AGUARDA_PECAS', label: 'Aguardar Peças' },
     { estado: 'CONCLUIDA', label: 'Marcar como Concluída', confirm: true },
@@ -120,13 +119,12 @@ const TRANSICOES = {
 
 // States where the timer runs automatically
 const ESTADOS_AUTO_START = ['EM_DIAGNOSTICO', 'EM_REPARACAO']
-const ESTADOS_AUTO_STOP  = ['AGUARDA_APROVACAO', 'AGUARDA_PECAS', 'CONCLUIDA', 'CANCELADA']
+const ESTADOS_AUTO_STOP  = ['AGUARDA_PECAS', 'CONCLUIDA', 'CANCELADA']
 const ESTADOS_TRABALHO   = ['EM_REPARACAO', 'AGUARDA_PECAS']
 
 const ESTADO_LABELS = {
   PENDENTE: 'Pendente',
   EM_DIAGNOSTICO: 'Em Diagnóstico',
-  AGUARDA_APROVACAO: 'Aguarda Aprovação',
   EM_REPARACAO: 'Em Reparação',
   AGUARDA_PECAS: 'Aguarda Peças',
   CONCLUIDA: 'Concluída',

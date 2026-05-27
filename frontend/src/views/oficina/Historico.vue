@@ -114,8 +114,7 @@ function clearSearch() {
 async function fetch() {
   loading.value = true
   try {
-    const mecanicoId = auth.getCurrentUser?.id
-    const { data } = await getOrdensServico({ mecanico_id: mecanicoId, page_size: 100 })
+    const { data } = await getOrdensServico({ page_size: 100 })
     ordens.value = data.data
   } catch {
     ordens.value = []
@@ -211,7 +210,7 @@ function fmt(dt) {
           v-for="o in historico"
           :key="o.id"
           class="row"
-          @click="router.push(`/ordens-servico/${o.id}`)"
+          @click="router.push(`/oficina/${o.id}`)"
         >
           <td class="mono">{{ o.numero }}</td>
           <td class="mono">{{ o.trotinete_numero_serie || '—' }}</td>
