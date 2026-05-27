@@ -79,8 +79,9 @@ class StockService:
 
         if not self.loja_repo.get_by_id(body.loja_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loja não encontrada")
-            
-        if not self.peca_repo.get_by_id(body.peca_id):
+
+        peca = self.peca_repo.get_by_id(body.peca_id)
+        if not peca:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Peça não encontrada")
 
         stock_antes = self.repo.get(body.peca_id, body.loja_id)

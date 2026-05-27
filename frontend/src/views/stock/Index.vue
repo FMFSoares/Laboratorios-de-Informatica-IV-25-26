@@ -552,7 +552,7 @@ async function submitEntrada() {
 .row--alerta { background: #fffbeb; }
 .row--alerta:hover { background: #fef3c7 !important; }
 
-.col-num { text-align: right; }
+.col-num { text-align: center; width: 100px;}
 .mono { font-family: 'Courier New', monospace; font-size: 0.82rem; color: #6b7280; }
 .peca-link { color: inherit; text-decoration: none; }
 .peca-link:hover { color: #1abc9c; text-decoration: underline; }
