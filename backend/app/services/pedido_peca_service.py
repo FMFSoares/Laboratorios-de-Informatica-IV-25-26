@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.repositories.auditoria_repository import AuditoriaRepository
 from app.repositories.pedido_peca_repository import PedidoPecaRepository
 from app.repositories.ordem_servico_repository import OrdemServicoRepository
 from app.repositories.utilizador_repository import UtilizadorRepository
@@ -15,6 +16,7 @@ from app.schemas.transferencia import (
     PedidoPecaResponse,
 )
 from app.schemas.auth import CurrentUserResponse
+from app.schemas.auditoria import TipoEventoAuditoria
 from app.schemas.notificacao import TipoNotificacao
 from app.schemas.utilizador import PerfilUtilizador
 from app.schemas.common import PaginatedResponse, DataResponse
@@ -27,6 +29,7 @@ class PedidoPecaService:
         self.repo = PedidoPecaRepository(db)
         self.os_repo = OrdemServicoRepository(db)
         self.util_repo = UtilizadorRepository(db)
+        self.auditoria_repo = AuditoriaRepository(db)
 
     def _gerentes_de_loja(self, loja_id: int) -> list:
         return self.util_repo.list_by_perfil(PerfilUtilizador.GERENTE_LOJA, loja_id)
@@ -61,6 +64,13 @@ class PedidoPecaService:
                 referencia_tipo="pedido_peca",
             )
 
+        self.auditoria_repo.registar(
+            evento=TipoEventoAuditoria.PEDIDO_PECA_CRIADO,
+            descricao=f"Pedido de {body.quantidade}x '{peca_nome}' para a OS #{os.numero}",
+            utilizador_id=current_user.id,
+            loja_id=current_user.loja_id,
+            detalhe={"pedido_id": pp.id, "peca_id": body.peca_id, "peca_nome": peca_nome, "os_id": body.ordem_servico_id, "quantidade": body.quantidade},
+        )
         self.db.commit()
         self.db.refresh(pp)
         return DataResponse[PedidoPecaResponse](
@@ -90,6 +100,13 @@ class PedidoPecaService:
             referencia_id=pp.id, referencia_tipo="pedido_peca",
         )
 
+        self.auditoria_repo.registar(
+            evento=TipoEventoAuditoria.PEDIDO_PECA_RESPONDIDO,
+            descricao=f"Pedido de peça #{pp_id} '{peca_nome}' {'aprovado' if body.aprovar else 'recusado'}",
+            utilizador_id=current_user.id,
+            loja_id=pp.loja_id,
+            detalhe={"pedido_id": pp_id, "aprovado": body.aprovar, "peca_id": pp.peca_id, "quantidade": pp.quantidade},
+        )
         self.db.commit()
         self.db.refresh(pp)
         return DataResponse[PedidoPecaResponse](
@@ -105,10 +122,7 @@ class PedidoPecaService:
             itens, total = self.repo.list_by_mecanico(current_user.id, skip, page_size)
         else:
             loja_id = current_user.loja_id if current_user.perfil != PerfilUtilizador.ADMINISTRADOR else None
-            if loja_id:
-                itens, total = self.repo.list_by_loja(loja_id, estado_enum, skip, page_size)
-            else:
-                itens, total = self.repo.list_by_loja(0, estado_enum, skip, page_size)
+            itens, total = self.repo.list_by_loja(loja_id, estado_enum, skip, page_size)
 
         pages = max(1, -(-total // page_size))
         return PaginatedResponse[PedidoPecaResponse](

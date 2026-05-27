@@ -19,8 +19,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 
@@ -48,7 +48,7 @@ def health():
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────
-from app.routers import auth, clientes, trotinetes, pecas, stock, ordens_servico, faturas, dashboard, auditoria, utilizadores, lojas, notificacoes, transferencias, pedidos_peca
+from app.routers import auth, clientes, trotinetes, pecas, stock, ordens_servico, faturas, dashboard, auditoria, utilizadores, lojas, notificacoes, transferencias, pedidos_peca, servicos
 
 app.include_router(auth.router,            prefix="/api/v1")
 app.include_router(clientes.router,        prefix="/api/v1")
@@ -64,3 +64,4 @@ app.include_router(lojas.router,           prefix="/api/v1")
 app.include_router(notificacoes.router,    prefix="/api/v1")
 app.include_router(transferencias.router,  prefix="/api/v1")
 app.include_router(pedidos_peca.router,    prefix="/api/v1")
+app.include_router(servicos.router,        prefix="/api/v1")

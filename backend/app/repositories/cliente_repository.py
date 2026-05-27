@@ -8,7 +8,7 @@ from app.schemas.cliente import ClienteCreate
 
 class ClienteRepository:
     def __init__(self, db: Session):
-        self.db = db
+        self.db: Session = db
 
     def get_by_id(self, cliente_id: int):
         return self.db.query(Cliente).filter(Cliente.id == cliente_id).first()

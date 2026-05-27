@@ -4,18 +4,19 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, Date
 
-from app.models.ordem_servico import OrdemServico, EstadoOrdemServico
+from app.models.ordem_servico import OrdemServico, EstadoOrdemServico, RegistoTempo, OSPeca
 from app.models.fatura import Fatura
 from app.models.stock import StockLoja
 from app.models.peca import Peca
 from app.models.loja import Loja
-from app.models.utilizador import Utilizador
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.common import DataResponse
+from app.models.utilizador import Utilizador
 from app.schemas.dashboard import (
     DashboardPeriodo,
     DashboardResponse,
     EficienciaMecanico,
+    FaturacaoPorLoja,
     OrdensConcluidasPorLoja,
     PecaAbaixoStockMinimo,
 )
@@ -97,7 +98,42 @@ class DashboardService:
             ) for s in stock_alertas
         ]
 
-        # Métrica 6: Eficiência por Mecânico (Ordenação nativa pelo topo)
+        # Métrica 6a: Faturação por Loja (admin)
+        fat_loja_query = self.db.query(
+            Loja.id, Loja.nome, func.sum(Fatura.valor_final).label("faturacao")
+        ).join(OrdemServico, Loja.id == OrdemServico.loja_id)\
+         .join(Fatura, Fatura.ordem_servico_id == OrdemServico.id)\
+         .filter(cast(Fatura.data_emissao, Date) >= d_inicio, cast(Fatura.data_emissao, Date) <= d_fim)
+        if loja_filtro is not None:
+            fat_loja_query = fat_loja_query.filter(Loja.id == loja_filtro)
+
+        fat_loja_raw = fat_loja_query.group_by(Loja.id).order_by(func.sum(Fatura.valor_final).desc()).all()
+
+        # Custo das peças por loja (para lucro líquido)
+        cost_query = self.db.query(
+            OrdemServico.loja_id,
+            func.sum(OSPeca.quantidade * Peca.preco_custo).label("custo")
+        ).join(OSPeca, OSPeca.ordem_servico_id == OrdemServico.id)\
+         .join(Peca, Peca.id == OSPeca.peca_id)\
+         .join(Fatura, Fatura.ordem_servico_id == OrdemServico.id)\
+         .filter(cast(Fatura.data_emissao, Date) >= d_inicio, cast(Fatura.data_emissao, Date) <= d_fim)
+        if loja_filtro is not None:
+            cost_query = cost_query.filter(OrdemServico.loja_id == loja_filtro)
+        custo_por_loja = {r[0]: float(r[1] or 0) for r in cost_query.group_by(OrdemServico.loja_id).all()}
+
+        lucro_liquido_total = float(faturacao_total) - sum(custo_por_loja.values())
+
+        faturacao_por_loja = [
+            FaturacaoPorLoja(
+                loja_id=r[0],
+                loja_nome=r[1],
+                faturacao_total=float(r[2] or 0),
+                lucro_liquido=float(r[2] or 0) - custo_por_loja.get(r[0], 0),
+            )
+            for r in fat_loja_raw
+        ]
+
+        # Métrica 6b: Eficiência por Mecânico (gerente)
         mecanicos_query = self.db.query(
             Utilizador.id, Utilizador.nome,
             func.count(OrdemServico.id).label("total_ordens"),
@@ -114,8 +150,12 @@ class DashboardService:
         mecanicos_stats = mecanicos_query.group_by(Utilizador.id).order_by(func.count(OrdemServico.id).desc()).all()
         eficiencia = [
             EficienciaMecanico(
-                mecanico_id=m[0], nome=m[1], ordens_concluidas=m[2], tempo_medio_minutos=int(m[3]) if m[3] else None
-            ) for m in mecanicos_stats
+                mecanico_id=m[0],
+                nome=m[1],
+                ordens_concluidas=m[2],
+                tempo_medio_minutos=int(m[3]) if m[3] else None,
+            )
+            for m in mecanicos_stats
         ]
 
         return DataResponse[DashboardResponse](
@@ -125,7 +165,9 @@ class DashboardService:
                 ordens_concluidas_por_loja=ordens_concluidas_por_loja,
                 tempo_medio_reparacao_minutos=tempo_medio_reparacao_minutos,
                 faturacao_total=faturacao_total,
+                lucro_liquido_total=max(0.0, lucro_liquido_total),
                 pecas_abaixo_stock_minimo=pecas_abaixo_stock,
+                faturacao_por_loja=faturacao_por_loja,
                 eficiencia_por_mecanico=eficiencia,
             )
         )

@@ -61,6 +61,15 @@ class NotificacaoService:
         self.repo.marcar_todas_lidas(current_user.id)
         self.db.commit()
 
+    def apagar_uma(self, notificacao_id: int, current_user: CurrentUserResponse) -> None:
+        n = self.repo.get_by_id(notificacao_id)
+        if not n:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notificação não encontrada.")
+        if n.utilizador_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado.")
+        self.repo.apagar_uma(notificacao_id)
+        self.db.commit()
+
     def apagar_todas(self, current_user: CurrentUserResponse) -> None:
         self.repo.apagar_todas(current_user.id)
         self.db.commit()

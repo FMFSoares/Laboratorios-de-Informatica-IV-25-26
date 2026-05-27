@@ -32,8 +32,6 @@ class AuditoriaRepository:
             timestamp=datetime.now(timezone.utc)
         )
         self.db.add(novo_evento)
-        self.db.commit()
-        self.db.refresh(novo_evento)
         return novo_evento
 
     def listar(

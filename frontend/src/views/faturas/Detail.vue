@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getFatura } from '../../services/faturas.js'
+import { getFatura, downloadFaturaPdf } from '../../services/faturas.js'
 import StatusBadge from '../../components/ui/StatusBadge.vue'
 
 const route  = useRoute()
@@ -35,11 +35,26 @@ function fmt(dt) {
 function fmtEur(v) {
   return v != null ? Number(v).toFixed(2) + ' €' : '—'
 }
+
+async function downloadPdf() {
+  try {
+    const res = await downloadFaturaPdf(fatura.value.id)
+    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `fatura-${fatura.value.numero}.pdf`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch { /* silently ignore — backend may not have PDF generation yet */ }
+}
 </script>
 
 <template>
   <div class="page">
-    <button class="back-btn" @click="router.back()">← Voltar</button>
+    <div class="top-bar">
+      <button class="back-btn" @click="router.back()">← Voltar</button>
+      <button v-if="fatura" class="btn-download" @click="downloadPdf">↓ Descarregar PDF</button>
+    </div>
 
     <div v-if="loading" class="loading-msg">A carregar...</div>
     <div v-else-if="error" class="error-msg">{{ error }}</div>
@@ -154,6 +169,12 @@ function fmtEur(v) {
 <style scoped>
 .page { padding: 2rem; max-width: 860px; }
 
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
 .back-btn {
   background: none;
   border: none;
@@ -161,12 +182,23 @@ function fmtEur(v) {
   font-size: 0.875rem;
   cursor: pointer;
   padding: 0;
-  margin-bottom: 1.5rem;
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
 }
 .back-btn:hover { color: #111827; }
+.btn-download {
+  padding: 0.45rem 1rem;
+  background: #f8fafc;
+  border: 1px solid #d1d5db;
+  border-radius: 7px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-download:hover { background: #f0fdf9; border-color: #1abc9c; color: #1abc9c; }
 
 .loading-msg { color: #6b7280; font-size: 0.875rem; }
 .error-msg   { color: #dc2626; font-size: 0.875rem; }

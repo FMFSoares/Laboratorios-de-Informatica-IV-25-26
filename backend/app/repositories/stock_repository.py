@@ -21,15 +21,18 @@ class StockRepository:
             self.db.flush()  # Deixa o commit final para ser gerido pelo Service
         return stock
 
-    def list(self, loja_id: int | None, apenas_alertas: bool, skip: int, limit: int) -> tuple[list[StockLoja], int]:
+    def list(self, loja_id: int | None, apenas_alertas: bool, skip: int, limit: int, peca_id: int | None = None) -> tuple[list[StockLoja], int]:
         query = self.db.query(StockLoja).options(
             joinedload(StockLoja.peca),
             joinedload(StockLoja.loja)
         )
-        
+
+        if peca_id is not None:
+            query = query.filter(StockLoja.peca_id == peca_id)
+
         if loja_id is not None:
             query = query.filter(StockLoja.loja_id == loja_id)
-            
+
         if apenas_alertas:
             query = query.filter(StockLoja.quantidade <= StockLoja.limite_minimo)
             

@@ -5,6 +5,9 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.loja import LojaResumo
+from app.schemas.peca import PecaResumo
+
 
 class EstadoPedidoTransferencia(str, Enum):
     PENDENTE  = "PENDENTE"
@@ -34,23 +37,10 @@ class PedidoTransferenciaResponder(BaseModel):
     observacoes: str | None = None
 
 
-class LojaResumo(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    nome: str
-
-
 class UtilizadorResumo(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     nome: str
-
-
-class PecaResumo(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    nome: str
-    referencia: str
 
 
 class PedidoTransferenciaResponse(BaseModel):

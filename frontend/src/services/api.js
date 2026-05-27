@@ -26,4 +26,20 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Interceptor de resposta para tratar erros de autenticação (401)
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      const authStore = useAuthStore();
+      authStore.logout();
+      // Import router lazily to avoid circular dependency
+      import('../router/index.js').then(({ default: router }) => {
+        router.push('/login');
+      });
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;

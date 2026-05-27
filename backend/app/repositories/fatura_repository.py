@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 from datetime import date
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import cast, Date
 from app.models.fatura import Fatura
-from app.models.ordem_servico import OrdemServico
+from app.models.ordem_servico import OrdemServico, OSPeca
 
 class FaturaRepository:
     def __init__(self, db: Session):
         self.db = db
 
     def get_by_id(self, fatura_id: int) -> Fatura | None:
-        return self.db.query(Fatura).filter(Fatura.id == fatura_id).first()
+        return self.db.query(Fatura).options(
+            joinedload(Fatura.ordem_servico).joinedload(OrdemServico.cliente),
+            joinedload(Fatura.ordem_servico).joinedload(OrdemServico.trotinete),
+            joinedload(Fatura.ordem_servico).joinedload(OrdemServico.loja),
+            joinedload(Fatura.ordem_servico).joinedload(OrdemServico.pecas_aplicadas).joinedload(OSPeca.peca),
+        ).filter(Fatura.id == fatura_id).first()
 
     def list(
         self,
@@ -22,7 +27,10 @@ class FaturaRepository:
         page: int,
         page_size: int
     ) -> tuple[list[Fatura], int]:
-        query = self.db.query(Fatura).join(OrdemServico)
+        from app.models.cliente import Cliente
+        query = self.db.query(Fatura).options(
+            joinedload(Fatura.ordem_servico).joinedload(OrdemServico.cliente),
+        ).join(OrdemServico)
         
         if loja_id is not None:
             query = query.filter(OrdemServico.loja_id == loja_id)

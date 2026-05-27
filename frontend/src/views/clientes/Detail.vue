@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getCliente, getClienteHistorico, updateCliente } from '../../services/clientes.js'
 import { createTrotinete } from '../../services/trotinetes.js'
+import { getLojas } from '../../services/lojas.js'
 import { useAuthStore } from '../../store/auth.js'
 import StatusBadge from '../../components/ui/StatusBadge.vue'
 import LoadingSpinner from '../../components/ui/LoadingSpinner.vue'
@@ -14,6 +15,7 @@ const isGestao = computed(() => ['ADMINISTRADOR', 'GERENTE_LOJA'].includes(auth.
 
 const cliente = ref(null)
 const historico = ref([])
+const lojas = ref([])
 const loading = ref(true)
 const histLoading = ref(true)
 
@@ -27,12 +29,14 @@ async function fetchAll() {
   loading.value = true
   histLoading.value = true
   try {
-    const [c, h] = await Promise.all([
+    const [c, h, l] = await Promise.all([
       getCliente(id),
       getClienteHistorico(id),
+      getLojas({ page_size: 50 }),
     ])
     cliente.value = c.data.data
     historico.value = h.data.data
+    lojas.value = l.data.data ?? []
   } catch {
     cliente.value = null
   } finally {
@@ -176,7 +180,7 @@ async function submitTrot() {
           </div>
           <div class="info-item">
             <span class="info-label">Loja</span>
-            <span class="info-value">#{{ cliente.loja_id }}</span>
+            <span class="info-value">{{ lojas.find(l => l.id === cliente.loja_id)?.nome || `#${cliente.loja_id}` }}</span>
           </div>
         </div>
 
@@ -224,13 +228,15 @@ async function submitTrot() {
                 <th>Marca</th>
                 <th>Modelo</th>
                 <th>Nº de Série</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="t in cliente.trotinetes" :key="t.id">
+              <tr v-for="t in cliente.trotinetes" :key="t.id" class="row-clickable" @click="router.push(`/trotinetes/${t.id}`)">
                 <td>{{ t.marca }}</td>
                 <td>{{ t.modelo }}</td>
                 <td class="mono">{{ t.numero_serie }}</td>
+                <td><span class="link-arrow">→</span></td>
               </tr>
             </tbody>
           </table>

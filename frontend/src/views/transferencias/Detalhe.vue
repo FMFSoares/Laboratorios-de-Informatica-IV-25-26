@@ -15,9 +15,13 @@ const t       = ref(null)
 const loading = ref(true)
 const error   = ref('')
 const actionLoading = ref(false)
+
 const showResponder = ref(false)
 const resAceitar    = ref(true)
 const resObs        = ref('')
+
+const showConfirmar = ref(false)
+const showCancelar  = ref(false)
 
 async function load() {
   loading.value = true
@@ -39,7 +43,7 @@ async function responder(aceitar) {
 }
 
 async function confirmar() {
-  if (!confirm('Confirmar receção das peças?')) return
+  showConfirmar.value = false
   actionLoading.value = true
   try { await confirmarRecepcao(t.value.id); await load() }
   catch (e) { error.value = e.response?.data?.detail?.detail || 'Erro.' }
@@ -47,7 +51,7 @@ async function confirmar() {
 }
 
 async function cancelar() {
-  if (!confirm('Cancelar pedido?')) return
+  showCancelar.value = false
   actionLoading.value = true
   try { await cancelarTransferencia(t.value.id); await load() }
   catch (e) { error.value = e.response?.data?.detail?.detail || 'Erro.' }
@@ -106,10 +110,10 @@ onMounted(load)
           <button v-if="podeResponder" class="btn btn--primary" @click="showResponder = true">
             Responder
           </button>
-          <button v-if="podeConfirmar" class="btn btn--primary" :disabled="actionLoading" @click="confirmar">
+          <button v-if="podeConfirmar" class="btn btn--primary" :disabled="actionLoading" @click="showConfirmar = true">
             Confirmar Receção
           </button>
-          <button v-if="podeCancelar" class="btn btn--ghost" :disabled="actionLoading" @click="cancelar">
+          <button v-if="podeCancelar" class="btn btn--ghost" :disabled="actionLoading" @click="showCancelar = true">
             Cancelar
           </button>
         </div>
@@ -166,6 +170,46 @@ onMounted(load)
           </div>
         </div>
       </div>
+
+      <!-- Confirm receipt modal -->
+      <Teleport to="body">
+        <div v-if="showConfirmar" class="overlay" @click.self="showConfirmar = false">
+          <div class="modal modal--sm">
+            <h2 class="modal-title">Confirmar receção</h2>
+            <p class="modal-sub">
+              Confirma que recebeu <strong>{{ t.quantidade }} {{ t.peca?.nome }}</strong>
+              da loja <strong>{{ t.loja_origem?.nome }}</strong>?
+              Esta ação adicionará o stock ao inventário da sua loja.
+            </p>
+            <div class="modal-footer">
+              <button class="btn btn--ghost" @click="showConfirmar = false">Cancelar</button>
+              <button class="btn btn--primary" :disabled="actionLoading" @click="confirmar">
+                {{ actionLoading ? 'A confirmar...' : 'Confirmar Receção' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
+
+      <!-- Cancel modal -->
+      <Teleport to="body">
+        <div v-if="showCancelar" class="overlay" @click.self="showCancelar = false">
+          <div class="modal modal--sm">
+            <h2 class="modal-title">Cancelar pedido</h2>
+            <p class="modal-sub">
+              Tens a certeza que queres cancelar o pedido de
+              <strong>{{ t.quantidade }} {{ t.peca?.nome }}</strong>?
+              Esta ação não pode ser desfeita.
+            </p>
+            <div class="modal-footer">
+              <button class="btn btn--ghost" @click="showCancelar = false">Voltar</button>
+              <button class="btn btn--danger" :disabled="actionLoading" @click="cancelar">
+                {{ actionLoading ? 'A cancelar...' : 'Cancelar Pedido' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
 
       <!-- Respond modal -->
       <Teleport to="body">
@@ -249,6 +293,7 @@ onMounted(load)
 /* Modal */
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
 .modal { background: #fff; border-radius: 14px; padding: 1.75rem; width: 100%; max-width: 460px; box-shadow: 0 12px 40px rgba(0,0,0,0.18); }
+.modal--sm { max-width: 400px; }
 .modal-title { font-size: 1.15rem; font-weight: 700; margin: 0 0 0.25rem; color: #1e293b; }
 .modal-sub { font-size: 0.85rem; color: #64748b; margin: 0 0 1.25rem; }
 

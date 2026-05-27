@@ -8,7 +8,7 @@ const IDLE_TIMEOUTS = {
   ADMINISTRADOR: 60 * MIN,
   GERENTE_LOJA:  60 * MIN,
   RECECIONISTA:  60 * MIN,
-  MECANICO:      null,
+  MECANICO:      60 * MIN,
 }
 
 const WARNING_BEFORE = 5 * MIN

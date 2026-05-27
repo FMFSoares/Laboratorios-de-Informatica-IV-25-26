@@ -17,10 +17,14 @@ const isGestao = computed(() => ['ADMINISTRADOR', 'GERENTE_LOJA'].includes(perfi
 const isAdmin  = computed(() => perfil === 'ADMINISTRADOR')
 
 // ── Data ──────────────────────────────────────────────────────────────
-const allItems = ref([])
-const lojas    = ref([])
-const pecas    = ref([])
-const loading  = ref(false)
+const allItems  = ref([])
+const lojas     = ref([])
+const pecas     = ref([])
+const loading   = ref(false)
+const page      = ref(1)
+const pageSize  = ref(20)
+const totalItems = ref(0)
+const totalPages = computed(() => Math.ceil(totalItems.value / pageSize.value))
 
 // ── Filters ───────────────────────────────────────────────────────────
 const search       = ref('')
@@ -67,7 +71,7 @@ const filteredRows = computed(() => {
 async function fetchStock() {
   loading.value = true
   try {
-    const params = { page_size: 100 }
+    const params = { page: page.value, page_size: pageSize.value }
     if (isAdmin.value) {
       if (filtroLoja.value) params.loja_id = filtroLoja.value
     } else {
@@ -80,11 +84,19 @@ async function fetchStock() {
       uid: `${s.peca_id}-${s.loja_id}`,
       _estado_sort: s.quantidade === 0 ? 0 : s.alerta ? 1 : 2,
     }))
+    totalItems.value = data.total || 0
   } catch {
     allItems.value = []
+    totalItems.value = 0
   } finally {
     loading.value = false
   }
+}
+
+function goToPage(p) {
+  if (p < 1 || p > totalPages.value) return
+  page.value = p
+  fetchStock()
 }
 
 async function fetchMeta() {
@@ -110,6 +122,7 @@ function resetFilters() {
   filtroLoja.value   = null
   sortKey.value      = 'peca_nome'
   sortDir.value      = 'asc'
+  page.value         = 1
   fetchStock()
 }
 
@@ -312,6 +325,13 @@ async function submitEntrada() {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- ── Pagination ──────────────────────────────────────────── -->
+      <div v-if="totalPages > 1" class="pagination">
+        <button class="pag-btn" :disabled="page === 1" @click="goToPage(page - 1)">&#8249;</button>
+        <span class="pag-info">Página {{ page }} de {{ totalPages }}</span>
+        <button class="pag-btn" :disabled="page === totalPages" @click="goToPage(page + 1)">&#8250;</button>
       </div>
     </template>
   </div>
@@ -689,4 +709,26 @@ async function submitEntrada() {
   font-size: 0.85rem;
   margin: 0;
 }
+
+/* ── Pagination ─────────────────────────────────────────────────────── */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+.pag-btn {
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #374151;
+  transition: background 0.12s;
+}
+.pag-btn:hover:not(:disabled) { background: #f3f4f6; }
+.pag-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pag-info { font-size: 0.85rem; color: #6b7280; }
 </style>

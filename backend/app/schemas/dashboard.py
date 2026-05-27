@@ -40,17 +40,24 @@ class PecaAbaixoStockMinimo(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FaturacaoPorLoja(BaseModel):
+    """Faturação agrupada por loja."""
+
+    loja_id: int
+    loja_nome: str
+    faturacao_total: float = Field(..., ge=0.0)
+    lucro_liquido: float = Field(0.0, description="Faturação menos custo das peças aplicadas.")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class EficienciaMecanico(BaseModel):
     """Métricas de eficiência por mecânico."""
 
     mecanico_id: int
     nome: str
     ordens_concluidas: int = Field(..., ge=0)
-    tempo_medio_minutos: int | None = Field(
-        None,
-        ge=0,
-        description="Tempo médio de reparação em minutos (métricas internas).",
-    )
+    tempo_medio_minutos: int | None = Field(None, ge=0)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -82,9 +89,15 @@ class DashboardResponse(BaseModel):
     faturacao_total: float = Field(
         ..., ge=0.0, description="Total faturado no período."
     )
+    lucro_liquido_total: float = Field(
+        0.0, ge=0.0, description="Total faturado menos custo das peças aplicadas."
+    )
     pecas_abaixo_stock_minimo: list[PecaAbaixoStockMinimo] = Field(
         default_factory=list,
         description="Peças com stock abaixo do limite mínimo em alguma loja.",
+    )
+    faturacao_por_loja: list[FaturacaoPorLoja] = Field(
+        default_factory=list
     )
     eficiencia_por_mecanico: list[EficienciaMecanico] = Field(
         default_factory=list
@@ -121,13 +134,9 @@ class DashboardResponse(BaseModel):
                         "limite_minimo": 5,
                     }
                 ],
-                "eficiencia_por_mecanico": [
-                    {
-                        "mecanico_id": 3,
-                        "nome": "Bruno Mecânico",
-                        "ordens_concluidas": 12,
-                        "tempo_medio_minutos": 118,
-                    }
+                "faturacao_por_loja": [
+                    {"loja_id": 1, "loja_nome": "DLMCare Lisboa", "faturacao_total": 2541.00},
+                    {"loja_id": 2, "loja_nome": "DLMCare Porto",  "faturacao_total": 1301.50},
                 ],
             }
         },

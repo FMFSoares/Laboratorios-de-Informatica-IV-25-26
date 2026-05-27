@@ -50,6 +50,15 @@ def apagar_todas(
     service.apagar_todas(current_user)
 
 
+@router.delete("/{notificacao_id}", status_code=204)
+def apagar_uma(
+    notificacao_id: int,
+    current_user: CurrentUserResponse = Depends(get_current_user),
+    service: NotificacaoService = Depends(get_service),
+):
+    service.apagar_uma(notificacao_id, current_user)
+
+
 @router.post("/{notificacao_id}/ler", status_code=204)
 def marcar_lida(
     notificacao_id: int,

@@ -136,11 +136,17 @@ const totalOS = computed(() => estadoEntries.value.reduce((s, e) => s + e.count,
     <template v-else-if="data">
 
       <!-- ── KPI Cards ───────────────────────────────────────────────── -->
-      <div class="kpi-grid">
+      <div :class="['kpi-grid', isGestao && 'kpi-grid--5']">
         <div class="kpi-card">
           <div class="kpi-label">Faturação</div>
           <div class="kpi-value kpi-value--green">{{ fmtEur(data.faturacao_total) }}</div>
           <div class="kpi-sub">no período</div>
+        </div>
+
+        <div v-if="isGestao" class="kpi-card kpi-card--lucro">
+          <div class="kpi-label">Lucro Líquido</div>
+          <div class="kpi-value kpi-value--lucro">{{ fmtEur(data.lucro_liquido_total) }}</div>
+          <div class="kpi-sub">após custo de peças</div>
         </div>
 
         <div class="kpi-card">
@@ -182,10 +188,47 @@ const totalOS = computed(() => estadoEntries.value.reduce((s, e) => s + e.count,
       <!-- ── Bottom row ──────────────────────────────────────────────── -->
       <div v-if="isGestao" class="bottom-grid">
 
-        <!-- Eficiência por mecânico -->
-        <div class="card">
+        <!-- Admin: Faturação por Loja -->
+        <div v-if="isAdmin" class="card">
+          <div class="card-title">Faturação e Lucro por Loja</div>
+          <div v-if="!data.faturacao_por_loja?.length" class="empty-msg">Sem faturação no período.</div>
+          <div v-else class="fat-list">
+            <div
+              v-for="l in data.faturacao_por_loja"
+              :key="l.loja_id"
+              class="fat-block"
+            >
+              <div class="fat-loja">{{ l.loja_nome }}</div>
+              <div class="fat-bars-col">
+                <div class="fat-bar-item">
+                  <span class="fat-bar-label">Faturação</span>
+                  <div class="fat-bar-wrap">
+                    <div
+                      class="fat-bar-fill fat-bar-fill--rev"
+                      :style="{ width: `${Math.max(2, (l.faturacao_total / Math.max(...data.faturacao_por_loja.map(x => x.faturacao_total), 1)) * 100)}%` }"
+                    ></div>
+                  </div>
+                  <div class="fat-value">{{ fmtEur(l.faturacao_total) }}</div>
+                </div>
+                <div class="fat-bar-item">
+                  <span class="fat-bar-label fat-bar-label--lucro">Lucro</span>
+                  <div class="fat-bar-wrap">
+                    <div
+                      class="fat-bar-fill fat-bar-fill--lucro"
+                      :style="{ width: `${Math.max(2, (l.lucro_liquido / Math.max(...data.faturacao_por_loja.map(x => x.faturacao_total), 1)) * 100)}%` }"
+                    ></div>
+                  </div>
+                  <div class="fat-value fat-value--lucro">{{ fmtEur(l.lucro_liquido) }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Gerente: Eficiência por Mecânico -->
+        <div v-else class="card">
           <div class="card-title">Eficiência por Mecânico</div>
-          <div v-if="data.eficiencia_por_mecanico.length === 0" class="empty-msg">Sem dados no período.</div>
+          <div v-if="!data.eficiencia_por_mecanico?.length" class="empty-msg">Sem dados no período.</div>
           <table v-else class="table">
             <thead>
               <tr>
@@ -200,9 +243,7 @@ const totalOS = computed(() => estadoEntries.value.reduce((s, e) => s + e.count,
                 :key="m.mecanico_id"
               >
                 <td class="mecanico-nome">{{ m.nome }}</td>
-                <td class="col-num">
-                  <span class="os-count">{{ m.ordens_concluidas }}</span>
-                </td>
+                <td class="col-num"><span class="os-count">{{ m.ordens_concluidas }}</span></td>
                 <td class="col-num tempo-cell">{{ fmtMin(m.tempo_medio_minutos) }}</td>
               </tr>
             </tbody>
@@ -316,8 +357,10 @@ const totalOS = computed(() => estadoEntries.value.reduce((s, e) => s + e.count,
   grid-template-columns: repeat(4, 1fr);
   gap: 1.25rem;
 }
-@media (max-width: 900px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 500px) { .kpi-grid { grid-template-columns: 1fr; } }
+.kpi-grid--5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1100px) { .kpi-grid--5 { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 900px)  { .kpi-grid, .kpi-grid--5 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 500px)  { .kpi-grid, .kpi-grid--5 { grid-template-columns: 1fr; } }
 
 .kpi-card {
   background: #fff;
@@ -330,11 +373,13 @@ const totalOS = computed(() => estadoEntries.value.reduce((s, e) => s + e.count,
   border-left: 3px solid transparent;
 }
 .kpi-card--alert { border-left-color: #f59e0b; background: #fffbeb; }
+.kpi-card--lucro { border-left-color: #7c3aed; }
 
 .kpi-label { font-size: 0.75rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
 .kpi-value { font-size: 1.75rem; font-weight: 700; color: #111827; line-height: 1.1; margin: 0.25rem 0; }
 .kpi-value--green { color: #1abc9c; }
 .kpi-value--red   { color: #dc2626; }
+.kpi-value--lucro { color: #7c3aed; }
 .kpi-sub  { font-size: 0.78rem; color: #9ca3af; }
 
 /* ── Card ────────────────────────────────────────────────────────────────── */
@@ -382,29 +427,43 @@ const totalOS = computed(() => estadoEntries.value.reduce((s, e) => s + e.count,
 }
 @media (max-width: 760px) { .bottom-grid { grid-template-columns: 1fr; } }
 
-/* ── Table ───────────────────────────────────────────────────────────────── */
+/* ── Mechanic efficiency table ───────────────────────────────────────────── */
 .table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-.table th {
-  text-align: left;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #9ca3af;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0 0 0.65rem;
-  border-bottom: 1px solid #f3f4f6;
-}
-.table td {
-  padding: 0.75rem 0;
-  border-bottom: 1px solid #f9fafb;
-  color: #374151;
-  vertical-align: middle;
-}
+.table th { text-align: left; font-size: 0.72rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0 0.65rem; border-bottom: 1px solid #f3f4f6; }
+.table td { padding: 0.75rem 0; border-bottom: 1px solid #f9fafb; color: #374151; vertical-align: middle; }
 .table tbody tr:last-child td { border-bottom: none; }
 .col-num { text-align: right; }
 .mecanico-nome { font-weight: 500; color: #111827; }
 .os-count { font-weight: 700; color: #1abc9c; }
 .tempo-cell { color: #6b7280; font-size: 0.85rem; }
+
+/* ── Faturação por loja ──────────────────────────────────────────────────── */
+.fat-list  { display: flex; flex-direction: column; gap: 1.1rem; }
+.fat-block { display: flex; align-items: flex-start; gap: 0.9rem; }
+.fat-loja  { font-size: 0.875rem; font-weight: 600; color: #374151; min-width: 130px; padding-top: 0.2rem; }
+.fat-bars-col { flex: 1; display: flex; flex-direction: column; gap: 0.45rem; }
+.fat-bar-item { display: flex; align-items: center; gap: 0.6rem; }
+.fat-bar-label {
+  font-size: 0.72rem; font-weight: 600; color: #6b7280;
+  width: 72px; flex-shrink: 0; text-align: right; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.fat-bar-label--lucro { color: #7c3aed; }
+.fat-bar-wrap {
+  flex: 1;
+  height: 8px;
+  background: #f3f4f6;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.fat-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.4s ease;
+}
+.fat-bar-fill--rev   { background: #1abc9c; }
+.fat-bar-fill--lucro { background: #7c3aed; }
+.fat-value { font-size: 0.875rem; font-weight: 700; color: #111827; min-width: 90px; text-align: right; }
+.fat-value--lucro { color: #7c3aed; }
 
 /* ── Stock alerts ────────────────────────────────────────────────────────── */
 .alert-list { display: flex; flex-direction: column; gap: 0.5rem; }

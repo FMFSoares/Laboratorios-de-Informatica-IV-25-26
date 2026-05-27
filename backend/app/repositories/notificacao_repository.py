@@ -59,6 +59,9 @@ class NotificacaoRepository:
             Notificacao.lida == False,
         ).update({"lida": True})
 
+    def apagar_uma(self, notificacao_id: int) -> None:
+        self.db.query(Notificacao).filter(Notificacao.id == notificacao_id).delete()
+
     def apagar_todas(self, utilizador_id: int) -> None:
         self.db.query(Notificacao).filter(Notificacao.utilizador_id == utilizador_id).delete()
 

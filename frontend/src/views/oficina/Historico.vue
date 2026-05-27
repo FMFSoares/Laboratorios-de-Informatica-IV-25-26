@@ -211,7 +211,7 @@ function fmt(dt) {
           v-for="o in historico"
           :key="o.id"
           class="row"
-          @click="router.push(`/oficina/${o.id}`)"
+          @click="router.push(`/ordens-servico/${o.id}`)"
         >
           <td class="mono">{{ o.numero }}</td>
           <td class="mono">{{ o.trotinete_numero_serie || '—' }}</td>
