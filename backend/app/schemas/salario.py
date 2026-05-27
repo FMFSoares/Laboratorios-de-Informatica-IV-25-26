@@ -15,3 +15,12 @@ class SalarioUtilizador(BaseModel):
     total: float
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SalarioHistoricoItem(BaseModel):
+    ano: int
+    mes: int
+    mes_label: str
+    salario_base: float
+    comissao_ganha: float
+    total: float

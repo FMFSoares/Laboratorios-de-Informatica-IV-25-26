@@ -1,5 +1,6 @@
 <script setup>
 import AppSidebar from './AppSidebar.vue'
+import MobileBottomNav from './MobileBottomNav.vue'
 import { useSessionTimeout } from '../composables/useSessionTimeout.js'
 
 const { sessionWarning, sessionSecondsLeft, stayLoggedIn } = useSessionTimeout()
@@ -12,6 +13,7 @@ const { sessionWarning, sessionSecondsLeft, stayLoggedIn } = useSessionTimeout()
       <router-view />
     </main>
   </div>
+  <MobileBottomNav />
 
   <Teleport to="body">
     <div v-if="sessionWarning" class="timeout-overlay">
@@ -39,6 +41,12 @@ const { sessionWarning, sessionSecondsLeft, stayLoggedIn } = useSessionTimeout()
 .main-content {
   flex: 1;
   overflow-y: auto;
+}
+
+@media (max-width: 1280px) {
+  .main-content {
+    padding-bottom: 64px;
+  }
 }
 
 .timeout-overlay {

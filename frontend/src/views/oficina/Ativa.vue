@@ -63,4 +63,11 @@ onMounted(async () => {
 .btn { padding: 0.6rem 1.4rem; border: none; border-radius: 6px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
 .btn:hover { opacity: 0.85; }
 .btn--secondary { background: #e5e7eb; color: #374151; }
+
+@media (max-width: 1280px) {
+  .page { padding-bottom: calc(64px + 1.5rem); }
+  .empty-icon { font-size: 4rem; }
+  .empty-title { font-size: 1.2rem; }
+  .btn { min-height: 52px; font-size: 1rem; padding: 0 2rem; }
+}
 </style>

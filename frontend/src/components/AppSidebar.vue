@@ -126,6 +126,10 @@ const userRole = computed(() => PERFIL_LABEL[user.value?.perfil] ?? user.value?.
   overflow: hidden;
 }
 
+@media (max-width: 1280px) {
+  .sidebar { display: none; }
+}
+
 /* Brand */
 .sidebar-brand {
   height: 60px;

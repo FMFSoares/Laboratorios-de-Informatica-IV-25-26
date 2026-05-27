@@ -153,56 +153,83 @@ function fmt(dt) {
 
       <p v-else-if="avaliacao.length === 0" class="empty-msg">Nenhuma trotinete por avaliar.</p>
 
-      <table v-else class="table">
-        <thead>
-          <tr>
-            <th class="th-sort" @click="toggleSort('aval', 'numero')">
-              Número <span class="sort-icon">{{ sortIcon(avalSort, 'numero') }}</span>
-            </th>
-            <th class="th-sort" @click="toggleSort('aval', 'trotinete_numero_serie')">
-              Trotinete <span class="sort-icon">{{ sortIcon(avalSort, 'trotinete_numero_serie') }}</span>
-            </th>
-            <th class="th-sort" @click="toggleSort('aval', 'cliente_nome')">
-              Cliente <span class="sort-icon">{{ sortIcon(avalSort, 'cliente_nome') }}</span>
-            </th>
-            <th class="th-sort" @click="toggleSort('aval', 'estado')">
-              Estado <span class="sort-icon">{{ sortIcon(avalSort, 'estado') }}</span>
-            </th>
-            <th class="th-sort" @click="toggleSort('aval', 'prioridade')">
-              Prioridade <span class="sort-icon">{{ sortIcon(avalSort, 'prioridade') }}</span>
-            </th>
-            <th class="th-sort" @click="toggleSort('aval', 'data_entrada')">
-              Entrada <span class="sort-icon">{{ sortIcon(avalSort, 'data_entrada') }}</span>
-            </th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
+      <template v-else>
+        <table class="table">
+          <thead>
+            <tr>
+              <th class="th-sort" @click="toggleSort('aval', 'numero')">
+                Número <span class="sort-icon">{{ sortIcon(avalSort, 'numero') }}</span>
+              </th>
+              <th class="th-sort" @click="toggleSort('aval', 'trotinete_numero_serie')">
+                Trotinete <span class="sort-icon">{{ sortIcon(avalSort, 'trotinete_numero_serie') }}</span>
+              </th>
+              <th class="th-sort" @click="toggleSort('aval', 'cliente_nome')">
+                Cliente <span class="sort-icon">{{ sortIcon(avalSort, 'cliente_nome') }}</span>
+              </th>
+              <th class="th-sort" @click="toggleSort('aval', 'estado')">
+                Estado <span class="sort-icon">{{ sortIcon(avalSort, 'estado') }}</span>
+              </th>
+              <th class="th-sort" @click="toggleSort('aval', 'prioridade')">
+                Prioridade <span class="sort-icon">{{ sortIcon(avalSort, 'prioridade') }}</span>
+              </th>
+              <th class="th-sort" @click="toggleSort('aval', 'data_entrada')">
+                Entrada <span class="sort-icon">{{ sortIcon(avalSort, 'data_entrada') }}</span>
+              </th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="o in avaliacao"
+              :key="o.id"
+              :class="['row', { 'row--active': o.tem_timer_ativo }]"
+              @click="handleRowClick(o)"
+            >
+              <td class="mono">
+                {{ o.numero }}
+                <span v-if="o.tem_timer_ativo" class="timer-inline" title="Timer activo">●</span>
+              </td>
+              <td class="mono">{{ o.trotinete_numero_serie || '—' }}</td>
+              <td>{{ o.cliente_nome || '—' }}</td>
+              <td><StatusBadge :estado="o.estado" /></td>
+              <td>
+                <span :style="{ color: PRIORIDADE_COLORS[o.prioridade], fontWeight: 600 }">
+                  {{ o.prioridade }}
+                </span>
+              </td>
+              <td>{{ fmt(o.data_entrada) }}</td>
+              <td>
+                <span v-if="o.em_atraso" class="atraso-badge">⚠ +{{ o.minutos_em_atraso }}min</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="cards">
+          <div
             v-for="o in avaliacao"
             :key="o.id"
-            :class="['row', { 'row--active': o.tem_timer_ativo }]"
+            class="os-card"
+            :class="{ 'os-card--active': o.tem_timer_ativo }"
             @click="handleRowClick(o)"
           >
-            <td class="mono">
-              {{ o.numero }}
-              <span v-if="o.tem_timer_ativo" class="timer-inline" title="Timer activo">●</span>
-            </td>
-            <td class="mono">{{ o.trotinete_numero_serie || '—' }}</td>
-            <td>{{ o.cliente_nome || '—' }}</td>
-            <td><StatusBadge :estado="o.estado" /></td>
-            <td>
-              <span :style="{ color: PRIORIDADE_COLORS[o.prioridade], fontWeight: 600 }">
-                {{ o.prioridade }}
-              </span>
-            </td>
-            <td>{{ fmt(o.data_entrada) }}</td>
-            <td>
+            <div class="card-top">
+              <span class="mono card-num">{{ o.numero }}</span>
+              <StatusBadge :estado="o.estado" />
               <span v-if="o.em_atraso" class="atraso-badge">⚠ +{{ o.minutos_em_atraso }}min</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+            <div class="card-mid">
+              <span class="card-client">{{ o.cliente_nome || '—' }}</span>
+              <span class="card-prio" :style="{ color: PRIORIDADE_COLORS[o.prioridade] }">{{ o.prioridade }}</span>
+            </div>
+            <div class="card-bot">
+              <span class="mono card-serial">{{ o.trotinete_numero_serie || '—' }}</span>
+              <span v-if="o.tem_timer_ativo" class="timer-live">● a correr</span>
+              <span v-else class="card-date">{{ fmt(o.data_entrada) }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
     </section>
 
     <!-- Reparação -->
@@ -216,57 +243,84 @@ function fmt(dt) {
 
       <p v-else-if="reparacao.length === 0" class="empty-msg">Nenhuma trotinete em reparação.</p>
 
-      <table v-else class="table">
-        <thead>
-          <tr>
-            <th class="th-sort" @click="toggleSort('rep', 'numero')">
-              Número <span class="sort-icon">{{ sortIcon(repSort, 'numero') }}</span>
-            </th>
-            <th class="th-sort" @click="toggleSort('rep', 'trotinete_numero_serie')">
-              Trotinete <span class="sort-icon">{{ sortIcon(repSort, 'trotinete_numero_serie') }}</span>
-            </th>
-            <th class="th-sort" @click="toggleSort('rep', 'cliente_nome')">
-              Cliente <span class="sort-icon">{{ sortIcon(repSort, 'cliente_nome') }}</span>
-            </th>
-            <th class="th-sort" @click="toggleSort('rep', 'estado')">
-              Estado <span class="sort-icon">{{ sortIcon(repSort, 'estado') }}</span>
-            </th>
-            <th class="th-sort" @click="toggleSort('rep', 'prioridade')">
-              Prioridade <span class="sort-icon">{{ sortIcon(repSort, 'prioridade') }}</span>
-            </th>
-            <th>Timer</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
+      <template v-else>
+        <table class="table">
+          <thead>
+            <tr>
+              <th class="th-sort" @click="toggleSort('rep', 'numero')">
+                Número <span class="sort-icon">{{ sortIcon(repSort, 'numero') }}</span>
+              </th>
+              <th class="th-sort" @click="toggleSort('rep', 'trotinete_numero_serie')">
+                Trotinete <span class="sort-icon">{{ sortIcon(repSort, 'trotinete_numero_serie') }}</span>
+              </th>
+              <th class="th-sort" @click="toggleSort('rep', 'cliente_nome')">
+                Cliente <span class="sort-icon">{{ sortIcon(repSort, 'cliente_nome') }}</span>
+              </th>
+              <th class="th-sort" @click="toggleSort('rep', 'estado')">
+                Estado <span class="sort-icon">{{ sortIcon(repSort, 'estado') }}</span>
+              </th>
+              <th class="th-sort" @click="toggleSort('rep', 'prioridade')">
+                Prioridade <span class="sort-icon">{{ sortIcon(repSort, 'prioridade') }}</span>
+              </th>
+              <th>Timer</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="o in reparacao"
+              :key="o.id"
+              :class="['row', { 'row--active': o.tem_timer_ativo }]"
+              @click="handleRowClick(o)"
+            >
+              <td class="mono">
+                {{ o.numero }}
+                <span v-if="o.tem_timer_ativo" class="timer-inline" title="Timer activo">●</span>
+              </td>
+              <td class="mono">{{ o.trotinete_numero_serie || '—' }}</td>
+              <td>{{ o.cliente_nome || '—' }}</td>
+              <td><StatusBadge :estado="o.estado" /></td>
+              <td>
+                <span :style="{ color: PRIORIDADE_COLORS[o.prioridade], fontWeight: 600 }">
+                  {{ o.prioridade }}
+                </span>
+              </td>
+              <td>
+                <span v-if="o.tem_timer_ativo" class="timer-on">● a correr</span>
+                <span v-else class="timer-off">parado</span>
+              </td>
+              <td>
+                <span v-if="o.em_atraso" class="atraso-badge">⚠ +{{ o.minutos_em_atraso }}min</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="cards">
+          <div
             v-for="o in reparacao"
             :key="o.id"
-            :class="['row', { 'row--active': o.tem_timer_ativo }]"
+            class="os-card"
+            :class="{ 'os-card--active': o.tem_timer_ativo }"
             @click="handleRowClick(o)"
           >
-            <td class="mono">
-              {{ o.numero }}
-              <span v-if="o.tem_timer_ativo" class="timer-inline" title="Timer activo">●</span>
-            </td>
-            <td class="mono">{{ o.trotinete_numero_serie || '—' }}</td>
-            <td>{{ o.cliente_nome || '—' }}</td>
-            <td><StatusBadge :estado="o.estado" /></td>
-            <td>
-              <span :style="{ color: PRIORIDADE_COLORS[o.prioridade], fontWeight: 600 }">
-                {{ o.prioridade }}
-              </span>
-            </td>
-            <td>
-              <span v-if="o.tem_timer_ativo" class="timer-on">● a correr</span>
-              <span v-else class="timer-off">parado</span>
-            </td>
-            <td>
+            <div class="card-top">
+              <span class="mono card-num">{{ o.numero }}</span>
+              <StatusBadge :estado="o.estado" />
               <span v-if="o.em_atraso" class="atraso-badge">⚠ +{{ o.minutos_em_atraso }}min</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+            <div class="card-mid">
+              <span class="card-client">{{ o.cliente_nome || '—' }}</span>
+              <span class="card-prio" :style="{ color: PRIORIDADE_COLORS[o.prioridade] }">{{ o.prioridade }}</span>
+            </div>
+            <div class="card-bot">
+              <span class="mono card-serial">{{ o.trotinete_numero_serie || '—' }}</span>
+              <span v-if="o.tem_timer_ativo" class="timer-live">● a correr</span>
+              <span v-else class="card-date timer-off">parado</span>
+            </div>
+          </div>
+        </div>
+      </template>
     </section>
   </div>
 
@@ -363,4 +417,55 @@ function fmt(dt) {
 .timer-inline { color: #1abc9c; font-size: 0.65rem; margin-left: 0.4rem; vertical-align: middle; }
 .row--active { background: #f0fdf9 !important; }
 
+/* ── Mobile ──────────────────────────────────────────────────── */
+.cards { display: none; }
+
+@media (max-width: 1280px) {
+  .page { padding: 1rem; padding-bottom: calc(64px + 1.5rem); }
+  .search-input { max-width: 100%; }
+
+  .table { display: none; }
+  .cards { display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .os-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    border-left: 3px solid #e5e7eb;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.1s;
+  }
+  .os-card--active { border-left-color: #1abc9c; }
+  .os-card:active { background: #f9fafb; }
+
+  .card-top {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .card-num { font-size: 0.95rem; font-weight: 700; color: #111827; }
+
+  .card-mid {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card-client { font-size: 1rem; color: #374151; font-weight: 500; }
+  .card-prio { font-size: 0.82rem; font-weight: 700; }
+
+  .card-bot {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .card-serial { font-size: 0.8rem; color: #6b7280; }
+  .card-date { font-size: 0.8rem; color: #9ca3af; margin-left: auto; }
+  .timer-live { color: #1abc9c; font-size: 0.82rem; font-weight: 700; margin-left: auto; }
+}
 </style>
