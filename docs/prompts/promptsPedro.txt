@@ -995,3 +995,49 @@ Implement salaries for all workers. Add a tab for that in Gerente and Administra
 - Added `/salarios` route (router) and sidebar nav item for ADMINISTRADOR + GERENTE_LOJA
 - Added `salario_base` field to user create form (`utilizadores/Index.vue`) and edit form + detail view (`utilizadores/Detail.vue`)
 - Populated seed salaries via direct SQL: ADMINISTRADOR €3 500, GERENTE_LOJA €2 200–€2 400, RECECIONISTA €1 100–€1 150, MECANICO €1 350–€1 450 (plus their commission)
+
+---
+
+### [2026-05-27] Mobile UI for the mechanic role — bottom nav bar, card lists, sticky action bar
+
+**Prompt:**
+Port the whole mechanic view to a mobile version. The UI should have bigger, simpler, more intuitive controls with larger buttons. Use a bottom navigation bar instead of the sidebar.
+
+**What was done:**
+
+- **`frontend/src/components/MobileBottomNav.vue`** (new): fixed bottom nav bar (64px, `#1e293b` background), rendered only for MECANICO. Five tabs with SVG icons: Ordens (`/oficina`), Activa (`/oficina/ativa`), Histórico (`/oficina/historico`), Stock (`/stock`), Notif. (`/notificacoes`). Active-dot on Activa tab when `workshop.hasActiveOS` is true. Unread-count badge on Notif. tab. Hidden on desktop via `display: none` outside `@media (max-width: 768px)`. Custom `isActive()` logic: `/oficina` is exact-match only; any `/oficina/:id` detail page maps to the Activa tab (not Ordens).
+
+- **`frontend/src/components/AppSidebar.vue`**: added `@media (max-width: 768px) { .sidebar { display: none } }` — sidebar hidden on all mobile, replaced by the bottom nav for mechanics.
+
+- **`frontend/src/components/AppLayout.vue`**: imports and mounts `<MobileBottomNav />`; added `@media (max-width: 768px) { .main-content { padding-bottom: 64px } }` so page content is not hidden behind the bottom nav.
+
+- **`frontend/src/views/oficina/Index.vue`**: each section (`v-if/v-else-if/v-else`) now uses `<template v-else>` to render both the desktop `<table>` and a `.cards` div. On mobile (`max-width: 768px`): `.table { display: none }`, `.cards { display: flex; flex-direction: column; gap: 0.5rem }`. Each card shows OS number + StatusBadge + atraso badge (top row), client name + priority (middle row), scooter serial + timer-live indicator or date (bottom row). Cards have a green left border when `tem_timer_ativo`. Tap state via `:active`.
+
+- **`frontend/src/views/oficina/Historico.vue`**: same card pattern. Cards show OS number + status (top), client + priority (middle), serial + entry→conclusion dates (bottom).
+
+- **`frontend/src/views/oficina/Detail.vue`**: added a `.mobile-cta` sticky bar (`position: fixed; bottom: 64px`) visible only on mobile. Shows: timer stop button (red tint) or resume button (green tint) when applicable, plus the primary CTA (`✓ Concluir Diagnóstico` / `✓ Concluir Reparação`) or the first `mainAction` when no rightColumnAction exists. The existing `.card--conclude` in the right column is hidden on mobile (`display: none`) since it is duplicated in the sticky bar. Action buttons in cards get `min-height: 52px` on mobile. Page `padding-bottom: 180px` on mobile to avoid content hidden behind both bars. Modals become near-full-width sheets on mobile.
+
+- **`frontend/src/views/oficina/Ativa.vue`**: added mobile CSS — bigger empty-state icon, `min-height: 52px` button, and `padding-bottom: calc(64px + 1.5rem)`.
+
+**Breakpoint:** `@media (max-width: 768px)` throughout.
+
+**Testing:**
+- Browser: F12 → device toolbar (Ctrl+Shift+M) → iPhone SE or Pixel 5 → reload
+- Real phone: connect to same Wi-Fi → `http://<LAN_IP>:5173` (get IP with `hostname -I | awk '{print $1}'`)
+
+---
+
+### [2026-05-27] Mobile mechanic UI — follow-up fixes
+
+**Prompt:**
+Fix the following issues in the mobile mechanic UI: (1) landscape orientation on iPad (1180×820) was still showing the desktop sidebar and layout; (2) OS detail page had two identical "Iniciar Diagnóstico" buttons — one in the "Próxima Ação" card and one in the sticky bottom bar; (3) the "← Voltar" back button is unnecessary on mobile since navigation is handled by the bottom nav; (4) there was no way for the mechanic to log out since the sidebar footer (which contains the logout button) is hidden on mobile.
+
+**What was done:**
+
+- **Breakpoint raised to `@media (max-width: 1280px)`** across all mobile-specific CSS blocks (`MobileBottomNav.vue`, `AppSidebar.vue`, `AppLayout.vue`, `Index.vue`, `Historico.vue`, `Detail.vue`, `Ativa.vue`). Previous breakpoints (768px → 1024px) did not cover iPad 10th gen in landscape (1180px wide). 1280px covers all tablets up to a standard iPad Pro landscape.
+
+- **Duplicate action button removed** (`frontend/src/views/oficina/Detail.vue`): added class `card--proxima-acao` to the "Próxima Ação" in-page card and set `display: none` on mobile. The sticky `.mobile-cta` bar already renders all the same actions (stop/resume timer + primary CTA), so the in-page card is fully redundant on mobile.
+
+- **Back button hidden on mobile** (`frontend/src/views/oficina/Detail.vue`): added `.back-row { display: none }` to the mobile media query. Navigation back to the OS list is done via the bottom nav tabs.
+
+- **"Conta" tab added to bottom nav** (`frontend/src/components/MobileBottomNav.vue`): added a 6th tab with a person SVG icon labelled "Conta" linking to `/conta`. The `/conta` page already has a "Terminar sessão" button, giving mechanics a way to log out on mobile.

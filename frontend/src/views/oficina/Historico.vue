@@ -180,54 +180,81 @@ function fmt(dt) {
       Nenhuma ordem de serviço encontrada para o período selecionado.
     </p>
 
-    <!-- Table -->
-    <table v-else class="table">
-      <thead>
-        <tr>
-          <th class="th-sort" @click="toggleSort('numero')">
-            Número <span class="sort-icon">{{ sortIcon('numero') }}</span>
-          </th>
-          <th class="th-sort" @click="toggleSort('trotinete_numero_serie')">
-            Trotinete <span class="sort-icon">{{ sortIcon('trotinete_numero_serie') }}</span>
-          </th>
-          <th class="th-sort" @click="toggleSort('cliente_nome')">
-            Cliente <span class="sort-icon">{{ sortIcon('cliente_nome') }}</span>
-          </th>
-          <th class="th-sort" @click="toggleSort('estado')">
-            Estado <span class="sort-icon">{{ sortIcon('estado') }}</span>
-          </th>
-          <th class="th-sort" @click="toggleSort('prioridade')">
-            Prioridade <span class="sort-icon">{{ sortIcon('prioridade') }}</span>
-          </th>
-          <th class="th-sort" @click="toggleSort('data_entrada')">
-            Entrada <span class="sort-icon">{{ sortIcon('data_entrada') }}</span>
-          </th>
-          <th class="th-sort" @click="toggleSort('data_efetiva')">
-            Conclusão <span class="sort-icon">{{ sortIcon('data_efetiva') }}</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
+    <!-- Table (desktop) / Cards (mobile) -->
+    <template v-else>
+      <table class="table">
+        <thead>
+          <tr>
+            <th class="th-sort" @click="toggleSort('numero')">
+              Número <span class="sort-icon">{{ sortIcon('numero') }}</span>
+            </th>
+            <th class="th-sort" @click="toggleSort('trotinete_numero_serie')">
+              Trotinete <span class="sort-icon">{{ sortIcon('trotinete_numero_serie') }}</span>
+            </th>
+            <th class="th-sort" @click="toggleSort('cliente_nome')">
+              Cliente <span class="sort-icon">{{ sortIcon('cliente_nome') }}</span>
+            </th>
+            <th class="th-sort" @click="toggleSort('estado')">
+              Estado <span class="sort-icon">{{ sortIcon('estado') }}</span>
+            </th>
+            <th class="th-sort" @click="toggleSort('prioridade')">
+              Prioridade <span class="sort-icon">{{ sortIcon('prioridade') }}</span>
+            </th>
+            <th class="th-sort" @click="toggleSort('data_entrada')">
+              Entrada <span class="sort-icon">{{ sortIcon('data_entrada') }}</span>
+            </th>
+            <th class="th-sort" @click="toggleSort('data_efetiva')">
+              Conclusão <span class="sort-icon">{{ sortIcon('data_efetiva') }}</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="o in historico"
+            :key="o.id"
+            class="row"
+            @click="router.push(`/oficina/${o.id}`)"
+          >
+            <td class="mono">{{ o.numero }}</td>
+            <td class="mono">{{ o.trotinete_numero_serie || '—' }}</td>
+            <td>{{ o.cliente_nome || '—' }}</td>
+            <td><StatusBadge :estado="o.estado" /></td>
+            <td>
+              <span :style="{ color: PRIORIDADE_COLORS[o.prioridade], fontWeight: 600 }">
+                {{ o.prioridade }}
+              </span>
+            </td>
+            <td>{{ fmt(o.data_entrada) }}</td>
+            <td>{{ fmt(o.data_conclusao) }}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="cards">
+        <div
           v-for="o in historico"
           :key="o.id"
-          class="row"
+          class="os-card"
           @click="router.push(`/oficina/${o.id}`)"
         >
-          <td class="mono">{{ o.numero }}</td>
-          <td class="mono">{{ o.trotinete_numero_serie || '—' }}</td>
-          <td>{{ o.cliente_nome || '—' }}</td>
-          <td><StatusBadge :estado="o.estado" /></td>
-          <td>
-            <span :style="{ color: PRIORIDADE_COLORS[o.prioridade], fontWeight: 600 }">
-              {{ o.prioridade }}
+          <div class="card-top">
+            <span class="mono card-num">{{ o.numero }}</span>
+            <StatusBadge :estado="o.estado" />
+          </div>
+          <div class="card-mid">
+            <span class="card-client">{{ o.cliente_nome || '—' }}</span>
+            <span class="card-prio" :style="{ color: PRIORIDADE_COLORS[o.prioridade] }">{{ o.prioridade }}</span>
+          </div>
+          <div class="card-bot">
+            <span class="mono card-serial">{{ o.trotinete_numero_serie || '—' }}</span>
+            <span class="card-dates">
+              {{ fmt(o.data_entrada) }}
+              <span v-if="o.data_conclusao"> → {{ fmt(o.data_conclusao) }}</span>
             </span>
-          </td>
-          <td>{{ fmt(o.data_entrada) }}</td>
-          <td>{{ fmt(o.data_conclusao) }}</td>
-        </tr>
-      </tbody>
-    </table>
+          </div>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -331,4 +358,54 @@ function fmt(dt) {
 .row:hover { background: #f0fdf4; }
 
 .mono { font-family: 'Courier New', monospace; font-size: 0.82rem; }
+
+/* ── Mobile ──────────────────────────────────────────────────── */
+.cards { display: none; }
+
+@media (max-width: 1280px) {
+  .page { padding: 1rem; padding-bottom: calc(64px + 1.5rem); }
+  .search-input { max-width: 100%; }
+  .preset-bar { flex-wrap: wrap; }
+
+  .table { display: none; }
+  .cards { display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .os-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.1s;
+  }
+  .os-card:active { background: #f9fafb; }
+
+  .card-top {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .card-num { font-size: 0.95rem; font-weight: 700; color: #111827; }
+
+  .card-mid {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card-client { font-size: 1rem; color: #374151; font-weight: 500; }
+  .card-prio { font-size: 0.82rem; font-weight: 700; }
+
+  .card-bot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card-serial { font-size: 0.8rem; color: #6b7280; }
+  .card-dates { font-size: 0.78rem; color: #9ca3af; }
+}
 </style>
