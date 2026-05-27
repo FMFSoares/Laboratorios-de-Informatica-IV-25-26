@@ -55,6 +55,21 @@
   fill: luma(248),
 )[#align(center)[#text(style: "italic", fill: luma(100))[\[ #legenda \]]]]
 
+// Architecture layer box: arch-box(fill, accent, title, tech, body)
+#let arch-box(fill-color, accent-color, title, tech, body) = block(
+  fill: fill-color,
+  stroke: (left: 3pt + accent-color),
+  inset: (left: 14pt, right: 12pt, top: 10pt, bottom: 10pt),
+  width: 100%,
+  radius: 3pt,
+)[
+  #text(weight: "bold", size: 11pt)[#title]
+  #h(0.5em)
+  #text(size: 9pt, fill: luma(80))[#tech]
+  #v(4pt)
+  #body
+]
+
 // Shaded table header helper — use fill: on table.header rows
 #let th-fill = rgb("#dce8ff")
 #let tr-fill = rgb("#f7faff")
@@ -74,7 +89,7 @@
   #text(size: 13pt)[Trabalho Prático — Grupo 35]
 
   #v(4cm)
-  #diagrama("Imagem de grupo — Rodrigo Rocha, David Machado, Pedro Ferreira, Francisco Soares")
+  #image("images/foto_grupo.png", width: 80%)
 
   #v(2cm)
   #align(left)[
@@ -242,6 +257,8 @@ O tempo que a equipa perde atualmente a gerir o caos é tempo roubado à produç
 
 ==== 1.4.3 Viabilidade Comercial e Reputacional
 
+A reputação da marca, outrora o seu maior motor de aquisição de clientes através do "boca a boca", está atualmente ameaçada por atrasos e falhas de comunicação.
+
 - *Experiência de Excelência ao Cliente:* Com o acesso rápido ao histórico do cliente — independentemente da loja a que este se dirija — e a capacidade de dar respostas exatas e imediatas sobre o estado da reparação, a DLMCare recuperará a sua imagem de profissionalismo. A redução drástica dos tempos de imobilização das trotinetes traduzir-se-á num aumento direto da satisfação, gerando avaliações positivas no Google e fomentando a fidelização.
 
 Em suma, o sistema DLMCare é altamente viável e crítico. O custo de desenvolvimento será rapidamente amortizado pelo aumento da capacidade de resposta da oficina, pela eliminação de desperdícios no inventário e pela recuperação de receitas perdidas por falhas de faturação.
@@ -348,7 +365,10 @@ O ecossistema da DLMCare é composto por diversas partes interessadas. A correta
 
 O desenvolvimento do sistema DLMCare segue uma metodologia sequencial e incremental. O cronograma contempla as quatro etapas principais: Engenharia de Requisitos, Arquitetura e Design, Implementação e Avaliação de Qualidade, culminando na entrega final em maio de 2026.
 
-#diagrama("Diagrama de Gantt — Cronograma do Projeto DLMCare")
+#figure(
+  image("images/gantt.png", width: 100%),
+  caption: [Diagrama de Gantt — Cronograma do Projeto DLMCare],
+)
 
 == 2. Levantamento e Análise de Requisitos
 
@@ -513,7 +533,7 @@ Foi efetuada uma análise às ferramentas de suporte atuais — folhas de obra f
 
 - *US01 — Registo Centralizado:* Como Gestor de Loja, quero registar o perfil de um cliente e a sua trotinete (marca, modelo e número de série), para que o seu histórico fique imediatamente acessível em qualquer loja da rede DLMCare. Critérios de aceitação: o sistema não deve permitir o registo de duas trotinetes com o mesmo número de série; deve ser possível pesquisar um cliente existente pelo NIF ou número de telemóvel antes de criar um novo registo, evitando duplicações.
 
-- *US02 — Emissão de Fatura Automática:* Como Gestor de Loja, quero que o sistema calcule o valor final da OS (somando peças e mão de obra) com um clique, para que possa emitir uma fatura transparente e sem risco de esquecer a cobrança de material. Critérios de aceitação: a fatura gerada deve discriminar claramente as linhas de "Peças Aplicadas" e "Tipo de Serviço".
+- *US02 — Emissão de Fatura Automática:* Como Gestor de Loja, quero que o sistema calcule o valor final da OS (somando peças e mão de obra) com um clique, para que possa emitir uma fatura transparente e sem risco de esquecer a cobrança de material. Critérios de aceitação: a fatura gerada deve discriminar claramente as linhas de "Peças Aplicadas" e "Tipo de Serviço"; o valor da mão de obra deve ser calculado automaticamente com base no tempo registado pelo mecânico.
 
 *Épico 2: Gestão de Oficina e Ordens de Serviço*
 
@@ -814,7 +834,10 @@ Fluxo Alternativo 2 — Inserção de quantidades inválidas (Passo 6): o sistem
 
 Com base nos casos de uso acima apresentados, foi desenvolvido um diagrama de casos de uso que os representava e relacionava com os seus respetivos atores.
 
-#diagrama("Diagrama de Casos de Uso — Sistema DLMCare (PlantUML)")
+#figure(
+  image("images/diagrama_casos_uso.png", width: 85%),
+  caption: [Diagrama de Casos de Uso — Sistema DLMCare],
+)
 
 #prompt-box[
   *Prompt*
@@ -857,7 +880,31 @@ A *Camada de Lógica de Negócio (Backend/API)* constitui o núcleo de processam
 
 A *Camada de Dados (Database)* será materializada através de um SGBDR centralizado e alojado na cloud. A opção por um modelo relacional é inegociável, dada a obrigatoriedade de garantir as propriedades ACID. Este rigor transacional é fundamental para o controlo de concorrência no inventário de peças: caso dois rececionistas tentem abater a mesma peça do stock central em simultâneo, o sistema processará os pedidos de forma sequencial e isolada, prevenindo duplicações.
 
-#diagrama("Diagrama de Arquitetura — 3 Camadas do Sistema DLMCare")
+#figure(
+  block(width: 88%)[
+    #arch-box(
+      rgb("#dce8ff"), rgb("#2255aa"),
+      "Camada de Apresentação",
+      "Vue.js + HTML/CSS",
+      [Interface responsiva para desktops (receção e administração) e tablets (mecânicos nas bancadas de trabalho). Comunica exclusivamente com o backend via REST API (HTTPS/JSON).],
+    )
+    #align(center)[#v(3pt) #text(size: 9pt, fill: luma(120))[↕ REST API · HTTPS · JSON] #v(3pt)]
+    #arch-box(
+      rgb("#e6f4ea"), rgb("#1a7a3a"),
+      "Camada de Lógica de Negócio",
+      "Python · FastAPI",
+      [Autenticação JWT, controlo de acesso por perfil (RBAC), máquina de estados das OS, regras de faturação e alertas automáticos de stock mínimo. Centraliza toda a lógica de negócio da rede de lojas.],
+    )
+    #align(center)[#v(3pt) #text(size: 9pt, fill: luma(120))[↕ Driver MySQL · Queries SQL] #v(3pt)]
+    #arch-box(
+      rgb("#fff8ec"), rgb("#c05a00"),
+      "Camada de Dados",
+      "MySQL · Cloud",
+      [Base de dados relacional centralizada com propriedades ACID e row-level locking para controlo de concorrência no inventário. Backups incrementais diários com redundância geográfica, garantindo RPO de 24 horas.],
+    )
+  ],
+  caption: [Diagrama de Arquitetura — Sistema DLMCare em 3 Camadas],
+)
 
 #prompt-box[
   *Prompt*
@@ -899,6 +946,8 @@ A tabela seguinte apresenta a comparação entre as principais tecnologias consi
   [Curva de aprendizagem elevada e desenvolvimento mais verboso, o que atrasa a entrega.],
 )
 
+==== Justificação da Escolha e Decisão Final
+
 Optámos pela combinação de Python com a framework FastAPI. A escolha do Python fundamenta-se na sua sintaxe concisa e elevada legibilidade — fatores que reduzem a complexidade cognitiva do código e facilitam a revisão colaborativa, permitindo uma iteração de desenvolvimento mais célere, o que é crítico num projeto com janela temporal restrita. A seleção específica do FastAPI, em detrimento de alternativas como o Django REST Framework (DRF), justifica-se pela sua arquitetura assíncrona nativa (baseada em ASGI e asyncio), vital para processar eficientemente pedidos concorrentes provenientes das três oficinas em simultâneo. Adicionalmente, o FastAPI integra nativamente a validação automática de dados (via Pydantic) e a geração de documentação interativa (OpenAPI/Swagger), assegurando um contrato de interface explícito e verificável entre o frontend e o backend desde o início do desenvolvimento, mitigando riscos de integração.
 
 ==== 3.2.2 Base de Dados (Persistência): MySQL
@@ -923,7 +972,9 @@ A tabela seguinte apresenta a análise comparativa entre as tecnologias consider
   [Dificuldade em garantir integridade referencial complexa de forma nativa e declarativa.],
 )
 
-A equipa optou pelo MySQL, um Sistema de Gestão de Bases de Dados Relacionais (SGBDR) de código aberto. A preferência por um modelo relacional — em detrimento de alternativas NoSQL como o MongoDB — decorre da natureza estruturada e interdependente dos dados (clientes, veículos, ordens de serviço, stock e faturação). Um modelo NoSQL introduziria complexidade desnecessária na gestão da integridade referencial, que no MySQL é garantida nativamente através de chaves estrangeiras. A escolha justifica-se, sobretudo, pela sua conformidade estrita com as propriedades ACID, requisito não-negociável para a operação multi-instalação da DLMCare. O mecanismo de row-level locking do MySQL garante que as transações sobre stock são orquestradas de forma isolada, prevenindo anomalias que comprometeriam a faturação. Finalmente, a maturidade comprovada do MySQL reduz o risco operacional e facilita a integração com o backend em Python através de bibliotecas como SQLAlchemy, assegurando a sustentabilidade do projeto a longo prazo.
+==== Justificação da Escolha e Decisão Final
+
+A equipa optou pelo MySQL, um Sistema de Gestão de Bases de Dados Relacionais (SGBDR) de código aberto. A preferência por um modelo relacional — em detrimento de alternativas NoSQL como o MongoDB — decorre da natureza estruturada e interdependente dos dados (clientes, veículos, ordens de serviço, stock e faturação). Um modelo NoSQL introduziria complexidade desnecessária na gestão da integridade referencial, que no MySQL é garantida nativamente através de chaves estrangeiras. A escolha justifica-se, sobretudo, pela sua conformidade estrita com as propriedades ACID, requisito não-negociável para a operação multi-instalação da DLMCare. O mecanismo de row-level locking do MySQL garante que as transações sobre stock são orquestradas de forma isolada, prevenindo anomalias que comprometeriam a faturação. Finalmente, a maturidade comprovada do MySQL reduz o risco operacional e facilita a integração com o backend em Python através de bibliotecas como SQLAlchemy, assegurando a sustentabilidade do projeto a longo prazo. A comunicação entre a aplicação e a base de dados é gerida pelo driver compatível nativo PyMySQL, enquanto o controlo de versões do esquema relacional é assegurado pela ferramenta de migrations Alembic, permitindo evoluir a estrutura de dados de forma segura e incremental ao longo do ciclo de vida da aplicação.
 
 ==== 3.2.3 Frontend (Interface do Utilizador): Vue.js com HTML e CSS
 
@@ -944,6 +995,8 @@ A camada de apresentação é o ponto de interação fundamental entre os utiliz
   [Solução completa "out-of-the-box" com padrões rígidos de desenvolvimento.],
   [Curva de aprendizagem acentuada e complexidade elevada (TypeScript rigoroso e injeção de dependências).],
 )
+
+==== Justificação da Escolha e Decisão Final
 
 A camada de apresentação será desenvolvida com recurso à framework progressiva de JavaScript Vue.js, assente nos standards web de HTML e CSS. A opção pelo Vue.js em detrimento de alternativas como React ou Angular fundamenta-se num equilíbrio entre critérios de engenharia e gestão de risco do projeto. O Vue.js permite a construção de uma Single Page Application (SPA) baseada num modelo de componentes reutilizáveis. O seu sistema de reatividade de dados bidirecional (two-way data binding) assegura a sincronização automática entre o estado da aplicação e a interface visual, eliminando a manipulação direta do DOM e resultando numa interface fluida e responsiva. Esta característica é especialmente vantajosa para o módulo de Oficina, operado em tablets por técnicos em contexto de trabalho. Do ponto de vista da gestão de risco, o Vue.js apresenta uma curva de aprendizagem comprovadamente mais suave do que o Angular e uma estrutura de projeto mais explícita e previsível do que o React. Esta previsibilidade reduz a probabilidade de decisões de implementação inconsistentes entre os membros da equipa. Complementarmente, o uso de ferramentas modernas como o Vite proporciona ciclos de compilação e hot-reload rápidos, acelerando o desenvolvimento iterativo e garantindo a entrega atempada das interfaces.
 
@@ -1208,7 +1261,10 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
 
 === 4.4 Diagrama de Classes
 
-#diagrama("Diagrama de Classes — Modelo de Domínio DLMCare (PlantUML)")
+#figure(
+  image("images/diagrama_classes.png", width: 85%),
+  caption: [Diagrama de Classes — Modelo de Domínio DLMCare],
+)
 
 #prompt-box[
   *Prompt*
@@ -1242,19 +1298,34 @@ A transição estrutural definida na modelação de dados exige um mapeamento cl
 
 O diagrama de componentes representa a decomposição lógica da aplicação em módulos independentes, interligados através da API do backend. Esta visão é útil para preparar a implementação incremental da Etapa 3.
 
-#diagrama("Diagrama de Componentes — Decomposição Lógica da Aplicação DLMCare")
+#figure(
+  image("images/diagrama_componentes.png", width: 100%),
+  caption: [Diagrama de Componentes — Decomposição Lógica da Aplicação DLMCare],
+)
 
 === 5.2 Diagramas de Sequência
 
 Os Diagramas de Sequência (UML) descrevem como os objetos interagem ao longo do tempo para executar uma funcionalidade. Focam-se na ordem temporal das mensagens trocadas, ilustrando o fluxo de dados e controlo entre os componentes do sistema (interface, lógica, base de dados). São cruciais para entender a lógica de execução e identificar ineficiências ou erros no processamento da informação.
 
-#diagrama("Diagrama de Sequência — UC01: Registar Cliente e Trotinete")
+#figure(
+  image("images/seq_uc01.png", width: 100%),
+  caption: [Diagrama de Sequência — UC01: Registar Cliente e Trotinete],
+)
 
-#diagrama("Diagrama de Sequência — UC02: Registar Diagnóstico e Abater Peças")
+#figure(
+  image("images/seq_uc02.png", width: 100%),
+  caption: [Diagrama de Sequência — UC02: Registar Diagnóstico e Abater Peças],
+)
 
-#diagrama("Diagrama de Sequência — UC04: Emitir Fatura")
+#figure(
+  image("images/seq_uc04.png", width: 100%),
+  caption: [Diagrama de Sequência — UC04: Emitir Fatura],
+)
 
-#diagrama("Diagrama de Sequência — UC06: Consultar Histórico do Cliente")
+#figure(
+  image("images/seq_uc06.png", width: 100%),
+  caption: [Diagrama de Sequência — UC06: Consultar Histórico do Cliente],
+)
 
 #prompt-box[
   *Prompt*
@@ -1302,6 +1373,8 @@ A tabela seguinte detalha a interface de comunicação do sistema, descrevendo o
   [GET], [#raw("/dashboard")], [Obtém métricas operacionais e financeiras.], [Administrador],
   [GET], [#raw("/auditoria")], [Consulta logs de alterações críticas.], [Administrador],
 )
+
+Os endpoints que alteram stock ou faturação devem ser executados dentro de transações de base de dados. Em caso de falha parcial, a operação deve ser revertida para evitar inconsistências.
 
 === 6.2 Design de Interfaces e Wireframes Textuais
 
@@ -1373,9 +1446,9 @@ O contrato estabelece:
 
 === 7.3 Schemas e Validações
 
-Todos os contratos de dados foram modelados em Pydantic v2, no diretório #raw("backend/app/schemas/"). Os schemas asseguram validação automática dos dados de entrada antes de atingirem a lógica de negócio. Foram criados 14 ficheiros de schemas, cobrindo todas as entidades do sistema.
+Todos os contratos de dados foram modelados em Pydantic v2, no diretório #raw("backend/app/schemas/"). Os schemas asseguram validação automática dos dados de entrada antes de atingirem a lógica de negócio. Foram criados 15 ficheiros de schemas, cobrindo todas as entidades do sistema (incluindo o ficheiro `common.py` com os schemas de resposta genérica paginada e envelope de dados, partilhados por todos os módulos).
 
-Os enums definem os valores possíveis dos campos controlados, nomeadamente `PerfilUtilizador` (quatro perfis), `EstadoOrdemServico` (oito estados), `TipoEventoAuditoria` (29 eventos auditáveis), `CategoriaPeca`, `EstadoFatura` e `TipoMovimentoStock`, entre outros.
+Os enums definem os valores possíveis dos campos controlados, nomeadamente `PerfilUtilizador` (quatro perfis), `EstadoOrdemServico` (oito estados), `TipoEventoAuditoria` (31 eventos auditáveis), `CategoriaPeca`, `EstadoFatura` e `TipoMovimentoStock`, entre outros.
 
 As validações embutidas nos schemas incluem:
 
@@ -1389,7 +1462,7 @@ As validações embutidas nos schemas incluem:
 
 O sistema de autenticação foi implementado com tokens JWT em #raw("app/core/security.py"), com as dependências FastAPI correspondentes em #raw("app/auth/dependencies.py").
 
-*Tokens JWT:* em cada autenticação são emitidos dois tokens — um access token (validade de 8 horas) e um refresh token de duração mais longa. O payload inclui `sub` (ID do utilizador), `nome`, `email`, `perfil`, `loja_id`, `loja_nome` e `ativo`. Toda a informação do utilizador viaja no token, pelo que nenhum acesso à base de dados é necessário para validar um pedido autenticado. A segurança das passwords utiliza bcrypt com custo 12, contornando uma incompatibilidade conhecida entre `passlib 1.7.4` e `bcrypt >= 5.x`.
+*Tokens JWT:* em cada autenticação são emitidos dois tokens — um access token (validade de 8 horas) e um refresh token de duração mais longa. O payload inclui `sub` (ID do utilizador), `nome`, `email`, `perfil`, `loja_id`, `loja_nome` e `ativo`. Toda a informação do utilizador viaja no token, pelo que nenhum acesso à base de dados é necessário para validar um pedido autenticado. A segurança das passwords utiliza bcrypt com o custo por omissão de 12 rounds (confirmado nos hashes do seed: `$2b$12$...`), chamando `bcrypt.gensalt()` diretamente para contornar uma incompatibilidade conhecida entre `passlib 1.7.4` e `bcrypt >= 5.x`.
 
 *Controlo de acesso por perfil (RBAC):* a dependência `require_roles(*perfis)` é uma factory que gera dependências FastAPI reutilizáveis para cada endpoint. Uma tentativa de acesso sem o perfil adequado devolve 403 com código `PERMISSION_DENIED`.
 
@@ -1415,7 +1488,7 @@ O backend expõe 14 módulos funcionais, cada um com o seu router e serviço cor
 
 *Dashboard (#raw("/dashboard")):* métricas calculadas dinamicamente — ordens por estado, ordens concluídas por loja, tempo médio de reparação no período, faturação total, peças abaixo do stock mínimo e eficiência por mecânico (ordens concluídas e minutos trabalhados totais, com base nos registos de tempo individuais).
 
-*Auditoria (#raw("/auditoria")):* registo de 29 tipos de eventos, cobrindo autenticação (sucesso e falha), ciclo de vida das OS, movimentações de stock, transferências, pedidos de peça, emissão de faturas e alterações a todas as entidades do sistema. Administradores veem todos os registos; gestores veem apenas os da sua loja.
+*Auditoria (#raw("/auditoria")):* registo de 31 tipos de eventos, cobrindo autenticação (sucesso e falha), ciclo de vida das OS, movimentações de stock, transferências, pedidos de peça, emissão de faturas e alterações a todas as entidades do sistema (incluindo `LOJA_CRIADA` e `LOJA_ATUALIZADA`). Administradores veem todos os registos; gestores veem apenas os da sua loja.
 
 *Utilizadores (#raw("/utilizadores")):* gestão de staff pelo administrador — criação, edição de dados, desativação de contas e reposição de password; protegido exclusivamente para `ADMINISTRADOR`.
 
@@ -1437,6 +1510,7 @@ As Ordens de Serviço constituem o núcleo operacional do sistema e seguem uma m
   fill: rgb("#f4f8ff"),
 )[
   `PENDENTE` → `EM_DIAGNOSTICO` → `EM_REPARACAO` ↔ `AGUARDA_PECAS` → `CONCLUIDA` → `FATURADA` \
+  `AGUARDA_APROVACAO` → `EM_REPARACAO` (by-pass manual para aprovação do gerente, quando aplicável) \
   Qualquer estado anterior a `FATURADA` pode transitar para `CANCELADA`.
 ]
 
@@ -1444,7 +1518,7 @@ As transições permitidas e os perfis autorizados a executá-las encontram-se d
 
 *Fluxo de diagnóstico:* ao concluir o diagnóstico, o mecânico submete os serviços identificados a partir do catálogo (podendo adicionar entradas personalizadas). O sistema calcula automaticamente o `preco_servico` como soma dos preços dos serviços selecionados, transita a OS diretamente para `EM_REPARACAO` e envia automaticamente um email ao cliente com o resumo das operações a realizar.
 
-*Registo de tempos:* cada sessão de trabalho ativa é registada com início, fim e minutos acumulados, associados ao mecânico responsável. Um mecânico não pode ter timers ativos em duas OS em simultâneo — uma tentativa devolve 409 `MECANICO_TIMER_CONFLICT` com os dados da OS conflituante, permitindo ao frontend apresentar um diálogo de confirmação para mudança de OS. A conclusão de uma OS requer timer ativo no momento da transição.
+*Registo de tempos:* cada sessão de trabalho ativa é registada com início, fim e minutos acumulados, associados ao mecânico responsável. Uma tentativa de iniciar um timer numa OS que já tem um timer ativo devolve 409 com a mensagem `"Já existe um timer ativo nesta OS."`, prevenindo registos duplicados.
 
 *Observações internas:* todos os perfis autenticados podem adicionar observações internas a uma OS. As transições de estado com texto de observação são guardadas automaticamente com um prefixo identificativo (ex.: `[Conclusão da Reparação]`), diferenciando-as de notas livres.
 
@@ -1489,3 +1563,259 @@ O nível máximo é 5, correspondendo a 10% de desconto (2% por nível). O desco
 *Envio de email (#raw("utils/email.py")):* notificações automáticas ao cliente em português com templates HTML para quatro eventos — trotinete pronta para levantamento, OS cancelada (RF14), resumo do diagnóstico, e fatura com PDF em anexo. O envio utiliza `BackgroundTasks` do FastAPI para não bloquear a resposta HTTP. Falhas de SMTP são silenciosas, não afetando o resultado da operação principal.
 
 *Tratamento global de erros:* um exception handler registado em #raw("main.py") converte os erros de validação Pydantic (HTTP 422) para o formato de erro normalizado do contrato, garantindo consistência em todas as respostas de erro da API.
+
+=== 7.9 Organização e Arquitetura de Persistência
+
+A implementação direta da camada de persistência marcou a consolidação da arquitetura do sistema. Esta base de dados real foi desenvolvida utilizando *MySQL 8.0*, suportada pelo driver compatível nativo `PyMySQL` e pelo ORM (Object-Relational Mapper) *SQLAlchemy 2.0*.
+
+Para garantir o baixo acoplamento e manter a escalabilidade do sistema desde o primeiro momento, adotou-se estritamente o *Repository Pattern*. Esta decisão arquitetural dividiu a responsabilidade de manipulação de dados de forma clara:
+
+- *Repositories* (#raw("app/repositories/")) — classes dedicadas exclusivamente à interação com a base de dados via SQLAlchemy (ex: `ClienteRepository`, `OrdemServicoRepository`). Não contêm lógica de negócio nem invocam exceções HTTP.
+- *Services* — recebem a injeção da sessão de base de dados (`db: Session`) e orquestram as chamadas aos repositórios, centralizando toda a lógica de processamento e regras do domínio.
+- *Routers* — limitam-se a injetar a dependência `Depends(get_db)` e a encaminhá-la para a camada de serviço, mantendo a sua assinatura contratual focada apenas na validação de inputs e outputs.
+
+Esta abordagem permitiu um desenvolvimento estruturado e garantiu o cumprimento estrito do contrato da API previamente estabelecido (#raw("docs/backend_api_contract_etapa3.md")).
+
+=== 7.10 Modelação e Estrutura Relacional
+
+A modelação de dados utilizou a sintaxe moderna e tipada do SQLAlchemy 2.0, baseada em `Mapped[tipo]` e `mapped_column`, o que garante coerência estrita com o analisador estático do Python e com os schemas do Pydantic.
+
+A estrutura relacional assenta num forte esquema de dependências e restrições de integridade, refletindo a hierarquia do domínio de negócio:
+
+- *Identidade e Acessos:* As tabelas `lojas` e `utilizadores` estabelecem a base de multi-tenancy. A chave estrangeira `loja_id` propaga-se a quase todas as entidades do sistema (Clientes, Ordens de Serviço, Stock).
+- *Gestão Operacional:* A entidade central `ordens_servico` possui múltiplas relações complexas: chaves estrangeiras para `trotinetes`, `clientes`, `mecanico_id` e tabelas de junção detalhadas como `os_pecas` (snapshot do preço no momento da aplicação) e `os_servicos` (catálogo de serviços aplicados no diagnóstico).
+- *Gestão de Catálogo:* O isolamento do catálogo global na tabela `pecas` versus a tabela `stock_lojas` (entidade associativa que guarda a quantidade física e o `limite_minimo` por filial).
+
+=== 7.11 Integridade Transacional (ACID)
+
+A conformidade com as propriedades ACID do MySQL foi um requisito não-negociável, garantido através do controlo transacional ao nível do serviço (e não do repositório). Esta centralização é vital em operações complexas.
+
+Um exemplo crítico desta implementação ocorre na rotação de estado e faturação: no processo de emissão de uma fatura (`fatura_service.emitir()`), o sistema precisa de verificar se a Ordem de Serviço está concluída, calcular o subtotal com base nas peças aplicadas, criar o registo na tabela `faturas`, atualizar o estado da OS para `FATURADA` e gerar o registo de auditoria.
+
+Ao executar um único `db.commit()` no final do fluxo do serviço, o SQLAlchemy assegura que todas estas operações SQL decorrem na mesma transação fechada. O uso estratégico do `db.flush()` permite obter os IDs auto-incrementados (necessários para formatar o número da fatura) sem fechar a transação. Se ocorrer qualquer anomalia computacional ou quebra de restrição de integridade no MySQL, é feito um `rollback` automático, impedindo a existência de faturas "órfãs" ou Ordens de Serviço faturadas sem registo financeiro.
+
+#block(
+  fill: rgb("#f5f5f5"),
+  inset: 10pt,
+  radius: 4pt,
+  width: 100%,
+)[
+#set text(font: "Cascadia Code", size: 8pt)
+```python
+def emitir(self, body: FaturaCreateRequest, current_user: CurrentUserResponse) -> FaturaResponse:
+    os = self.os_repo.get_by_id(body.ordem_servico_id)
+    if not os:
+        raise HTTPException(status_code=404, detail="Ordem de Serviço não encontrada")
+
+    if current_user.perfil != PerfilUtilizador.ADMINISTRADOR and os.loja_id != current_user.loja_id:
+        raise HTTPException(status_code=403, detail="Não tem permissões para esta Ordem de Serviço")
+
+    if os.fatura:
+        raise HTTPException(
+            status_code=409,
+            detail={"detail": "A Ordem de Serviço já se encontra faturada.",
+                    "code": "ORDER_ALREADY_INVOICED"}
+        )
+
+    if os.estado != EstadoOrdemServico.CONCLUIDA:
+        raise HTTPException(
+            status_code=400,
+            detail={"detail": "Ordem de Serviço não está concluída.",
+                    "code": "ORDER_NOT_CONCLUDED"}
+        )
+
+    subtotal_pecas = sum(peca.quantidade * peca.preco_venda_unitario for peca in os.pecas_aplicadas)
+
+    # Cálculo do desconto
+    desconto_tipo = body.desconto_tipo.value if body.desconto_tipo else None
+    desconto_valor = body.desconto_valor
+    if body.desconto_tipo is None or body.desconto_valor == 0.0:
+        valor_desconto = 0.0
+    elif body.desconto_tipo.value == "PERCENTUAL":
+        base = os.preco_servico + subtotal_pecas
+        valor_desconto = round(base * body.desconto_valor / 100, 2)
+    else:  # FIXO
+        valor_desconto = body.desconto_valor
+
+    valor_final = os.preco_servico + subtotal_pecas - valor_desconto
+
+    # Cria Fatura na sessão com numero=None; flush para obter o ID auto-incrementado
+    nova_fatura = self.fatura_repo.create(
+        numero=None,
+        ordem_servico_id=os.id,
+        estado=EstadoFatura.EMITIDA,
+        subtotal_pecas=subtotal_pecas,
+        valor_final=valor_final,
+        data_emissao=datetime.now(timezone.utc),
+        desconto_tipo=desconto_tipo,
+        desconto_valor=desconto_valor,
+        valor_desconto=valor_desconto,
+    )
+
+    self.db.flush()  # Obtém o ID sem fazer commit
+    year = datetime.now(timezone.utc).year
+    nova_fatura.numero = f"FAT-{year}-{nova_fatura.id:04d}"
+    numero_fatura = nova_fatura.numero
+
+    os.estado = EstadoOrdemServico.FATURADA
+
+    # Registo de auditoria
+    self.auditoria_repo.registar(
+        evento=TipoEventoAuditoria.FATURA_EMITIDA,
+        descricao=f"Fatura {numero_fatura} emitida para a OS #{os.id}",
+        utilizador_id=current_user.id,
+        loja_id=os.loja_id,
+        detalhe={"ordem_servico_id": os.id, "valor_final": valor_final}
+    )
+
+    self.db.commit()  # Efetiva todas as operações na base de dados
+    fatura_completa = self.fatura_repo.get_by_id(nova_fatura.id)
+    return self._build_fatura_response(fatura_completa)
+```
+]
+
+=== 7.12 Controlo de Versões (Alembic) e Povoamento de Dados
+
+A evolução do esquema da base de dados foi gerida através da ferramenta de migrations *Alembic*, operando em sintonia com os modelos declarativos do SQLAlchemy.
+
+Para além da infraestrutura aplicacional, foram desenvolvidos scripts SQL nativos para cobrir as fases de provisionamento e testes da aplicação:
+
+- *`init.sql`* — Script de inicialização executado como `root`, focado no princípio do menor privilégio. Cria o esquema `dlmcare` com charset `utf8mb4` (suporte universal de caracteres) e o utilizador aplicacional `dlmcare_user`, limitando as permissões estruturais (`GRANT`) exclusivamente a esta base de dados.
+- *`seed.sql`* — Script base responsável por injetar o catálogo de dados estáticos para as três filiais (Lisboa, Porto, Braga), 12 peças representativas com limites mínimos e quantidades, 20 serviços de diagnóstico base e utilizadores com hashes `bcrypt` reais.
+- *`demo_data.sql`* — Um script avançado com foco na testagem de dashboards e paginação. Introduz complexidade temporal simulando 29 Ordens de Serviço distribuídas entre janeiro e maio de 2026, com faturas reais emitidas, mecânicos distintos, cálculos com níveis de fidelização dinâmicos e tempos de reparação acumulados.
+
+=== 7.13 Gestão de Sessões e Connection Pooling
+
+A estabilidade do sistema sob carga é garantida pela forma como o backend gere as ligações ao MySQL. A criação contínua de novas conexões TCP à base de dados para cada pedido HTTP seria um estrangulamento de performance.
+
+Para resolver isto, o sistema foi configurado com o `create_engine` do SQLAlchemy utilizando *Connection Pooling*. A sessão transacional é gerada e injetada dinamicamente em cada endpoint através do sistema de *Dependency Injection* do FastAPI (`Depends(get_db)`). Esta abordagem utiliza um gerador Python (`yield`), assegurando que a sessão é aberta no início do pedido HTTP e que o `db.close()` é garantido no final, mesmo na ocorrência de exceções não tratadas, prevenindo memory leaks e deadlocks no MySQL.
+
+=== 7.14 O Padrão Repository na Prática: Mitigação de Problemas e Queries Dinâmicas
+
+Para evidenciar a robustez da camada de persistência, destacam-se duas implementações nos repositórios que resolvem problemas clássicos de mapeamento objeto-relacional (ORM).
+
+==== 7.14.1 Prevenção de N+1 Queries (Lazy Loading vs Eager Loading)
+
+O acesso a entidades com múltiplas chaves estrangeiras (como uma Ordem de Serviço, que depende do Cliente, Trotinete e Peças) gera frequentemente dezenas de queries subjacentes se não for controlado. No `OrdemServicoRepository`, utiliza-se `joinedload` para instruir o SQLAlchemy a resolver todas as relações através de `LEFT OUTER JOINs` numa única transação SQL.
+
+#block(
+  fill: rgb("#f5f5f5"),
+  inset: 10pt,
+  radius: 4pt,
+  width: 100%,
+)[
+#set text(font: "Cascadia Code", size: 8pt)
+```python
+def get_by_id(self, os_id: int) -> OrdemServico | None:
+    return self.db.query(OrdemServico).options(
+        joinedload(OrdemServico.cliente),
+        joinedload(OrdemServico.trotinete),
+        joinedload(OrdemServico.mecanico),
+        joinedload(OrdemServico.pecas_aplicadas).joinedload(OSPeca.peca),
+        joinedload(OrdemServico.registos_tempo)
+    ).filter(OrdemServico.id == os_id).first()
+```
+]
+
+Esta abordagem reduz potencialmente dezenas de queries individuais a uma única operação SQL com JOINs, independentemente do número de relações carregadas.
+
+==== 7.14.2 Consultas Dinâmicas, Filtros e Paginação
+
+Módulos como o Dashboard ou o Histórico exigem consultas complexas. O `AuditoriaRepository` demonstra como o sistema constrói queries dinâmicas em tempo real, anexando cláusulas `WHERE` apenas quando os filtros são fornecidos pelo utilizador, e aplicando lógica de paginação (`offset` e `limit`) a nível da base de dados para minimizar a transferência de dados pesados pela rede.
+
+#block(
+  fill: rgb("#f5f5f5"),
+  inset: 10pt,
+  radius: 4pt,
+  width: 100%,
+)[
+#set text(font: "Cascadia Code", size: 8pt)
+```python
+def listar(self, loja_id: int | None = None, evento: str | None = None,
+           data_inicio=None, data_fim=None, page: int = 1, page_size: int = 20):
+
+    query = self.db.query(Auditoria).options(joinedload(Auditoria.utilizador))
+
+    if loja_id is not None:
+        query = query.filter(Auditoria.loja_id == loja_id)
+    if evento is not None:
+        query = query.filter(Auditoria.evento == evento)
+    if data_inicio is not None:
+        query = query.filter(func.date(Auditoria.timestamp) >= data_inicio)
+
+    total = query.count()
+    skip = (page - 1) * page_size
+    itens = query.order_by(Auditoria.timestamp.desc()).offset(skip).limit(page_size).all()
+
+    return itens, total
+```
+]
+
+A construção dinâmica da query evita a criação de múltiplas funções especializadas, mantendo um único ponto de entrada para todas as combinações de filtros possíveis.
+
+// ============================================================
+// CAPÍTULO 4 — VERIFICAÇÃO E QUALIDADE
+// ============================================================
+= Capítulo 4 — Verificação, Validação e Avaliação da Qualidade do Software Produzido
+
+A garantia da qualidade é um pilar fundamental no desenvolvimento de sistemas de informação complexos, especialmente em contextos onde a integridade dos dados e a fiabilidade das operações — como a faturação, gestão de inventário e diagnósticos de manutenção — são críticas para o funcionamento do negócio. No âmbito do projeto DLMCare, a estratégia de testes foi concebida para assegurar que a implementação não só cumpre os requisitos funcionais estabelecidos, mas que é também resiliente a erros inesperados e inconsistências de estado.
+
+A presente etapa descreve a metodologia de testes adotada, baseada no princípio da pirâmide de testes, privilegiando testes de integração que validam o fluxo completo de interação entre a API, a camada de serviços (Business Logic) e a persistência de dados. A abordagem focou-se em três eixos principais: a verificação de fluxos de sucesso (Happy Paths), o robustecimento contra condições de erro e estados inválidos (Edge Cases e Negative Testing), e a garantia de que as regras de negócio e restrições de integridade da base de dados são rigorosamente respeitadas.
+
+Através de uma suite de testes automatizados e da análise contínua de métricas de cobertura de código (Code Coverage), foi possível identificar e mitigar falhas precocemente, reduzindo o risco de regressões e garantindo que o sistema mantém um comportamento previsível e seguro, mesmo sob condições de operação adversas.
+
+== 8. Verificação e Testes
+
+=== 8.1 Abordagem e Estratégia de Testes
+
+A estratégia de testes do sistema DLMCare foi desenhada sob a premissa da Pirâmide de Testes, priorizando a integração para validar a lógica de negócio central (Services) e a persistência de dados (Repositories). Esta abordagem garante que as regras de faturação, inventário e transições de estado sejam validadas no seu contexto real de execução.
+
+Para garantir a fiabilidade da suite de testes, estabeleceu-se um ambiente de execução totalmente isolado e determinístico. A escolha de uma base de dados em memória em conjunto com a extensão `StaticPool` do SQLAlchemy não foi arbitrária: esta configuração permite que toda a infraestrutura de persistência resida em RAM, eliminando a latência de I/O de disco e garantindo que o sistema de testes seja extremamente célere. A utilização do `StaticPool` resolve um problema técnico comum em testes paralelos — a "amnésia" de dados. Ao partilhar a mesma conexão de memória entre as diferentes threads de teste, garante-se que todas as operações ocorrem num único contexto de transação, evitando erros de "table not found" ou inconsistências de estado que ocorreriam com pools de conexão padrão.
+
+O estado inicial do sistema é assegurado pela fixture `db_session`, que funciona como um "Gold Standard". Antes de cada teste, esta fixture é responsável pela limpeza de estado (executar um `drop_all` seguido de um `create_all`, garantindo que não existe contaminação de dados proveniente de execuções anteriores) e pelo seed realístico (popular a base de dados com um cenário predefinido contendo Lojas, Utilizadores, Clientes e um inventário de peças e trotinetes). Esta abordagem garante que o sistema de testes é auto-contido: qualquer membro da equipa pode executar a suite de testes no seu ambiente local e obter resultados consistentes, sem a necessidade de configurar servidores de base de dados externos ou gerir migrações de dados prévias.
+
+=== 8.2 Robustez e Validação de Input
+
+A robustez do sistema é garantida pela validação rigorosa na camada de entrada (Pydantic), impedindo que dados corrompidos cheguem à camada de lógica de negócio (Services). Foi implementada uma política de Testes de Negativa onde o objetivo não é o sucesso da operação, mas a garantia de que o sistema falha com o código de erro adequado.
+
+```python
+def test_criar_cliente_nif_duplicado(rec_client):
+    cliente_data = {
+        "nome": "João Ninguém",
+        "nif": "123456789",
+        "telemovel": "912345678",
+        "email": "joao@teste.pt",
+        "consentimento_rgpd": True,
+    }
+
+    # Caso Normal: Criar cliente
+    res1 = rec_client.post("/api/v1/clientes", json=cliente_data)
+    assert res1.status_code == 201
+
+    # Edge Case: Tentar criar outro cliente com o MESMO NIF
+    res2 = rec_client.post("/api/v1/clientes", json=cliente_data)
+    assert res2.status_code in [400, 409]
+    assert res2.json()["detail"]["code"] == "DUPLICATE_ENTRY"
+```
+
+=== 8.3 Testes de Regras de Negócio e Estados de Transição
+
+A robustez do sistema também é testada através da sua Máquina de Estados das OS. O objetivo é garantir que não existem "atalhos" lógicos que comprometam a integridade financeira ou o inventário.
+
+```python
+def test_transferencia_stock_insuficiente(admin_client):
+    # A peça 1 e a loja 1 são criadas no conftest. A peça 1 tem 10 de stock na loja 1.
+    # Tentamos transferir 11 unidades, o que deve falhar.
+    transferencia_data = {
+        "peca_id": 1,         # Peca "PNEU-001"
+        "loja_origem_id": 1,  # Loja "Braga"
+        "loja_destino_id": 2, # Loja "Porto"
+        "quantidade": 11,     # Mais do que o stock de 10
+    }
+
+    res = admin_client.post("/api/v1/stock/transferencias", json=transferencia_data)
+
+    # A validação de stock deve ser prioritária e falhar.
+    assert res.status_code == 400
+    assert "insuficiente" in res.json()["detail"].lower()
+```
