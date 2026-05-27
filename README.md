@@ -249,6 +249,31 @@ cd ../frontend && npm install
 
 ---
 
+## Como executar os testes de integração
+
+1. Navegue para a pasta do backend a partir da raiz do projeto:
+```bash
+cd backend
+```
+
+2. Ative o ambiente virtual:
+```bash
+source venv/bin/activate
+```
+
+3. (Se for a primeira vez) Instale as dependências de teste:
+```bash
+pip install pytest pytest-cov
+```
+
+4. Execute o Pytest. O comando irá descobrir e correr os testes em `tests/test_api.py` e gerar um relatório de cobertura na pasta `htmlcov/`. Se o objetivo for verificar onde falta coverage, substitua `html` por `term-missing`:
+```bash
+cd ..
+pytest --cov=backend/app --cov-config=.coveragerc --cov-report=html --cov-report=term tests/test_api.py
+```
+
+---
+
 ## Documentação
 
 | Ficheiro | Conteúdo |
