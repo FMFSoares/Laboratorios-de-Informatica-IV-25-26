@@ -64,6 +64,23 @@ class UtilizadorResponse(UtilizadorBase):
     )
 
 
+class UtilizadorUpdate(BaseModel):
+    """Schema para actualizar um utilizador existente (campos opcionais)."""
+
+    nome: str | None = Field(None, min_length=1)
+    email: EmailStr | None = None
+    perfil: PerfilUtilizador | None = None
+    loja_id: int | None = None
+    ativo: bool | None = None
+    comissao: int | None = None
+
+
+class PasswordResetRequest(BaseModel):
+    """Body do PATCH /utilizadores/{id}/password — apenas ADMINISTRADOR."""
+
+    nova_password: str = Field(..., min_length=6, description="Nova palavra-passe em texto simples.")
+
+
 class UtilizadorResumo(BaseModel):
     """Versão resumida usada em respostas aninhadas (ex: mecanico em OS)."""
 

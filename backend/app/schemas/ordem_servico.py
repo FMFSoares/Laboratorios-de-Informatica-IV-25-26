@@ -124,12 +124,11 @@ class OrdemServicoCreate(BaseModel):
         PrioridadeOrdemServico.NORMAL, description="Prioridade da ordem de serviço."
     )
     preco_servico: float = Field(
-        ...,
+        0.0,
         ge=0.0,
         description=(
-            "Preço comercial/tabelado do serviço prestado. "
-            "Entra diretamente no valor final da fatura. "
-            "Não é calculado com base no tempo de mão de obra."
+            "Preço do serviço. Calculado automaticamente pelo mecânico no diagnóstico. "
+            "Pode ser enviado a 0 na criação da OS."
         ),
     )
 
@@ -141,7 +140,6 @@ class OrdemServicoCreate(BaseModel):
                 "mecanico_id": 3,
                 "descricao_problema": "Não arranca. Bateria parece descarregada mesmo após carga.",
                 "prioridade": "NORMAL",
-                "preco_servico": 25.00,
             }
         }
     )
@@ -233,6 +231,39 @@ class OrdemServicoObservacaoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+# ── Schemas de diagnóstico ───────────────────────────────────────────────────
+
+
+class OSServicoResumo(BaseModel):
+    id: int
+    servico_id: int | None
+    nome: str
+    preco: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DiagnosticoItemCreate(BaseModel):
+    servico_id: int | None = Field(None, description="ID do serviço do catálogo. Null se personalizado.")
+    nome: str = Field(..., min_length=1, max_length=200, description="Nome do serviço/problema diagnosticado.")
+    preco: float = Field(..., ge=0.0, description="Preço acordado para este item.")
+
+
+class DiagnosticoSubmit(BaseModel):
+    itens: list[DiagnosticoItemCreate] = Field(..., min_length=1, description="Lista de serviços/problemas diagnosticados.")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "itens": [
+                    {"servico_id": 1, "nome": "Revisão geral", "preco": 35.00},
+                    {"servico_id": None, "nome": "Substituição de rolamento dianteiro", "preco": 18.50},
+                ]
+            }
+        }
+    )
+
+
 # ── Schema de detalhe (com objectos aninhados) ────────────────────────────────
 
 
@@ -257,6 +288,7 @@ class OrdemServicoDetalheResponse(BaseModel):
         ge=0.0,
         description="Preço tabelado do serviço. Base do cálculo da fatura.",
     )
+    servicos_diagnostico: list[OSServicoResumo] = Field(default_factory=list)
     pecas_aplicadas: list[PecaAplicadaResumo] = Field(default_factory=list)
     subtotal_pecas: float = Field(
         0.0,
@@ -285,6 +317,7 @@ class OrdemServicoDetalheResponse(BaseModel):
     minutos_em_atraso: int | None = Field(None, description="Minutos acima da média, quando em atraso.")
     inicio_tempo_atual: datetime | None = Field(None, description="Timestamp de início da sessão de tempo activa, ou null se não há timer a correr.")
     observacoes: list[OrdemServicoObservacaoResponse] = Field(default_factory=list)
+    estado_anterior: EstadoOrdemServico | None = Field(None, description="Estado imediatamente anterior (preenchido apenas em respostas a PATCH /estado).")
 
     model_config = ConfigDict(from_attributes=True)
 

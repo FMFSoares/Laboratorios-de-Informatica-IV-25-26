@@ -1,8 +1,9 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getOrdemServico, atualizarEstado } from '../../services/ordensServico.js'
+import { getOrdemServico, atualizarEstado, atualizarMecanico } from '../../services/ordensServico.js'
 import { getCliente } from '../../services/clientes.js'
+import { getUtilizadores } from '../../services/utilizadores.js'
 import { useAuthStore } from '../../store/auth.js'
 import StatusBadge from '../../components/ui/StatusBadge.vue'
 import LoadingSpinner from '../../components/ui/LoadingSpinner.vue'
@@ -27,30 +28,48 @@ const showFaturaModal = ref(false)
 const faturaModalId = ref(null)
 
 const showEmitirModal = ref(false)
+
+const showMecanicoModal   = ref(false)
+const mecanicos           = ref([])
+const selectedMecanicoId  = ref(null)
+const mecanicoLoading     = ref(false)
+const mecanicoError       = ref('')
 const nivelFidelizacao = ref(0)
 const descontoSugerido = ref(0)
 
 const perfil = computed(() => auth.getCurrentUser?.perfil)
 
-// Valid transitions per (estado, perfil)
+// Valid transitions per (estado, perfil) — matches backend _TRANSICOES
 const TRANSICOES = {
   PENDENTE: {
-    ADMINISTRADOR: [{ estado: 'CANCELADA', label: 'Cancelar OS', danger: true }],
-    GERENTE_LOJA: [{ estado: 'CANCELADA', label: 'Cancelar OS', danger: true }],
-    RECECIONISTA: [{ estado: 'CANCELADA', label: 'Cancelar OS', danger: true }],
+    ADMINISTRADOR: [
+      { estado: 'EM_DIAGNOSTICO', label: 'Iniciar Diagnóstico', danger: false },
+      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
+    ],
+    GERENTE_LOJA: [
+      { estado: 'EM_DIAGNOSTICO', label: 'Iniciar Diagnóstico', danger: false },
+      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
+    ],
+    RECECIONISTA: [
+      { estado: 'EM_DIAGNOSTICO', label: 'Iniciar Diagnóstico', danger: false },
+      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
+    ],
     MECANICO: [{ estado: 'EM_DIAGNOSTICO', label: 'Iniciar Diagnóstico', danger: false }],
   },
   EM_DIAGNOSTICO: {
     ADMINISTRADOR: [
       { estado: 'AGUARDA_APROVACAO', label: 'Enviar para Aprovação', danger: false },
-      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
+      { estado: 'EM_REPARACAO', label: 'Iniciar Reparação Direta', danger: false },
     ],
     GERENTE_LOJA: [
       { estado: 'AGUARDA_APROVACAO', label: 'Enviar para Aprovação', danger: false },
-      { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
+      { estado: 'EM_REPARACAO', label: 'Iniciar Reparação Direta', danger: false },
     ],
     RECECIONISTA: [],
-    MECANICO: [{ estado: 'AGUARDA_APROVACAO', label: 'Enviar para Aprovação', danger: false }],
+    MECANICO: [
+      { estado: 'AGUARDA_APROVACAO', label: 'Enviar para Aprovação', danger: false },
+      { estado: 'EM_REPARACAO', label: 'Iniciar Reparação Direta', danger: false },
+    ],
   },
   AGUARDA_APROVACAO: {
     ADMINISTRADOR: [
@@ -62,25 +81,21 @@ const TRANSICOES = {
       { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
     ],
     RECECIONISTA: [
-      { estado: 'EM_REPARACAO', label: 'Aprovar — Iniciar Reparação', danger: false },
       { estado: 'CANCELADA', label: 'Recusar / Cancelar', danger: true },
     ],
     MECANICO: [],
   },
   EM_REPARACAO: {
     ADMINISTRADOR: [
-      { estado: 'AGUARDA_PECAS', label: 'Aguardar Peças', danger: false },
       { estado: 'CONCLUIDA', label: 'Marcar como Concluída', danger: false },
       { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
     ],
     GERENTE_LOJA: [
-      { estado: 'AGUARDA_PECAS', label: 'Aguardar Peças', danger: false },
       { estado: 'CONCLUIDA', label: 'Marcar como Concluída', danger: false },
       { estado: 'CANCELADA', label: 'Cancelar OS', danger: true },
     ],
     RECECIONISTA: [],
     MECANICO: [
-      { estado: 'AGUARDA_PECAS', label: 'Aguardar Peças', danger: false },
       { estado: 'CONCLUIDA', label: 'Marcar como Concluída', danger: false },
     ],
   },
@@ -115,6 +130,11 @@ const canEmitirFatura = computed(() =>
   ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'].includes(perfil.value) &&
   os.value?.estado === 'CONCLUIDA' &&
   !os.value?.fatura_id
+)
+
+const canAssignMecanico = computed(() =>
+  ['ADMINISTRADOR', 'GERENTE_LOJA'].includes(perfil.value) &&
+  !['CANCELADA', 'FATURADA'].includes(os.value?.estado)
 )
 
 async function loadOS() {
@@ -161,6 +181,33 @@ async function confirmTransition() {
   } finally {
     actionLoading.value = false
     await loadOS()
+  }
+}
+
+async function openMecanicoModal() {
+  mecanicoError.value = ''
+  selectedMecanicoId.value = os.value.mecanico?.id ?? null
+  mecanicos.value = []
+  showMecanicoModal.value = true
+  mecanicoLoading.value = true
+  try {
+    const { data } = await getUtilizadores({ page_size: 100 })
+    mecanicos.value = (data.data ?? []).filter(u => u.perfil === 'MECANICO' && u.ativo)
+  } catch {
+    mecanicoError.value = 'Não foi possível carregar a lista de mecânicos.'
+  } finally {
+    mecanicoLoading.value = false
+  }
+}
+
+async function confirmMecanico() {
+  mecanicoError.value = ''
+  try {
+    await atualizarMecanico(os.value.id, { mecanico_id: selectedMecanicoId.value || null })
+    showMecanicoModal.value = false
+    await loadOS()
+  } catch (e) {
+    mecanicoError.value = e.response?.data?.detail?.detail || 'Erro ao atribuir mecânico.'
   }
 }
 
@@ -345,6 +392,15 @@ function fmtDateTime(dt) {
             <p v-if="actionError" class="form-error" style="margin-top:0.75rem">{{ actionError }}</p>
           </div>
 
+          <!-- Mecânico -->
+          <div class="card" v-if="canAssignMecanico">
+            <h3 class="card-title">Mecânico</h3>
+            <p class="mecanico-nome">{{ os.mecanico?.nome || 'Não atribuído' }}</p>
+            <button class="btn btn--ghost btn--sm" style="margin-top:0.75rem; width:100%" @click="openMecanicoModal">
+              {{ os.mecanico ? 'Alterar mecânico' : 'Atribuir mecânico' }}
+            </button>
+          </div>
+
           <!-- Fatura emitida -->
           <div class="card" v-if="os.fatura_id">
             <h3 class="card-title">Fatura</h3>
@@ -383,6 +439,28 @@ function fmtDateTime(dt) {
     @close="showEmitirModal = false"
     @emitida="onFaturaEmitida"
   />
+
+  <!-- Atribuir mecânico modal -->
+  <Teleport to="body">
+    <div v-if="showMecanicoModal" class="overlay" @click.self="showMecanicoModal = false">
+      <div class="dialog">
+        <h2 class="dialog-title">Atribuir Mecânico</h2>
+        <div class="field" style="margin-top:1rem">
+          <label>Mecânico</label>
+          <div v-if="mecanicoLoading" style="padding:0.5rem 0; color:#6b7280; font-size:0.875rem">A carregar...</div>
+          <select v-else v-model="selectedMecanicoId">
+            <option :value="null">— Sem mecânico —</option>
+            <option v-for="m in mecanicos" :key="m.id" :value="m.id">{{ m.nome }}</option>
+          </select>
+        </div>
+        <p v-if="mecanicoError" class="form-error" style="margin-top:0.5rem">{{ mecanicoError }}</p>
+        <div class="dialog-actions">
+          <button class="btn btn--secondary" @click="showMecanicoModal = false">Cancelar</button>
+          <button class="btn btn--primary" :disabled="mecanicoLoading" @click="confirmMecanico">Confirmar</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 
   <!-- Estado transition modal -->
   <Teleport to="body">
@@ -470,6 +548,7 @@ function fmtDateTime(dt) {
 .prio-urgente { color: #dc2626; }
 
 .problem-text { color: #374151; line-height: 1.6; font-size: 0.9rem; }
+.mecanico-nome { font-size: 0.9rem; font-weight: 600; color: #111827; }
 
 .price-rows { display: flex; flex-direction: column; gap: 0.6rem; }
 .price-row { display: flex; justify-content: space-between; font-size: 0.9rem; color: #374151; }

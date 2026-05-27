@@ -35,3 +35,10 @@ class UtilizadorRepository:
         self.db.commit()
         self.db.refresh(novo)
         return novo
+
+    def update(self, utilizador: Utilizador, **kwargs) -> Utilizador:
+        for k, v in kwargs.items():
+            setattr(utilizador, k, v)
+        self.db.commit()
+        self.db.refresh(utilizador)
+        return utilizador

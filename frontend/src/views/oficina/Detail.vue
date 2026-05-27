@@ -8,8 +8,9 @@ import {
   iniciarTempo,
   pararTempo,
   adicionarPeca,
-  removerPeca,
+  submeterDiagnostico,
 } from '../../services/ordensServico.js'
+import { getServicos } from '../../services/servicos.js'
 import { getPecas } from '../../services/pecas.js'
 import { criarPedidoPeca } from '../../services/pedidosPeca.js'
 import { useAuthStore } from '../../store/auth.js'
@@ -36,6 +37,56 @@ const stateError = ref('')
 // Pause
 const pauseLoading = ref(false)
 
+// Diagnostic modal
+const showDiagModal = ref(false)
+const diagCatalog   = ref([])
+const diagSlots     = ref([{ servico_id: null }])
+const diagLoading   = ref(false)
+const diagError     = ref('')
+
+async function openDiagModal() {
+  diagSlots.value = [{ servico_id: null }]
+  diagError.value = ''
+  try {
+    const { data } = await getServicos({ apenas_ativos: true })
+    diagCatalog.value = data.data ?? []
+  } catch {
+    diagCatalog.value = []
+  }
+  showDiagModal.value = true
+}
+
+function onSlotChange(idx) {
+  if (idx === diagSlots.value.length - 1 && diagSlots.value[idx].servico_id !== null) {
+    diagSlots.value.push({ servico_id: null })
+  }
+}
+
+function removeSlot(idx) {
+  diagSlots.value.splice(idx, 1)
+  if (diagSlots.value.length === 0) diagSlots.value.push({ servico_id: null })
+}
+
+async function confirmDiag() {
+  const filled = diagSlots.value.filter(s => s.servico_id !== null)
+  if (filled.length === 0) { diagError.value = 'Selecione pelo menos uma operação.'; return }
+  diagLoading.value = true
+  diagError.value   = ''
+  try {
+    const itens = filled.map(s => {
+      const cat = diagCatalog.value.find(c => c.id === s.servico_id)
+      return { servico_id: s.servico_id, nome: cat.nome, preco: cat.preco_base }
+    })
+    await submeterDiagnostico(os.value.id, { itens })
+    showDiagModal.value = false
+    await load()
+  } catch (e) {
+    diagError.value = e.response?.data?.detail?.detail || 'Erro ao submeter diagnóstico.'
+  } finally {
+    diagLoading.value = false
+  }
+}
+
 // Timer-conflict modal (when starting work while another OS timer is active)
 const showConflict = ref(false)
 const conflictActiveOS = ref(null)
@@ -55,7 +106,7 @@ let pecaSearchTimer
 // Mechanic-only state machine
 const TRANSICOES = {
   PENDENTE: [{ estado: 'EM_DIAGNOSTICO', label: 'Iniciar Diagnóstico' }],
-  EM_DIAGNOSTICO: [{ estado: 'EM_REPARACAO', label: 'Iniciar Reparação' }],
+  EM_DIAGNOSTICO: [],
   AGUARDA_APROVACAO: [],
   EM_REPARACAO: [
     { estado: 'AGUARDA_PECAS', label: 'Aguardar Peças' },
@@ -88,8 +139,8 @@ const availableActions = computed(() => TRANSICOES[os.value?.estado] ?? [])
 // The right-column "milestone" button — modal-confirmed, moves the OS to the next major phase
 const rightColumnAction = computed(() => {
   if (!os.value) return null
-  if (os.value.estado === 'EM_DIAGNOSTICO') return { estado: 'EM_REPARACAO', label: 'Concluir Diagnóstico' }
-  if (os.value.estado === 'EM_REPARACAO')   return { estado: 'CONCLUIDA',    label: 'Concluir Reparação' }
+  if (os.value.estado === 'EM_DIAGNOSTICO') return { isDiag: true, label: 'Concluir Diagnóstico' }
+  if (os.value.estado === 'EM_REPARACAO')   return { estado: 'CONCLUIDA', label: 'Concluir Reparação' }
   return null
 })
 
@@ -285,8 +336,6 @@ async function submitPeca() {
   }
 }
 
-const removingPecaId = ref(null)
-
 // Part request (pedido de peça ao gerente)
 const showPedidoPeca   = ref(false)
 const pedidoPecaSearch = ref('')
@@ -344,18 +393,6 @@ async function submitPedidoPeca() {
     pedidoPecaError.value = e.response?.data?.detail?.detail || 'Erro ao enviar pedido.'
   } finally {
     pedidoPecaLoading.value = false
-  }
-}
-
-async function removePeca(pecaId) {
-  removingPecaId.value = pecaId
-  try {
-    await removerPeca(os.value.id, pecaId)
-    await load()
-  } catch (e) {
-    pecaError.value = e.response?.data?.detail?.detail || 'Erro ao remover peça.'
-  } finally {
-    removingPecaId.value = null
   }
 }
 
@@ -453,21 +490,12 @@ function fmtDateTime(dt) {
                 <tr>
                   <th>Peça</th>
                   <th class="col-right">Qtd</th>
-                  <th v-if="canAddParts"></th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="p in os.pecas_aplicadas" :key="p.peca_id">
                   <td>{{ p.peca_nome }}</td>
                   <td class="col-right">{{ p.quantidade }}</td>
-                  <td v-if="canAddParts" class="col-remove">
-                    <button
-                      class="btn-remove"
-                      :disabled="removingPecaId === p.peca_id"
-                      @click="removePeca(p.peca_id)"
-                      title="Remover peça"
-                    >✕</button>
-                  </td>
                 </tr>
               </tbody>
             </table>
@@ -571,18 +599,12 @@ function fmtDateTime(dt) {
           <div class="card card--conclude" v-if="rightColumnAction">
             <button
               class="btn btn--primary btn--action"
-              @click="startTransition(rightColumnAction)"
+              :disabled="rightColumnAction.estado === 'CONCLUIDA' && !timerAtivo"
+              :title="rightColumnAction.estado === 'CONCLUIDA' && !timerAtivo ? 'O timer deve estar ativo para concluir' : ''"
+              @click="rightColumnAction.isDiag ? openDiagModal() : startTransition(rightColumnAction)"
             >
               ✓ {{ rightColumnAction.label }}
             </button>
-          </div>
-
-          <!-- Waiting for approval notice -->
-          <div class="card card--info" v-if="os.estado === 'AGUARDA_APROVACAO'">
-            <div class="card-title">A aguardar aprovação</div>
-            <p class="info-text">
-              O diagnóstico foi concluído. Esta ordem está a aguardar aprovação do gerente para iniciar a reparação.
-            </p>
           </div>
 
           <OsObservacoes
@@ -615,6 +637,35 @@ function fmtDateTime(dt) {
           <button class="btn btn--secondary" :disabled="stateLoading" @click="showEstadoModal = false">Cancelar</button>
           <button class="btn btn--primary" :disabled="stateLoading" @click="confirmTransition">
             {{ stateLoading ? 'A processar...' : 'Confirmar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Diagnostic modal -->
+  <Teleport to="body">
+    <div v-if="showDiagModal" class="overlay" @click.self="showDiagModal = false">
+      <div class="dialog dialog--diag">
+        <h2>Submeter Diagnóstico</h2>
+        <p class="dialog-sub">Selecione as operações identificadas. A OS passará imediatamente a Em Reparação.</p>
+
+        <!-- Operation slots -->
+        <div class="diag-slots">
+          <div class="diag-slot" v-for="(slot, idx) in diagSlots" :key="idx">
+            <select v-model="slot.servico_id" class="diag-select" @change="onSlotChange(idx)">
+              <option :value="null" disabled>Selecionar operação...</option>
+              <option v-for="s in diagCatalog" :key="s.id" :value="s.id">{{ s.nome }}</option>
+            </select>
+            <button class="btn-remove-slot" @click="removeSlot(idx)" title="Remover">✕</button>
+          </div>
+        </div>
+
+        <p v-if="diagError" class="form-error" style="margin-top: 0.5rem">{{ diagError }}</p>
+        <div class="dialog-actions">
+          <button class="btn btn--secondary" :disabled="diagLoading" @click="showDiagModal = false">Cancelar</button>
+          <button class="btn btn--primary" :disabled="diagLoading || diagSlots.every(s => s.servico_id === null)" @click="confirmDiag">
+            {{ diagLoading ? 'A submeter...' : 'Confirmar Diagnóstico' }}
           </button>
         </div>
       </div>
@@ -754,4 +805,12 @@ function fmtDateTime(dt) {
 .chevron { font-size: 0.75rem; color: #9ca3af; }
 .pedido-peca-body { margin-top: 1rem; }
 .success-msg { background: #dcfce7; color: #166534; border-radius: 6px; padding: 0.75rem 1rem; font-size: 0.875rem; font-weight: 500; }
+
+.dialog--diag { max-width: 500px; }
+.diag-slots { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1.25rem; }
+.diag-slot { display: flex; align-items: center; gap: 0.5rem; }
+.diag-select { flex: 1; padding: 0.5rem 0.7rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem; color: #111827; outline: none; }
+.diag-select:focus { border-color: #1abc9c; }
+.btn-remove-slot { background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 0.85rem; padding: 0.25rem 0.5rem; border-radius: 4px; flex-shrink: 0; transition: color 0.1s, background 0.1s; }
+.btn-remove-slot:hover { color: #dc2626; background: #fef2f2; }
 </style>

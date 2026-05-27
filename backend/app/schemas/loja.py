@@ -14,6 +14,23 @@ class LojaBase(BaseModel):
     email: EmailStr | None = Field(None, description="Email de contacto da loja.")
 
 
+class LojaCreate(LojaBase):
+    """Body do POST /lojas/."""
+    pass
+
+
+class LojaUpdate(BaseModel):
+    """Body do PATCH /lojas/{id} — todos os campos opcionais."""
+    nome: str | None = Field(None, min_length=1)
+    cidade: str | None = None
+    morada: str | None = None
+    telefone: str | None = None
+    email: EmailStr | None = None
+    ativo: bool | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class LojaResponse(LojaBase):
     """Resposta completa de uma loja."""
 

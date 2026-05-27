@@ -17,6 +17,10 @@ const TIPO_LABEL = {
   TRANSFERENCIA_CONCLUIDA: 'Transferência Concluída',
   PECA_APROVADA:           'Peça Aprovada',
   PECA_RECUSADA:           'Peça Recusada',
+  OS_ESTADO_ALTERADO:      'Estado de OS Alterado',
+  STOCK_MINIMO:            'Stock Mínimo Atingido',
+  OS_ATRASO:               'OS em Atraso',
+  FATURA_EMITIDA:          'Fatura Emitida',
 }
 
 const TIPO_COLOR = {
@@ -27,6 +31,10 @@ const TIPO_COLOR = {
   TRANSFERENCIA_CONCLUIDA: '#10b981',
   PECA_APROVADA:           '#1abc9c',
   PECA_RECUSADA:           '#ef4444',
+  OS_ESTADO_ALTERADO:      '#8b5cf6',
+  STOCK_MINIMO:            '#f97316',
+  OS_ATRASO:               '#ef4444',
+  FATURA_EMITIDA:          '#0ea5e9',
 }
 
 function fmtDate(iso) {
@@ -38,8 +46,12 @@ async function handleClick(n) {
   if (!n.lida) await store.markRead(n.id)
   if (n.referencia_tipo === 'pedido_transferencia' && n.referencia_id)
     router.push(`/transferencias/${n.referencia_id}`)
-  else if (n.referencia_tipo === 'pedido_peca' && n.referencia_id)
-    router.push(`/transferencias?tab=pedidos`)
+  else if (n.referencia_tipo === 'ordem_servico' && n.referencia_id)
+    router.push(`/ordens-servico/${n.referencia_id}`)
+  else if (n.referencia_tipo === 'peca' && n.referencia_id)
+    router.push(`/pecas/${n.referencia_id}`)
+  else if (n.referencia_tipo === 'fatura' && n.referencia_id)
+    router.push(`/faturas/${n.referencia_id}`)
 }
 
 onMounted(() => {
@@ -86,6 +98,7 @@ onMounted(() => {
           <div class="notif-msg">{{ n.mensagem }}</div>
         </div>
         <div v-if="!n.lida" class="notif-unread-badge" />
+        <button class="notif-delete" title="Apagar" @click.stop="store.deleteOne(n.id)">✕</button>
       </div>
     </div>
   </div>
@@ -115,4 +128,6 @@ onMounted(() => {
 .notif-title { font-size: 0.9rem; font-weight: 600; color: #1e293b; margin-bottom: 0.2rem; }
 .notif-msg { font-size: 0.85rem; color: #64748b; line-height: 1.5; }
 .notif-unread-badge { width: 8px; height: 8px; border-radius: 50%; background: #1abc9c; flex-shrink: 0; margin-top: 0.4rem; }
+.notif-delete { flex-shrink: 0; background: none; border: none; color: #cbd5e1; font-size: 0.8rem; line-height: 1; padding: 0.25rem 0.4rem; border-radius: 4px; cursor: pointer; transition: color 0.15s, background 0.15s; }
+.notif-delete:hover { color: #ef4444; background: #fef2f2; }
 </style>

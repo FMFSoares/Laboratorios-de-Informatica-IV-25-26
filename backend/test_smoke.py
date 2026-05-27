@@ -4,12 +4,33 @@ Corre sem base de dados — usa os mocks em memória.
 """
 
 import os
-os.environ["DATABASE_URL"] = "mysql+pymysql://test:test@localhost/test"
-os.environ["JWT_SECRET_KEY"] = "test-secret-key-dlmcare-2026"
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-dlmcare-2026")
 os.environ["APP_ENV"] = "test"
 
 from fastapi.testclient import TestClient
 from app.main import app
+from app.database import SessionLocal
+
+# Clean up test-created data so the suite is idempotent across runs
+def _cleanup():
+    db = SessionLocal()
+    try:
+        db.execute(__import__('sqlalchemy').text(
+            "DELETE FROM clientes WHERE nif IN ('225476541','301234566','412345676')"
+        ))
+        db.execute(__import__('sqlalchemy').text(
+            "DELETE FROM trotinetes WHERE numero_serie IN ('SG2026TEST999','SG2026TEST888')"
+        ))
+        db.execute(__import__('sqlalchemy').text(
+            "DELETE FROM pecas WHERE referencia IN ('PEC-TEST-001','PEC-TEST-002')"
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+_cleanup()
 
 client = TestClient(app, raise_server_exceptions=True)
 
@@ -43,28 +64,28 @@ check("Login credenciais inválidas → 401", r.status_code == 401)
 check("code = INVALID_CREDENTIALS", r.json()["detail"]["code"] == "INVALID_CREDENTIALS")
 
 # Login válido — RECECIONISTA
-r = client.post("/api/v1/auth/login", json={"email": "ana.lisboa@dlmcare.pt", "password": "password123"})
+r = client.post("/api/v1/auth/login", json={"email": "ines.carvalho@dlmcare.pt", "password": "123456"})
 check("Login válido (RECECIONISTA) → 201", r.status_code == 201)
 data = r.json()
 check("access_token presente", "access_token" in data)
-check("perfil = RECECIONISTA", data["user"]["perfil"] == "RECECIONISTA")
+check("perfil = RECECIONISTA", data["user"]["perfil"] == "RECECIONISTA", data.get("user", {}).get("perfil",""))
 TOKEN_REC = data["access_token"]
 REFRESH_TOKEN = data["refresh_token"]
 
 # Login válido — ADMIN
-r = client.post("/api/v1/auth/login", json={"email": "admin@dlmcare.pt", "password": "admin123"})
+r = client.post("/api/v1/auth/login", json={"email": "david@dlmcare.pt", "password": "123456"})
 check("Login válido (ADMIN) → 201", r.status_code == 201)
 TOKEN_ADMIN = r.json()["access_token"]
 
 # Login válido — MECANICO
-r = client.post("/api/v1/auth/login", json={"email": "joao.mecanico@dlmcare.pt", "password": "mecanico123"})
+r = client.post("/api/v1/auth/login", json={"email": "tiago.mendes@dlmcare.pt", "password": "123456"})
 check("Login válido (MECANICO) → 201", r.status_code == 201)
 TOKEN_MEC = r.json()["access_token"]
 
 # GET /me
 r = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {TOKEN_REC}"})
 check("GET /auth/me → 200", r.status_code == 200)
-check("email correto no /me", r.json()["email"] == "ana.lisboa@dlmcare.pt")
+check("email correto no /me", r.json()["email"] == "ines.carvalho@dlmcare.pt")
 
 # GET /me sem token
 r = client.get("/api/v1/auth/me")
@@ -109,7 +130,7 @@ check("GET /clientes/999 → 404", r.status_code == 404)
 # POST criar cliente
 novo_cliente = {
     "nome": "Pedro Teste",
-    "nif": "111222333",
+    "nif": "225476541",
     "telemovel": "931234567",
     "email": "pedro@teste.com",
     "morada": "Rua Teste 1",
@@ -125,11 +146,11 @@ r = client.post("/api/v1/clientes", json=novo_cliente, headers=HDR_REC)
 check("POST /clientes NIF duplicado → 409", r.status_code == 409)
 
 # MECANICO não pode criar clientes
-r = client.post("/api/v1/clientes", json={**novo_cliente, "nif": "999888777"}, headers=HDR_MEC)
+r = client.post("/api/v1/clientes", json={**novo_cliente, "nif": "301234566"}, headers=HDR_MEC)
 check("MECANICO POST /clientes → 403", r.status_code == 403)
 
 # RGPD obrigatório
-r = client.post("/api/v1/clientes", json={**novo_cliente, "nif": "555444333", "consentimento_rgpd": False}, headers=HDR_REC)
+r = client.post("/api/v1/clientes", json={**novo_cliente, "nif": "412345676", "consentimento_rgpd": False}, headers=HDR_REC)
 check("POST /clientes sem RGPD → 422", r.status_code == 422)
 
 # Histórico
@@ -167,7 +188,7 @@ r = client.post("/api/v1/trotinetes", json=nova_trotinete, headers=HDR_REC)
 check("POST /trotinetes número série duplicado → 409", r.status_code == 409)
 
 # MECANICO não pode criar trotinetes
-r = client.post("/api/v1/trotinetes", json={**nova_trotinete, "numero_serie": "SG2026TEST000"}, headers=HDR_MEC)
+r = client.post("/api/v1/trotinetes", json={**nova_trotinete, "numero_serie": "SG2026TEST888"}, headers=HDR_MEC)
 check("MECANICO POST /trotinetes → 403", r.status_code == 403)
 
 
@@ -217,8 +238,8 @@ r = client.get("/api/v1/stock", headers=HDR_REC)
 check("GET /stock (RECECIONISTA) → 200", r.status_code == 200)
 check("campo alerta presente", all("alerta" in s for s in r.json()["data"]))
 
-r = client.get("/api/v1/stock?alerta=true", headers=HDR_REC)
-check("GET /stock?alerta=true → 200", r.status_code == 200)
+r = client.get("/api/v1/stock?apenas_alertas=true", headers=HDR_REC)
+check("GET /stock?apenas_alertas=true → 200", r.status_code == 200)
 check("só devolve alertas", all(s["alerta"] for s in r.json()["data"]))
 
 # Entrada de stock
@@ -308,7 +329,7 @@ check("Transição inválida → 409 INVALID_STATE_TRANSITION", r.status_code ==
 client.patch(f"/api/v1/ordens-servico/{ID_OS_NOVA}/estado",
     json={"novo_estado": "AGUARDA_APROVACAO"}, headers=HDR_MEC)
 client.patch(f"/api/v1/ordens-servico/{ID_OS_NOVA}/estado",
-    json={"novo_estado": "EM_REPARACAO"}, headers=HDR_REC)
+    json={"novo_estado": "EM_REPARACAO"}, headers=HDR_ADMIN)
 
 # Adicionar peça
 r = client.post(f"/api/v1/ordens-servico/{ID_OS_NOVA}/pecas",
@@ -320,7 +341,7 @@ check("preco_custo NÃO na resposta de peça aplicada", "preco_custo" not in r.j
 
 # Registo de tempos
 r = client.post(f"/api/v1/ordens-servico/{ID_OS_NOVA}/tempos/iniciar", headers=HDR_MEC)
-check("POST /tempos/iniciar → 200", r.status_code == 200)
+check("POST /tempos/iniciar → 201", r.status_code == 201)
 
 r = client.post(f"/api/v1/ordens-servico/{ID_OS_NOVA}/tempos/iniciar", headers=HDR_MEC)
 check("Iniciar tempo já iniciado → 409", r.status_code == 409)
@@ -418,7 +439,7 @@ check("pecas_abaixo_stock_minimo é lista", isinstance(d["pecas_abaixo_stock_min
 
 # GERENTE pode aceder
 r = client.get("/api/v1/dashboard", headers={"Authorization": f"Bearer {r.json().get('access_token', TOKEN_ADMIN)}"})
-r = client.get("/api/v1/dashboard", headers={"Authorization": f"Bearer {client.post('/api/v1/auth/login', json={'email': 'gerente.porto@dlmcare.pt', 'password': 'gerente123'}).json().get('access_token', '')}"})
+r = client.get("/api/v1/dashboard", headers={"Authorization": f"Bearer {client.post('/api/v1/auth/login', json={'email': 'jose.barros@dlmcare.pt', 'password': '123456'}).json().get('access_token', '')}"})
 # Simplificar: usar token de admin com loja_id query param
 r = client.get("/api/v1/dashboard?loja_id=1", headers=HDR_ADMIN)
 check("GET /dashboard?loja_id=1 (ADMIN) → 200", r.status_code == 200)

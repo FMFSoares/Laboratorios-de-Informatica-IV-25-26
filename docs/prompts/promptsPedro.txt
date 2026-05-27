@@ -1,0 +1,795 @@
+## Prompt Documentation Behaviour
+
+For every major prompt sent by Pedro (code changes, feature implementations, significant modifications):
+1. Rewrite the prompt with the same meaning but better grammar and clarity
+2. Execute the rewritten prompt
+3. After changes are applied, append to this file: the rewritten prompt + a brief explanation of what was done
+Write the entry in the same language the original prompt was written in.
+
+For minor prompts (questions, explanations, status checks, clarifications): treat normally, nothing gets written here.
+
+---
+
+### [2026-05-08] Mechanic reassignment and RF17 repair time overage flag
+
+**Prompt:**
+We need two things on the backend. First, managers should be able to reassign the mechanic on a service order after it's been created — or remove the assignment entirely. Second, the system should flag orders that are taking too long. Compare each open OS against the average time it took to complete past orders, and if it's over that, mark it as overdue and show by how many minutes. Managers should also be able to filter the list to only show overdue orders.
+
+**What was done:**
+- Added `OrdemServicoMecanicoUpdate` and `OrdemServicoMecanicoUpdateResponse` schemas
+- Added `em_atraso` and `minutos_em_atraso` fields to `OrdemServicoResumo` and `OrdemServicoDetalheResponse`
+- Added `_media_minutos_reparacao()` helper (averages elapsed calendar minutes across CONCLUIDA/FATURADA OS) and `_atraso(os)` helper that returns `(bool, int | None)` for any open OS
+- Updated `_to_resumo` and `_to_detalhe` to call `_atraso()` and populate the new fields
+- Added `atualizar_mecanico()` service function with loja, profile, and terminal-state guards
+- Added `em_atraso` query param to `GET /ordens-servico` with filtering via `_atraso()`
+- Added `PATCH /{os_id}/mecanico` router endpoint (ADMINISTRADOR + GERENTE_LOJA only)
+
+---
+
+### [2026-05-08] Refactor duplicated loja access guard into shared utility
+
+**Prompt:**
+The loja access check is copy-pasted into basically every service file. Pull it out into one shared place so we're not maintaining the same logic in 5 different spots.
+
+**What was done:**
+- Created `app/utils/permissions.py` with a single `check_loja_access(loja_id: int, current_user)` function
+- Removed the 5 local copies of the guard from all service files (including the differently-named `_check_loja_acesso` in stock_service and the class method in cliente_service)
+- Updated all call sites to use `check_loja_access(loja_id, current_user)` with a direct `loja_id` int instead of passing full dicts
+- Zero behaviour change — same 403 LOJA_MISMATCH response, same admin bypass logic
+
+---
+
+### [2026-05-09] Client email notification when scooter is ready for pickup
+
+**Prompt:**
+When an OS is marked as completed, the client should automatically get an email telling them their scooter is ready to pick up. Set up the SMTP config, write a Portuguese HTML email template, and hook it into the state transition so it fires whenever an OS reaches CONCLUIDA. It shouldn't slow down the response and should fail silently if the client has no email on file.
+
+**What was done:**
+- Created `backend/.env` with Gmail SMTP credentials (gitignored)
+- Added `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` fields to `app/config.py`
+- Updated `.env.example` with SMTP template fields
+- Created `app/utils/email.py` with `send_email()` (smtplib + STARTTLS) and `notificar_trotinete_pronta()` with an HTML email template in Portuguese
+- Added `_notificar_cliente_trotinete_pronta()` helper in `ordem_servico_service.py` that looks up the client email and schedules the notification
+- Updated `atualizar_estado` to accept `background_tasks` and call the helper when state becomes `CONCLUIDA`
+- Updated the router to inject `BackgroundTasks` and pass it to the service
+- Silently skips if client has no email
+
+---
+
+### [2026-05-08] Mechanic single active timer constraint
+
+**Prompt:**
+A mechanic shouldn't be able to have timers running on two orders at the same time. If they try to start a timer while one is already running on a different OS, block it and return enough info so the frontend can ask them if they want to switch.
+
+**What was done:**
+- Added a conflict check in `iniciar_tempo` in `ordem_servico_service.py`: after verifying the current OS has no active timer, scans all other OS assigned to the same mechanic for a running `inicio_tempo_atual`
+- Returns `409` with `code: MECANICO_TIMER_CONFLICT` and both `os_conflito_id` and `os_conflito_numero` so the frontend has enough context to build the confirmation dialog
+- Updated the router doc for `POST /{os_id}/tempos/iniciar` to document the new error code
+- Frontend dialog left for when OS views are built
+
+---
+
+### [2026-05-09] Fix broken cross-service cliente lookup after ORM refactor
+
+**Prompt:**
+After the client service was refactored, a bunch of other services broke because they were importing a function that no longer exists. Fix it so the fatura, trotinete, and OS services can look up client info again.
+
+**What was done:**
+- Added `_find(cliente_id: int) -> Cliente | None` to `cliente_service.py`, using `SessionLocal` directly so other services don't need FastAPI DI injection
+- Updated `ordem_servico_service.py` (3 locations): `_to_resumo`, `_to_detalhe`, and `_notificar_cliente_trotinete_pronta` — all dict accesses replaced with attribute access; `cliente.get("email")` replaced with `cliente.email`
+- Updated `fatura_service.py`: `cliente["id"]`, `["nome"]`, `["nif"]`, `cliente.get("morada")` → attribute access
+- Updated `trotinete_service.py` (3 locations): `criar` and `obter` — all dict accesses replaced with attribute access
+
+---
+
+### [2026-05-09] Lojas router and consolidated loja data
+
+**Prompt:**
+Add a proper lojas endpoint with list and detail routes. Also, the loja data is duplicated all over the place in different services — put it in one canonical place and have everything pull from there.
+
+**What was done:**
+- Created `app/services/loja_service.py` with canonical `_MOCK_LOJAS` list and helper functions `_find`, `get_nome`, `get_telefone`, `listar`, `obter`
+- Created `app/routers/lojas.py` with `GET /lojas` and `GET /lojas/{id}`
+- Registered `lojas.router` in `main.py`
+- Updated `ordem_servico_service.py` to import `get_nome` and `get_telefone` from `loja_service` instead of using `stock_service._MOCK_LOJAS`; email notification now uses the real loja telefone from `loja_service`
+- Updated `utilizador_service.py` to use `get_nome` from `loja_service` instead of `f"Loja {body.loja_id}"`
+
+---
+
+### [2026-05-09] Frontend Phase 0 — base infrastructure
+
+**Prompt:**
+Set up the base frontend infrastructure: service files for each API domain, all routes registered with role restrictions, a sidebar that shows different items depending on who's logged in, a session timeout after 60 minutes idle, reusable UI components, and placeholder views for everything that isn't built yet so navigation doesn't break.
+
+**What was done:**
+- Created 9 service files in `src/services/` (`clientes.js`, `ordensServico.js`, `trotinetes.js`, `pecas.js`, `stock.js`, `faturas.js`, `dashboard.js`, `utilizadores.js`, `lojas.js`) — each exports typed functions that call `api.js`; views never touch axios directly
+- Created `src/composables/useSessionTimeout.js` — resets on any mousemove/keypress/touchstart/click, auto-logout after 60 minutes idle; mounted in `AppLayout.vue`
+- Created 6 UI components in `src/components/ui/`: `StatusBadge.vue` (colored pill per OS state), `StatCard.vue` (KPI card), `ConfirmDialog.vue` (teleported modal with danger variant), `DataTable.vue` (paginated table with named slots for cells and actions), `LoadingSpinner.vue`, `EmptyState.vue`
+- Updated `src/router/index.js` with all routes (clientes, ordens-servico, oficina, stock, faturas, utilizadores) with `meta: { roles: [...] }`; RBAC guard checks user `perfil` and redirects to dashboard if unauthorized
+- Updated `AppSidebar.vue` — computed nav items filtered by perfil; MECANICO sees only "Oficina", ADMINISTRADOR sees everything
+- Created 10 stub views across `src/views/` subfolders so navigation works immediately
+- Created `frontend/.env` with `VITE_API_BASE_URL=http://localhost:8000/api/v1`
+
+---
+
+### [2026-05-09] Fix global CSS — full desktop layout
+
+**Prompt:**
+The app looks like a narrow blog post because of the default Vite CSS. It's all centred and constrained to a small column. Replace the global styles with something that actually fills the screen like a desktop app.
+
+**What was done:**
+- Replaced `src/style.css` entirely — removed all Vite template CSS (`#app` width constraint, hero styles, automatic dark mode, etc.)
+- `html, body, #app` now fill 100% of the viewport
+- Full CSS reset (`box-sizing`, `margin`, `padding`)
+- Clean typography hierarchy: 14px base, h1 1.5rem, descending scale
+- Base styles for `input`, `select`, `textarea`, `label` with green (#1abc9c) focus ring
+- Thin custom scrollbar
+
+---
+
+### [2026-05-09] Backend refactor — repository pattern and consistent data access
+
+**Prompt:**
+The services are all reaching directly into in-memory lists with raw list comprehensions scattered everywhere, which is messy and will be a pain when we swap to a real database. Refactor everything to go through proper repository classes so the data access is encapsulated and switching to a DB later is as painless as possible.
+
+**What was done:**
+- Created 8 new repository files in `app/repositories/`:
+  - `utilizador_repository.py` — owns user data (previously in `auth_service`); `@dataclass Utilizador` with `MockUtilizadorRepository`
+  - `loja_repository.py` — canonical loja data; `@dataclass Loja` with `MockLojaRepository`; exposes `get_nome`, `get_telefone`, `as_dict`
+  - `trotinete_repository.py` — `@dataclass Trotinete` with `MockTrotineteRepository`
+  - `peca_repository.py` — `@dataclass Peca` with `MockPecaRepository`
+  - `stock_repository.py` — `@dataclass StockItem` with `MockStockRepository`; `consumir`, `adicionar`, `transferir` methods encapsulate business rules
+  - `ordem_servico_repository.py` — `@dataclass OrdemServico` with `MockOrdemServicoRepository`; `list_by_mecanico` and `count_by_trotinete` replace inline scans
+  - `fatura_repository.py` — `@dataclass Fatura` with `MockFaturaRepository`
+  - `auditoria_repository.py` — `@dataclass AuditoriaEvento` with `MockAuditoriaRepository`; `registar()` replaces direct `_MOCK_AUDITORIA.append()`
+- Rewrote all 9 services (`auth`, `utilizador`, `loja`, `peca`, `stock`, `trotinete`, `auditoria`, `ordem_servico`, `fatura`, `dashboard`) to use module-level `_repo = MockXxxRepository()` instances
+- `dashboard_service` now imports repos directly instead of `_MOCK_*` lists from 5 different services
+- Duplicate `_MOCK_LOJAS` dict removed from `stock_service`; `_MOCK_LOJAS_INFO` removed from `fatura_service` — both now use `MockLojaRepository`
+- All dict access (`os["estado"]`, `peca["nome"]`) replaced with attribute access (`.estado`, `.nome`) throughout all services
+- DB swap path: change `_repo = MockXxxRepository()` to `_repo = DBXxxRepository(db)` per service — zero service logic changes required
+
+---
+
+### [2026-05-10] Mechanic internal observations on service orders
+
+**Prompt:**
+Mechanics and managers need to be able to leave internal notes on a service order as it progresses — things like "waiting for a part" or "customer approved extra work by phone". These are separate from the initial problem description. Add this to the backend and include the full note history in the OS detail response.
+
+**What was done:**
+- Added `observacoes: list = field(default_factory=list)` to `OrdemServico` dataclass and `_next_obs_id: ClassVar[int]` counter to `MockOrdemServicoRepository`
+- Added `adicionar_observacao(os_id, texto, autor_id, autor_nome)` repository method that appends a dict with `id`, `texto`, `autor_id`, `autor_nome`, `criado_em`
+- Added `OrdemServicoObservacaoCreate` and `OrdemServicoObservacaoResponse` schemas (placed before `OrdemServicoDetalheResponse` to avoid forward-reference issues)
+- Added `observacoes: list[OrdemServicoObservacaoResponse]` field to `OrdemServicoDetalheResponse`
+- Updated `_to_detalhe()` to hydrate observacoes from the raw dicts
+- Added `adicionar_observacao()` service function — blocks CANCELADA, enforces loja access, records author from JWT
+- Added `POST /{os_id}/observacoes` router endpoint (ADMINISTRADOR + GERENTE_LOJA + MECANICO)
+
+---
+
+### [2026-05-10] Receptionist frontend views — Clientes and Ordens de Serviço
+
+**Prompt:**
+Build all the views the receptionist needs. That means: a client list with search, a client detail page, a list of service orders with filters, a step-by-step wizard to create a new OS (find client → pick scooter → fill in details), and the OS detail page where they can change the state, leave notes, see costs, and issue an invoice. Make sure the state transitions each profile can perform match what the backend allows.
+
+**What was done:**
+- Added `adicionarObservacao` to `src/services/ordensServico.js`
+- Built `views/clientes/Index.vue`: debounced search by NIF/telemovel, paginated DataTable, "Novo Cliente" modal with RGPD checkbox, redirects to detail on create
+- Built `views/clientes/Detail.vue`: fetches `GET /clientes/{id}` (includes trotinetes) + `GET /clientes/{id}/historico` in parallel; info grid, trotinete table, OS history table with StatusBadge, "Registar Trotinete" modal, "Nova OS" button with `?cliente_id=` pre-fill
+- Built `views/ordens-servico/Index.vue`: filter bar (estado select, date range inputs, em_atraso checkbox), paginated DataTable with StatusBadge and priority/delay columns, resets gracefully
+- Built `views/ordens-servico/Create.vue`: 3-step wizard with animated step indicator; step 1 searches client by NIF/telemovel, shows results or opens create form; step 2 shows client's trotinetes (from detail response) or opens register form; step 3 fills descricao_problema, prioridade, preco_servico; loja_id taken from JWT; redirects to new OS detail on success; accepts `?cliente_id=` query param to pre-fill step 1
+- Built `views/ordens-servico/Detail.vue`: two-column layout (info/parts left, actions/observations right); state transition buttons computed from a `TRANSICOES` map matching the backend; each transition opens a modal with optional observation text; observations panel lists existing entries and allows adding new ones (ADMIN/GERENTE/MECANICO only); cost summary; fatura emission button when OS is CONCLUIDA and not yet invoiced; em_atraso badge in header
+
+---
+
+### [2026-05-10] Mechanic frontend views — Oficina (desktop)
+
+**Prompt:**
+Build the mechanic's views for the /oficina section — just the desktop version for now, we'll do mobile later. The mechanic should see their assigned orders, be able to start and stop a work timer, add parts to the order, move it through the states they're responsible for, and leave internal notes. If they try to start a timer while one is already running on a different OS, show a dialog asking if they want to switch.
+
+**What was done:**
+- Added `inicio_tempo_atual: datetime | None` to `OrdemServicoDetalheResponse` schema and to `_to_detalhe()` in the service so the frontend knows when a timer session started
+- Built `views/oficina/Index.vue`: fetches OS filtered by `mecanico_id=auth.getCurrentUser.id`; estado filter with active-state options; paginated DataTable with StatusBadge, priority colour, em_atraso badge, and a live timer column (running indicator or accumulated minutes); `setInterval` updates `now` every second for the live display; row click navigates to `/oficina/{id}`
+- Built `views/oficina/Detalhe.vue`: fetches OS detail and computes live elapsed time every second from `tempo_total_minutos + (now - inicio_tempo_atual)`; timer block in the page header with start/stop button; on 409 MECANICO_TIMER_CONFLICT, stores the conflicting OS info and shows a confirmation dialog to stop it and switch timers; parts panel with debounced search against `GET /pecas?query=`, dropdown results (mousedown.prevent to stop blur before click), quantity input, and apply button; mechanic-specific state transitions displayed as action buttons with an optional observation modal; observations panel with full list and add-new form; cost summary with preco_servico, parts subtotal, and estimated total
+
+---
+
+### [2026-05-10] Bug fixes — state transition reload, timer/parts state guards, multi-tab auth
+
+**Bugs found during testing:**
+1. After a state transition (both in `oficina/Detalhe.vue` and `ordens-servico/Detail.vue`), the UI did not update immediately. The mechanic/receptionist saw an error, tried to resubmit, and got "transition not permitted" because the first attempt had already succeeded. The status only refreshed when another action (like stopping the timer) triggered a reload.
+2. In `oficina/Detalhe.vue`, the timer could be started and stopped while the OS was in AGUARDA_APROVACAO. Stopping the timer in this state appeared to "reset" the counter because the session was shorter than 1 minute (and the backend accumulates whole minutes only). The parts search was also visible in AGUARDA_APROVACAO, which made no sense since the mechanic is waiting for client approval.
+3. Using two browser tabs logged in as different users (mechanic and receptionist) caused the tabs to share auth state via localStorage. Refreshing the mechanic tab would load the receptionist's token, effectively logging out the mechanic.
+
+**Prompt:**
+There are three bugs. First, when you submit a state change the page sometimes shows an error even though it actually went through — and if you try again it says it's already done. The page just wasn't refreshing properly after the transition. Second, the timer and parts panel were showing up when the OS is waiting for client approval, which makes no sense. They should only appear when the mechanic is actually working. Third, if you have two tabs open with different users logged in, they share the same session, so logging in on one overwrites the other. Fix all three.
+
+**What was done:**
+- `oficina/Detalhe.vue`: moved `await load()` to `finally` block in `confirmTransition`; added `ESTADOS_TRABALHO = ['EM_DIAGNOSTICO', 'EM_REPARACAO', 'AGUARDA_PECAS']`; added `canTimer` computed; updated `canAddParts` to use same whitelist; timer button now uses `:disabled="!canTimer"`; timer label shows "Indisponível neste estado" when blocked
+- `ordens-servico/Detail.vue`: moved `await loadOS()` to `finally` block in `confirmTransition` — same root cause, same fix
+- `store/auth.js`: replaced all `localStorage` calls with `sessionStorage`; each tab now holds an independent token so testing with multiple accounts in separate tabs works correctly; trade-off: session does not survive the tab being closed (acceptable for an internal-use app)
+
+---
+
+### [2026-05-10] Active OS page — pause button and hide from list while active
+
+**Prompt:**
+When an OS has its timer running, it should disappear from the mechanic's order list and show up in the active OS page instead. On that page there should be a pause button — pressing it stops the timer and sends the OS back to the regular list (either Avaliação or Reparação depending on its state). The active OS slot then goes empty.
+
+**What was done:**
+- `oficina/Index.vue`: added `&& !o.tem_timer_ativo` to both computed filters so Avaliação and Reparação lists hide any OS with a running timer
+- `oficina/Ativa.vue`: added `pararTempo` import; added `pausing` ref and `pausar()` function that calls `pararTempo`, sets `osAtiva = null` on success (or re-fetches on error); replaced the single "Abrir OS" button with two buttons — "⏸ Pausar" (amber, flex fill) and "Abrir OS →" (ghost); added 15-second polling via `setInterval` / `onUnmounted` so the page updates when a timer is started from the detail view
+
+---
+
+### [2026-05-10] Auto-timer and simplified mechanic detail view
+
+**Bugs found / changes requested:**
+1. After clicking "Fazer Diagnóstico" a popup appeared asking for observations. Confirming updated the OS, but the popup stayed visible and showed some kind of error — even though the transition succeeded.
+2. The mechanic was manually starting and stopping the timer with a button, and there was a big clock in the header. The requirement changed: the timer should start automatically when a state that requires work is entered (EM_DIAGNOSTICO, EM_REPARACAO), stop automatically when leaving those states, and the visible timer clock should be removed — only the total minutes worked should be shown in the problem card.
+
+**Prompt:**
+There are two things to fix in the mechanic's OS detail page. First, when the mechanic confirms a state transition in the popup, the popup should disappear straight away — right now it stays open and shows an error even when the transition worked fine. Second, the mechanic shouldn't manually control the timer at all. When they click "Iniciar Diagnóstico" the timer should start by itself. Remove the big timer clock from the header and just show the total minutes worked in the problem card.
+
+**What was done:**
+- `oficina/Detalhe.vue`: removed all manual timer UI (start/stop button, live clock, `canTimer` computed, `toggleTimer` function, `now` ref and `clockInterval`)
+- Added `handleAutoTimer(novoEstado)`: starts the timer automatically when entering EM_DIAGNOSTICO or EM_REPARACAO, stops it when leaving to AGUARDA_APROVACAO / AGUARDA_PECAS / CONCLUIDA / CANCELADA; handles 409 MECANICO_TIMER_CONFLICT by silently stopping the conflicting OS and retrying
+- Added `⏱ N min trabalhados` in the meta-row of the problem card using `os.tempo_total_minutos`
+- `confirmTransition`: changed to a `success` flag pattern — API call, then if success set `success = true`, close modal; after try/catch, call `handleAutoTimer` only if success; `load()` always runs in finally
+
+---
+
+### [2026-05-10] Two-section mechanic list, real-time updates, and simplified repair workflow
+
+**Problems found / changes requested:**
+1. Confirming a transition in the mechanic popup still showed an error after closing — the modal wasn't disappearing immediately.
+2. When one user changed the state of an OS, other users didn't see it unless they refreshed the page manually.
+3. The mechanic's OS list was a single flat table with a filter. The desired layout is two separate sections: "Avaliação" (PENDENTE + EM_DIAGNOSTICO) above, and "Reparação" (EM_REPARACAO + AGUARDA_PECAS) below.
+4. After diagnosing a scooter, the flow required a receptionist to confirm before repair could start. That step should be skipped for the mechanic — diagnosing should move directly to repair without waiting for anyone.
+
+**Prompt:**
+There are two things still broken. First, after confirming a state transition in the popup, there is still an error showing even though the transition went through — the popup should close immediately when you hit confirm, no error. Second, when someone changes the state of an OS, the other users on different pages only see it if they refresh. It should update on its own after a few seconds. Also, I don't like the current layout for the mechanic OS list. Split it into two separate lists: one for evaluation (OSs pending or in diagnosis) and one for repair (OSs in repair or waiting for parts). And after the mechanic finishes diagnosing, it should go straight to repair — no need for the receptionist to approve.
+
+**What was done:**
+- `backend/app/services/ordem_servico_service.py`: added `(EM_DIAGNOSTICO → EM_REPARACAO)` transition for ADMINISTRADOR, GERENTE_LOJA, MECANICO; restricted `(EM_DIAGNOSTICO → AGUARDA_APROVACAO)` to ADMINISTRADOR and GERENTE_LOJA only (mechanic can no longer trigger that path)
+- `frontend/src/views/oficina/Index.vue`: complete rewrite — fetches all mechanic OS in one call with `page_size=100`, splits client-side into two computed arrays by state group; two tables with section headers and counts; polls every 30 seconds via `setInterval` with `onUnmounted` cleanup
+- `frontend/src/views/oficina/Detalhe.vue`: optimistic modal close — captures `targetEstado` and `obs` before clearing modal state, closes modal immediately on click, then fires API call; errors surface as page-level message; updated TRANSICOES so EM_DIAGNOSTICO offers "Iniciar Reparação" (→ EM_REPARACAO) instead of AGUARDA_APROVACAO; added 30-second polling that skips when modal is open
+- `frontend/src/views/ordens-servico/Index.vue`: added 30-second polling via `setInterval` / `onUnmounted`
+- `frontend/src/views/ordens-servico/Detail.vue`: same optimistic close pattern as mechanic view; added 30-second polling with modal guard
+
+---
+
+### [2026-05-10] Timer sync fix + mechanic sidebar redesign
+
+**Bugs found during testing:**
+1. The timer in `oficina/Detalhe.vue` would get stuck (e.g. at 01:00) after stopping and restarting. Root cause: `await load()` was inside the try block of `toggleTimer`. If `iniciarTempo` threw a 409 ("Tempo já iniciado" — backend had `inicio_tempo_atual` set from a previous session the frontend didn't know about), `load()` was skipped and the frontend stayed out of sync. The timer appeared frozen because `timerAtivo` was false (frontend thought timer was stopped) while the backend had it running.
+2. The mechanic sidebar showed Dashboard, which mechanics shouldn't access. The four items wanted: OS Activa, Ordens de Serviço, Inventário, Conta.
+
+**Prompt:**
+The timer keeps getting stuck because the page doesn't refresh properly when there's an error starting or stopping it. Fix that. Also, the mechanic sidebar had Dashboard on it which they shouldn't see — change it to four items: active OS, list of orders, inventory, and account. The active OS page should show whichever order the mechanic currently has a timer running on, or a message if there isn't one. The account page just needs their name, role, and a logout button.
+
+**What was done:**
+- `oficina/Detalhe.vue`: moved `await load()` to `finally` block in `toggleTimer`
+- `backend/app/schemas/ordem_servico.py`: added `tem_timer_ativo: bool = False` to `OrdemServicoResumo`
+- `backend/app/services/ordem_servico_service.py`: updated `_to_resumo` to set `tem_timer_ativo=os.inicio_tempo_atual is not None`
+- Created `views/oficina/Ativa.vue`: fetches mechanic's OSs with `page_size=100`, finds one where `tem_timer_ativo=true`, displays OS card with number/status/client/scooter/priority and "Abrir OS" button; shows empty state with link to list if no active timer
+- Created `views/conta/Index.vue`: shows avatar initial, nome, perfil label, loja; single "Terminar sessão" button that calls `auth.logout()` and redirects to login
+- `router/index.js`: added `/oficina/ativa` route (before `/:id` so static takes priority); added `/conta` route (no role restriction); added MECANICO to stock route roles; updated RBAC guard to redirect MECANICO to `/oficina` instead of `/dashboard` when accessing unauthorized routes
+- `AppSidebar.vue`: removed Dashboard from MECANICO; added 4 mechanic-only items: OS Activa → `/oficina/ativa`, Ordens de Serviço → `/oficina`, Inventário → `/stock`, Conta → `/conta`
+
+---
+
+### [2026-05-11] Remove price from mechanic view, restrict parts to repair phase, improve transition modal labels
+
+**Prompt:**
+Implement both changes we discussed — remove the cost summary from the mechanic's OS detail view, and remove the option to add parts during the diagnostic phase. Also, the popup when confirming a state transition shows raw state names like EM_DIAGNOSTICO, which looks too technical. Improve the labels so they show readable Portuguese names instead.
+
+**What was done:**
+- `oficina/Detalhe.vue`: removed the "Custo Estimado" card entirely (service price, parts subtotal, total — mechanics don't deal with billing)
+- `oficina/Detalhe.vue`: narrowed `ESTADOS_TRABALHO` from `['EM_DIAGNOSTICO', 'EM_REPARACAO', 'AGUARDA_PECAS']` to `['EM_REPARACAO', 'AGUARDA_PECAS']` — the "Adicionar Peça" form no longer appears during diagnosis
+- `oficina/Detalhe.vue` + `ordens-servico/Detail.vue`: added `ESTADO_LABELS` map to both files; state transition modal now shows "Em Diagnóstico → Em Reparação" instead of "EM_DIAGNOSTICO → EM_REPARACAO"
+
+---
+
+### [2026-05-11] Active OS indicator dot in sidebar
+
+**Prompt:**
+Can you put a small dot on the OS Activa sidebar item when there is an active OS with a running timer?
+
+**What was done:**
+- `AppSidebar.vue`: added `hasActiveOS` ref, `checkActiveOS()` function that calls `getOrdensServico` filtered by mechanic ID and checks `tem_timer_ativo`; polls every 30 seconds via `setInterval` / `onUnmounted`
+- Added a `<span class="active-dot">` inside the "OS Activa" nav link, shown only when `hasActiveOS` is true
+- Dot is green (`#1abc9c`) by default and turns white when the link is active (to stay visible against the green background)
+- Nav link changed from `display: block` to `display: flex` so the dot aligns inline with the label
+
+---
+
+### [2026-05-11] Full UI restructure — full-height sidebar, restyled login, centered account page
+
+**Prompt:**
+I don't really like the current UI. I don't like the layout, the account page isn't centred, there is missing information or it isn't being presented correctly. Can you restructure it?
+
+**What was done:**
+- `AppLayout.vue`: removed `AppHeader` entirely; layout is now sidebar + main content only, with no padding on `.main-content` (each view owns its own padding)
+- `AppSidebar.vue`: complete redesign — dark full-height panel (`#1e293b`); "DLMCare" brand at the top with green colour; nav items in the middle with active indicator bar on the left edge; user section at the bottom showing avatar initial, name, role (links to `/conta`), and a logout icon button; "Conta" removed from the nav list (accessible via the user section)
+- `conta/Index.vue`: fixed centering with `max-width: 520px; margin: 0 auto`; redesigned layout — avatar + name + role inline at the top, then a 2-column info grid showing email, perfil, loja, and user ID; logout button kept at the bottom of the card
+- `Login.vue`: restyled to match app — green "DLMCare" brand heading, green submit button, consistent input/label styles, same background colour as the rest of the app
+- `Dashboard.vue`: added `padding: 2rem` to `.dashboard-container` since `AppLayout` no longer provides it
+
+---
+
+### [2026-05-12] Block OS conclusion when timer is stopped + active OS conflict popup in the mechanic list
+
+**Prompt:**
+Make it impossible to conclude an OS if the timer is stopped. Also, when going to the OS list and clicking on an OS while another one has an active timer, show a popup saying "Atualmente a trabalhar na OS: [OS info]. Parar OS atual e resumir esta?" with a yes and no button.
+
+**What was done:**
+- `oficina/Detalhe.vue`: the "Marcar como Concluída" button (right column) is now `:disabled` when `rightColumnAction.estado === 'CONCLUIDA' && !timerAtivo`; a hint message "O timer tem de estar activo para concluir a OS." appears below the disabled button
+- `oficina/Index.vue`: both table row clicks now route through `handleRowClick(os)` instead of navigating directly; if another OS has `tem_timer_ativo = true`, the click opens a conflict modal showing the active OS number, client, and scooter serial; "Sim, mudar" stops the active timer via `pararTempo`, updates `workshopStore`, and navigates to the new OS; "Não" closes the modal without action; imported `pararTempo` and `useWorkshopStore`; added modal template (Teleport), `showConflict`, `conflictOS`, `pendingOS`, and `switching` refs
+
+---
+
+### [2026-05-12] Search, sortable columns, clear button, and mechanic history view
+
+**Prompt:**
+Add a search bar and sortable columns to both OS list views — the mechanic's oficina list and the receptionist's ordens-servico list. Clicking a column header should sort by that field; clicking again reverses direction. Also add a clear button that resets the search text and the active sort back to defaults, but only shows when something is actually active. Finally, add a "Histórico" page to the mechanic's menu showing their completed and cancelled orders, with preset period filters (today, this week, this month, custom date range) and the same search and sort behaviour.
+
+**What was done:**
+- `components/ui/DataTable.vue`: added `sortKey` and `sortDir` props and a `sort` emit; sortable column headers show ↕/↑/↓ icons, turn green when active, and are clickable — the parent manages sort state and passes already-sorted rows
+- `oficina/Index.vue`: added `search` ref and per-section sort state (`avalSort`, `repSort`); `avaliacao` and `reparacao` computeds apply `matchSearch` then `applySort`; `PRIORIDADE_ORDER` map ensures priority sorts by severity not alphabetically; "Limpar" button appears in the toolbar only when search or sort is non-default, resets both
+- `ordens-servico/Index.vue`: added `search` ref and `sortKey`/`sortDir` refs; switched to `page_size=100` so sort and search cover the full dataset rather than just the current page; `filteredOrdens` computed applies text filter then sort; existing "Limpar" button extended to also reset sort state; all 7 DataTable columns marked `sortable: true`
+- `backend/app/schemas/ordem_servico.py`: added `data_conclusao: datetime | None` to `OrdemServicoResumo` so list responses carry the completion date
+- `backend/app/services/ordem_servico_service.py`: `_to_resumo` now populates `data_conclusao` from the OS dataclass
+- `views/oficina/Historico.vue` (new): fetches all mechanic OS (`mecanico_id=current_user.id`, `page_size=100`) and filters client-side to CONCLUIDA/FATURADA/CANCELADA; preset pill buttons (Hoje / Esta semana / Este mês / Personalizado) filter by effective date (`data_conclusao` for completed/billed, `data_entrada` fallback for cancelled); custom date range inputs appear when "Personalizado" is selected; search bar + sortable table (7 columns, defaults to Conclusão descending); result count shown; rows navigate to `/oficina/:id`
+- `router/index.js`: added `/oficina/historico` route before `/oficina/:id` to prevent the static path being caught as a dynamic segment
+- `AppSidebar.vue`: added "Histórico" nav item for MECANICO between "Ordens de Serviço" and "Inventário"
+
+---
+
+### [2026-05-12] Button label corrections, conflict popup relocation, cancellation email, and labelled transition observations
+
+**Prompt:**
+Fix several things: the action button in the mechanic detail page showed "Concluir Reparação" when in diagnosis state — rename it to "Concluir Diagnóstico" and rename the button for the next step (completing repair) from "Marcar como Concluída" to "Concluir Reparação". Move the active-OS conflict popup from the OS list (where it fired on every row click) to the detail page, so it only appears when the mechanic actually tries to start or resume a timer. Also implement RF14 — send the client an email when their OS is cancelled, not just when it's ready. Finally, the comment entered in the state-transition modal was being discarded silently; save it as an OS observation, and make it visually distinct from regular notes by showing the transition type as a coloured badge above the comment text.
+
+**What was done:**
+- `oficina/Detalhe.vue`: fixed `rightColumnAction` computed — now returns `{ label: 'Concluir Diagnóstico', estado: 'EM_REPARACAO' }` in EM_DIAGNOSTICO and `{ label: 'Concluir Reparação', estado: 'CONCLUIDA' }` in EM_REPARACAO
+- `oficina/Index.vue`: removed the conflict modal entirely — `handleRowClick` now simply calls `router.push`; removed `pararTempo`, `useWorkshopStore`, conflict refs, and the Teleport template
+- `oficina/Detalhe.vue`: conflict detection moved here — `findConflictingOS()` fetches all OS and returns one with `tem_timer_ativo && id !== current`; `handleAutoTimer` and `resumeWork` both call it before starting; if a conflict exists a local modal appears asking to switch; `confirmConflict()` stops the conflicting timer and starts the new one; `doStartTimer()` centralises the actual `iniciarTempo` + `workshopStore.set(true)` call
+- `backend/app/utils/email.py`: added `notificar_os_cancelada()` — same HTML structure as `notificar_trotinete_pronta`, Portuguese copy explaining the OS was cancelled and providing loja contact
+- `backend/app/services/ordem_servico_service.py`: added `_notificar_cliente_os_cancelada()` helper (same pattern as existing CONCLUIDA helper); wired it into `atualizar_estado` under `elif body.novo_estado == E.CANCELADA`
+- `backend/app/services/ordem_servico_service.py`: transition observations now persisted — when `atualizar_estado` receives a non-empty `observacao`, it prefixes the text with a bracketed label (`[Conclusão do Diagnóstico]`, `[Conclusão da Reparação]`, `[Cancelamento]`) before calling `_repo.adicionar_observacao`
+- `oficina/Detalhe.vue`: added `OBS_LABEL_COLORS` dict and `parseObs(texto)` function that regex-matches `[Label] body` and returns `{ label, body, color }`; observation rendering updated to show a coloured inline badge (indigo for diagnosis, green for repair, red for cancellation) followed by the body text on a new line; unlabelled observations render as plain text as before
+
+---
+
+### [2026-05-12] Faturas list and invoice detail views
+
+**Prompt:**
+Build the faturas section. There should be a list view with search, filters, and sortable columns, and a detail view that renders the invoice in a clean, readable layout showing all the relevant information — client, scooter, service, parts, and totals.
+
+**What was done:**
+- `components/ui/StatusBadge.vue`: added `EMITIDA` (teal) and `ANULADA` (red) entries to the labels and colours maps
+- `views/faturas/Index.vue`: list view fetching all faturas (`page_size=100`) with client-side search (número, cliente, NIF), estado dropdown (all / Emitida / Anulada), date range filter on data_emissão, and sortable DataTable (6 columns, defaults to data_emissão descending); "Limpar" button resets all filters and sort
+- `views/faturas/Detail.vue`: invoice card layout — brand + loja info top-left, invoice number / date / status badge top-right; client and scooter info in a two-column block; service description line table; parts table rendered only when parts exist; totals section (service, parts subtotal, bold total) right-aligned with tabular numerics; footer with a clickable link to the originating OS; "Voltar" button at the top
+- `router/index.js`: added `/faturas/:id` route (ADMINISTRADOR + GERENTE_LOJA)
+
+---
+
+### [2026-05-12] Fatura preview modal with print and email (PDF attachment)
+
+**Prompt:**
+Clicking "Emitir Fatura" was navigating to /faturas/:id, which is inaccessible to RECECIONISTA and redirected them to the dashboard. Replace the navigation with a large modal that opens after the fatura is emitted. The modal should show a blank preview area for now, and have two visually equal buttons: one to print and one to send by email. If the client already has an email on file, the email button sends directly to that address. If not, it reveals an input to enter one. The email should include the fatura as a downloadable PDF attachment.
+
+**What was done:**
+- `requirements.txt`: added `fpdf2==2.8.3` for server-side PDF generation
+- `schemas/fatura.py`: added `email: str | None` to `FaturaClienteInfo`; added `FaturaEnviarEmailRequest` schema with optional `email` field
+- `services/fatura_service.py`: `emitir` now stores the client email in the fatura dict; new `enviar_email` function fetches the fatura, generates a PDF, and calls the email utility — raises 400 NO_EMAIL if neither the fatura nor the request body has an address
+- `utils/pdf.py` (new): `gerar_pdf_fatura` uses fpdf2 to generate an A4 invoice with brand header, client + scooter block, service line, optional parts table, and right-aligned totals section
+- `utils/email.py`: `send_email` updated to accept optional `attachment_bytes` / `attachment_filename` and uses `MIMEMultipart("mixed")` with a nested `"alternative"` part for HTML; new `enviar_fatura_email` sends the HTML notification email with the PDF as a `.pdf` attachment
+- `routers/faturas.py`: added `POST /faturas/{id}/enviar-email` endpoint (ADMINISTRADOR + GERENTE_LOJA + RECECIONISTA)
+- `services/faturas.js`: added `enviarEmailFatura(id, body)` call
+- `FaturaPreviewModal.vue` (new): 92vw × 90vh Teleport modal; header shows fatura number; body is a centred white paper (blank placeholder); footer has two equal-style bordered buttons — "Imprimir" calls `window.print()`, "Enviar por Email" shows the client's registered email inline or reveals an email input if none is registered; tracks sending/sent/error states; `@media print` hides header and footer so only the paper area prints
+- `ordens-servico/Detail.vue`: `doEmitirFatura` no longer navigates — reloads the OS then opens the modal with the new fatura ID; "Ver Fatura" card button also opens the modal via `openFaturaModal()`; `FaturaPreviewModal` imported and rendered conditionally
+
+---
+
+### [2026-05-12] Fix fatura email failure and blank modal preview
+
+**Bugs found:**
+1. Clicking "Enviar por Email" in the fatura modal returned a 500 error and the email was never sent — even though the "trotinete pronta" SMTP email worked fine. The root cause was two separate issues in `pdf.py`: (a) `fpdf2` was not installed in the venv (only added to `requirements.txt`, never installed), and (b) the PDF generation code used `ln=True` in every `cell()` call — an API that was removed in fpdf2 2.7.9. Once fpdf2 was installed, the `ln=True` calls raised a `TypeError` and crashed the endpoint before the email was ever attempted. A third bug: `dt.fromisoformat(str(fatura.data_emissao))` was used to format the date, but `fatura.data_emissao` is already a `datetime` object — converting to string first and re-parsing is fragile and unnecessary.
+2. The preview area in the fatura modal showed a blank white box with placeholder text instead of the actual invoice.
+
+**Prompt:**
+The fatura preview modal has two problems. First, the preview is completely blank — it should show the actual invoice with all the relevant information. Second, clicking "Enviar por Email" doesn't work and I'm not receiving any email.
+
+**What was done:**
+- Installed `fpdf2` in the backend venv (`pip install fpdf2`)
+- `backend/app/utils/pdf.py`: rewrote entirely using the fpdf2 2.7.9+ API — replaced all `ln=True`/`ln=False` in `cell()` calls with `new_x=XPos.LMARGIN, new_y=YPos.NEXT` and `new_x=XPos.RIGHT, new_y=YPos.TOP` respectively (imported from `fpdf.enums`); fixed date formatting to call `fatura.data_emissao.strftime("%d/%m/%Y")` directly instead of the broken `fromisoformat(str(...))` round-trip; verified PDF generation in the venv before touching the frontend
+- `FaturaPreviewModal.vue`: replaced the blank placeholder with a full invoice template — DLMCare brand + loja info (left) and invoice number/date/status badge (right); client and scooter info in a two-column block; service description line table; parts table rendered only when parts exist; right-aligned totals section with a bold total line; OS number in the footer
+
+---
+
+
+### [2026-05-12] Observations card unification, print→PDF, and client OS history
+
+**Prompt:**
+Three things: first, in the rececionista view, the comments about an OS don't look the same as in the mechanic view, so unify that card across both. Second, when trying to print the fatura, the output is bad and inconsistent with the PDF sent via email — make print produce the same PDF. Third, the OS isn't being saved in the client's OS history — implement that.
+
+**What was done:**
+
+- **Shared observations component** (`frontend/src/components/OsObservacoes.vue`):
+  - Extracted the observation card into a reusable component, matching the mechanic view's richer style
+  - Supports `parseObs` to detect auto-generated milestone labels like `[Conclusão da Reparação]` and renders them as colored bordered badges
+  - Props: `observacoes`, `os-id`, `can-add`; emits `refresh` so the parent reloads
+  - `ordens-servico/Detail.vue`: replaced the plain observation card with `<OsObservacoes>`; removed `novaObs`, `obsLoading`, `submitObs`, and obs CSS
+  - `oficina/Detalhe.vue`: same replacement; removed `novaObs`, `obsLoading`, `submitObs`, `parseObs`, `OBS_LABEL_COLORS`, and obs CSS
+
+- **Print → PDF** (identical to email PDF):
+  - Backend: added `descarregar_pdf(fatura_id, current_user) → bytes` to `fatura_service.py` (reuses `gerar_pdf_fatura`)
+  - Backend: added `GET /faturas/{fatura_id}/pdf` endpoint to `faturas.py` returning `Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": "inline; filename=..."})`
+  - Frontend: added `downloadFaturaPdf = (id) => api.get('/faturas/${id}/pdf', { responseType: 'blob' })` to `faturas.js`
+  - `FaturaPreviewModal.vue`: replaced `window.print()` with `downloadFaturaPdf` → `URL.createObjectURL` → `window.open(_blank)`; button now shows "A preparar PDF..." while loading; removed `@media print` CSS
+
+- **Client OS history**:
+  - `ordem_servico_repository.py`: added `list_by_cliente(cliente_id)` method
+  - `cliente_service.py`: implemented `historico()` — was a stub returning empty; now uses `MockOrdemServicoRepository.list_by_cliente`, looks up trotinete serial via `MockTrotineteRepository.get_by_id`, and fetches `valor_final` from `MockFaturaRepository` if `fatura_id` is set; results sorted newest first
+
+---
+
+### [2026-05-12] RF16 — Descontos comerciais e nível de fidelização de clientes
+
+**Prompt reescrito:**
+Implementa o RF16 — suporte a descontos comerciais (percentuais ou fixos) em campanhas de fidelização de clientes. Os clientes devem ter um campo de nível de fidelização, calculado automaticamente de forma logarítmica com base no número de ordens de serviço concluídas/faturadas, com cap de nível 5 (máximo 10% de desconto). Quando a rececionista emite uma fatura, o sistema deve sugerir o desconto correspondente ao nível do cliente, pré-preenchido no formulário, mas permitindo ajuste manual. O desconto é aplicado no momento da emissão da fatura e refletido no PDF e no modal de preview.
+
+**O que foi feito:**
+
+- **Backend — schemas/fatura.py**: adicionado enum `DescontoTipo` (PERCENTUAL | FIXO); `FaturaCreateRequest` recebe `desconto_tipo` e `desconto_valor` (opcionais); `FaturaResponse` inclui `desconto_tipo`, `desconto_valor` e `valor_desconto`
+- **Backend — fatura_repository.py**: `Fatura` dataclass e `create()` recebem `desconto_tipo`, `desconto_valor`, `valor_desconto`
+- **Backend — fatura_service.py**: função `emitir()` calcula `valor_desconto` (percentual: `subtotal_bruto × %/100`; fixo: min do valor com o subtotal); `valor_final = subtotal_bruto - valor_desconto`
+- **Backend — utils/pdf.py**: adicionada linha de desconto em vermelho entre os subtotais e o total, com label indicando a percentagem quando aplicável
+- **Backend — schemas/cliente.py**: `ClienteResponse` e `ClienteDetalheResponse` recebem `nivel_fidelizacao` (int 0–5) e `desconto_sugerido_pct` (float 0–10)
+- **Backend — cliente_service.py**: adicionada função `_calcular_fidelizacao(cliente_id)` com fórmula `nivel = min(5, floor(log2(n_concluidas + 1)))` e `desconto = nivel × 2%`; `listar()` e `obter()` enriquecem a resposta com estes valores
+- **Frontend — ordens-servico/Detail.vue**: botão "Emitir Fatura" abre agora um modal de confirmação que mostra o nível de fidelização do cliente e o desconto sugerido; permite escolher tipo e valor do desconto antes de confirmar
+- **Frontend — FaturaPreviewModal.vue**: linha de desconto em vermelho exibida nos totais quando `valor_desconto > 0`, com indicação da percentagem quando aplicável
+
+---
+
+### [2026-05-13] Emissão de fatura com preview em tempo real e desconto inline
+
+**Prompt reescrito:**
+Em vez do fluxo atual de dois modais (modal de desconto → confirmar → modal de preview), cria um único componente `FaturaEmitirModal.vue` que mostra imediatamente um preview da fatura em rascunho com os valores calculados do lado do cliente em tempo real, e que inclui os controlos de desconto inline na tabela de totais. Ao confirmar, emite a fatura e faz a transição para modo de leitura com os botões de imprimir e enviar por email.
+
+**O que foi feito:**
+
+- **`FaturaEmitirModal.vue`** (novo componente): recebe a OS completa, o nível de fidelização e o desconto sugerido como props; mostra um preview da fatura em rascunho com loja buscada via `getLoja`; o total é calculado por `computed` e reage em tempo real à alteração do tipo/valor do desconto; os controlos de desconto (select tipo + input valor) estão embutidos na linha de desconto da tabela de totais; ao confirmar chama `emitirFatura` e faz `getFatura` para transitar para modo confirmado com print/email
+- **`Detail.vue`**: removido o modal de desconto separado; o botão "Emitir Fatura" abre agora `FaturaEmitirModal`; `FaturaPreviewModal` mantém-se apenas para "Ver Fatura" em OS já faturadas; limpeza de refs e estilos não utilizados
+
+---
+
+### [2026-05-13] RNF08 — Timeout de sessão por perfil de utilizador
+
+**Prompt reescrito:**
+Implementa o RNF08 — timeout automático de sessão após 60 minutos de inatividade — de forma que seja configurável por perfil de utilizador. O perfil MECANICO deve ficar excluído por enquanto (os tablets da oficina são dedicados e um logout automático seria disruptivo a meio de uma reparação), mas a arquitetura deve permitir ativá-lo facilmente no futuro com um intervalo diferente. Documenta o prompt.
+
+**O que foi feito:**
+
+- **`useSessionTimeout.js`**: adicionado mapa `IDLE_TIMEOUTS` com timeout por perfil (`ADMINISTRADOR`, `GERENTE_LOJA`, `RECECIONISTA`: 60 minutos; `MECANICO`: `null`); se o perfil tiver `null`, a função retorna imediatamente sem registar qualquer listener nem timer — zero overhead para mecânicos; para ativar mecânicos no futuro basta mudar `null` para a duração pretendida (ex: `8 * 60 * MIN`); `AppLayout.vue` já chamava `useSessionTimeout()` e não precisou de alterações
+
+---
+
+### [2026-05-13] Vista de inventário com UI por perfil, entrada de stock e transferência entre lojas
+
+**Prompt reescrito:**
+Implementa a vista de inventário (`views/stock/Index.vue`) com comportamento diferente por perfil. Para o MECANICO: tabela simples com referência, nome e quantidade — itens com stock zero apresentados a cinzento, sem alertas, sem coluna de mínimos, sem botões de gestão. Para GERENTE_LOJA e ADMINISTRADOR: tabela completa com destaque de linhas em alerta (amarelo) e esgotadas (cinzento), coluna de mínimos, badge de estado (OK / Alerta / Esgotado), barra de filtros (pesquisa por texto, filtro de loja para ADMINISTRADOR, toggle "apenas alertas"), botão "Registar Entrada" e botão "Transferir". Os modais de entrada e de transferência devem estar inline na vista. No modal de transferência, o GERENTE_LOJA não deve poder alterar a loja de origem (é bloqueada à sua loja). Corrige também o serviço `stock.js` que usava path params errados, e o `stock_service.py` do backend que restringia o GERENTE_LOJA à sua própria loja no endpoint de leitura.
+
+**O que foi feito:**
+
+- **`frontend/src/services/stock.js`**: corrigido — `getStock(params)` passa agora `loja_id` como query param (`GET /stock?loja_id=X`) em vez de path param; `registarEntrada` e `transferirStock` apontam para os endpoints corretos (`/stock/entradas` e `/stock/transferencias`)
+- **`backend/app/services/stock_service.py`**: corrigida a restrição de leitura — `GERENTE_LOJA` pode agora consultar stock de todas as lojas (útil para solicitar transferências); RECECIONISTA e MECANICO continuam limitados à sua loja; operações de escrita (`entrada`, `transferência`) continuam protegidas por `check_loja_access`
+- **`views/stock/Index.vue`**: vista completa construída com tabela personalizada (para suportar estilos por linha); filtros e botões de ação visíveis apenas para `isGestao`; legenda de cores; modal de entrada com select de peça, select de loja (só para ADMINISTRADOR), e campo de quantidade; modal de transferência com peça, loja de origem (select livre para ADMINISTRADOR, campo bloqueado para GERENTE_LOJA), loja de destino, e quantidade; validação de campos obrigatórios e erro de loja igual em origem e destino; após submissão bem-sucedida, o stock é refrescado automaticamente
+
+---
+
+### [2026-05-14] Vista de detalhe de peça com edição de stock mínimo por loja
+
+**Prompt:**
+ok now i want you to make a view for the individual parts. something like the information about the parts, a brief description (update the mock to include that) and for the manager make it able to change the minimum stock about that item, make a button for that inside that view
+
+**O que foi feito:**
+- **`backend/app/schemas/stock.py`**: adicionado `StockMinimoUpdate` (`{ loja_id, limite_minimo }`)
+- **`backend/app/repositories/stock_repository.py`**: adicionado `atualizar_minimo(peca_id, loja_id, limite_minimo)` — usa `get_or_create` para garantir que a entrada existe antes de alterar
+- **`backend/app/services/stock_service.py`**: adicionada função `atualizar_minimo()` com validação de loja, validação de peça e `check_loja_access`
+- **`backend/app/routers/stock.py`**: adicionado endpoint `PATCH /stock/{peca_id}/minimo` (gestão only)
+- **`frontend/src/services/stock.js`**: adicionado `updateStockMinimo(pecaId, body)`
+- **`views/pecas/Detail.vue`** (novo): layout em duas colunas — esquerda com descrição e grelha de especificações (unidade, preço de venda, categoria, estado); direita com stock por loja (quantidade + badge de estado para gestão + edição inline de mínimo); edição inline com input numérico, ✓/Enter para guardar, ✕/Esc para cancelar; as descrições já existiam no mock
+- **`router/index.js`**: adicionada rota `/pecas/:id` para ADMINISTRADOR, GERENTE_LOJA e MECANICO
+- **`views/stock/Index.vue`**: nome da peça na tabela convertido em `<RouterLink>` para `/pecas/:id`
+
+---
+
+### [2026-05-15] Inter-store transfer requests, mechanic part requests, and notification inbox
+
+**Prompt:**
+Implement three interconnected flows across all layers (database, backend, frontend):
+
+1. **Manager-to-manager stock transfer**: A store manager can request parts from another store. The origin store's manager is notified, reviews the request, and either accepts or refuses. On acceptance, stock is immediately deducted from the origin and a signed PDF document is generated. When the requesting manager confirms physical receipt, they sign as the destination manager, completing the transfer and adding stock to their store.
+
+2. **Mechanic part request**: When a mechanic has a service order in repair state and a needed part is out of stock, they can send a part request to their store manager. The manager sees the request in a dedicated tab (alongside inter-store transfers), can approve or refuse, and the mechanic is notified either way.
+
+3. **Notification inbox**: Managers get a notification bell in the sidebar with a live unread count badge (polling every 30 seconds). Clicking it opens an inbox where each notification has a type, color, title, message, and click navigation to the relevant resource.
+
+**What was done:**
+
+- **Backend — models**: created `notificacao.py` (table `notificacoes`: id, utilizador_id FK, tipo enum, titulo, mensagem, lida bool, data_criacao, referencia_id optional, referencia_tipo optional string); created `transferencia.py` (tables `pedidos_transferencia` and `pedidos_peca` with full FK relationships using `foreign_keys=[field]` to disambiguate multi-FK tables)
+- **Backend — schemas**: created `notificacao.py` (TipoNotificacao enum, NotificacaoResponse); created `transferencia.py` (EstadoPedidoTransferencia, EstadoPedidoPeca, nested resumo schemas, full request/response schemas)
+- **Backend — repositories**: created `notificacao_repository.py`, `transferencia_repository.py` (with `flush + pt.numero = f"TRF-{year}-{id:04d}"`), `pedido_peca_repository.py`
+- **Backend — services**: created `notificacao_service.py` (standalone `criar_notificacao()` function + NotificacaoService class); created `transferencia_service.py` (stock cap validation, stock deduction on accept, stock addition on confirm); created `pedido_peca_service.py`
+- **Backend — routers**: created `notificacoes.py` (4 endpoints: list, count, mark read, mark all read); created `transferencias.py` (7 endpoints including PDF download); created `pedidos_peca.py` (3 endpoints)
+- **Backend — utils/pdf.py**: added `gerar_pdf_transferencia()` function
+- **Backend — main.py**: registered the 3 new routers; **alembic/env.py**: added model imports and ran migration (tables `notificacoes`, `pedidos_transferencia`, `pedidos_peca` created)
+- **Frontend — services**: created `notificacoes.js`, `transferencias.js`, `pedidosPeca.js`
+- **Frontend — store**: created `store/notifications.js` (Pinia store with count, notifications, fetchCount, fetchAll, markRead, markAllRead)
+- **Frontend — views**: created `views/notificacoes/Index.vue` (inbox with tipo color coding, mark all read, click navigation); created `views/transferencias/Index.vue` (two-tab layout: Transferências table + Pedidos de Peça table, Nova Transferência modal); created `views/transferencias/Detalhe.vue` (detail with signature status, action buttons for respond/confirm/cancel, PDF download, respond modal with accept/refuse radio)
+- **Frontend — AppSidebar.vue**: added "Transferências" and "Notificações" nav items for GERENTE_LOJA/ADMINISTRADOR; red unread-count badge on Notificações; notifications store polled every 30 seconds alongside the workshop store
+- **Frontend — router/index.js**: added routes `/transferencias`, `/transferencias/:id`, `/notificacoes` (all restricted to GERENTE_LOJA and ADMINISTRADOR)
+- **Frontend — oficina/Detail.vue**: added collapsible "Pedir Peça ao Gerente" section at the bottom of the left column, visible when OS is in EM_REPARACAO or AGUARDA_PECAS; mechanic searches for a part, sets quantity and optional observation, submits the request; success state shows a confirmation message
+
+---
+
+### [2026-05-16] Fix — `numero` column NOT NULL constraint crash on transfer creation
+
+**Problem:**
+Every attempt to create a transfer request returned a 500 Internal Server Error. The POST reached the backend and the INSERT was attempted, but MySQL rejected it immediately with:
+
+```
+IntegrityError: (1048, "Column 'numero' cannot be null")
+```
+
+**Root cause — chicken-and-egg ordering:**
+The `numero` field is generated as `TRF-{year}-{id:04d}`, where `id` is the auto-increment primary key assigned by MySQL. To know the `id`, you need to INSERT the row first. But the column was defined as `NOT NULL`, so MySQL rejected the INSERT because `numero` was still `None` at that point.
+
+The repository's `create()` method was:
+```python
+pt = PedidoTransferencia(**kwargs)   # numero = None
+self.db.add(pt)
+self.db.flush()                       # ← MySQL rejects: numero cannot be null
+pt.numero = f"TRF-{year}-{pt.id:04d}"
+```
+
+**First solution (hotfix):**
+Set a UUID-based placeholder before the flush to satisfy the constraint, then overwrite it with the real number after getting the id:
+
+```python
+pt.numero = f"TEMP-{uuid.uuid4().hex}"  # satisfies NOT NULL + UNIQUE
+self.db.add(pt)
+self.db.flush()                           # gets id
+pt.numero = f"TRF-{year}-{pt.id:04d}"   # overwrites with real numero
+```
+
+**Why it was rejected:**
+Although functional, this is a workaround that masks the actual design flaw. The column is semantically nullable during the brief window between INSERT and the UPDATE — the NOT NULL constraint was incorrectly applied. UUID strings as placeholder values are semantically meaningless and leave the door open to corruption if something fails between the two writes.
+
+**Final solution (proper fix):**
+Made `numero` nullable at both the ORM and DB level, which accurately reflects that the value genuinely does not exist until the row has an id:
+
+- `models/transferencia.py`: changed `Mapped[str]` → `Mapped[Optional[str]]` with `nullable=True`
+- `repositories/transferencia_repository.py`: removed UUID placeholder; clean two-step flow (flush → set numero)
+- `alembic/versions/a1c3e5f7b9d2_...py`: migration to `ALTER TABLE pedidos_transferencia MODIFY COLUMN numero VARCHAR(50) NULL`
+
+The column is still `unique=True`, so no two rows can ever share the same generated number. The `NULL` state is only possible inside the same uncommitted transaction.
+
+---
+
+### [2026-05-16] Bug fixes — transfer request error, stock visibility, and UX redesign of transfer initiation
+
+**Bugs found and fixed:**
+
+1. **"Erro ao enviar pedido" on every transfer request**: `TransferenciaService.criar()` was calling `db.commit()` followed by `db.refresh(pt)`. SQLAlchemy's `refresh()` only reloads scalar columns — the ORM relationships (`loja_origem`, `loja_destino`, `gerente_origem`, `gerente_destino`, `peca`) were expired and not reloaded. When Pydantic called `model_validate(pt)` to serialize the response, it triggered lazy loads on an effectively broken session state, causing a 500 with no useful `detail` in the response body. The frontend catch block couldn't extract a message and fell back to the generic string. Fix: replaced `db.refresh(pt)` with `pt = self.repo.get_by_id(pt.id)` — a fresh query using the existing `_base_query()` with joinedload for all relationships.
+
+2. **"Outras Lojas" card empty in part detail**: `GET /stock` was restricting GERENTE_LOJA to only their own store's stock (same over-restriction as `GET /lojas`). The `stock_service.listar` had `if current_user.perfil != ADMINISTRADOR: loja_id = current_user.loja_id`. Fixed by changing the condition to only restrict MECANICO and RECECIONISTA: `if current_user.perfil not in (ADMINISTRADOR, GERENTE_LOJA)`.
+
+3. **"GET /lojas" returning only own store for GERENTE_LOJA**: Same pattern in `loja_service.listar` — fixed in the same way.
+
+**UX redesign — transfer initiation moved to part detail:**
+
+- **Removed**: the per-row inline "Pedir Transferência" form that expanded inside each "Outras Lojas" row; the "Nova Transferência" button and modal from the Transferências index page
+- **Added**: a single green "Pedir Transferência" button in the header of the "Outras Lojas" card (only visible to GERENTE_LOJA, only shown when at least one other store has stock above its minimum); clicking it opens a Teleport modal with a loja dropdown (pre-filtered to stores with available stock, showing disponivel count), a quantity input (max capped to the selected store's disponivel), optional obs textarea, and a success state that replaces the form on submit
+
+---
+
+### [2026-05-16] Full-stack codebase audit — crash fixes, schema mismatches, and architecture cleanup
+
+**Prompt:**
+Before touching any code, perform a full codebase audit. Work systematically through every layer of the stack — models, schemas, repositories, services, routers, and frontend services. Do not skip files. Do not summarize without reading. This is a refactoring and cleanup mission, not a feature task. Phase 1: read every file and build a complete mental model. Phase 2: flag every instance of dead code, loose ends, inconsistencies, code smells, and errors with file path and line numbers. Phase 3: prioritize findings into CRITICAL / HIGH / MEDIUM / LOW. Phase 4: fix in order starting from CRITICAL — state what is being fixed, make the change, verify nothing is broken, then move on. Phase 5: write a final report. Do not ask for permission at each step. Audit everything. Fix what is clear. Flag what needs a decision. Go.
+
+**What was done:**
+
+- **CRITICAL — `fatura_service.py`**: `os.pecas_usadas` → `os.pecas_aplicadas` (attribute didn't exist); `EstadoFatura.PAGA` → `EstadoFatura.EMITIDA` (enum value didn't exist); `descarregar_pdf` and `enviar_email` were stubs — wired to `gerar_pdf_fatura` and `enviar_fatura_email`; `enviar_email` was accessing `.ordem_servico.cliente.email` on a `FaturaResponse` schema object (not ORM) — fixed to `.cliente.email`, `.loja.nome`, `.loja.telefone`
+- **CRITICAL — `trotinete_service.criar`**: was calling `_find(self.db, id)` — a function that takes only one argument — replaced with a local `_get_cliente(self, id)` method using `ClienteRepository(self.db)`
+- **CRITICAL — `auditoria.py` router**: was calling `auditoria_service.listar(db=db, ...)` as a module-level function on a class — rewrote the router with proper DI pattern (`AuditoriaService` instantiated via `Depends`)
+- **CRITICAL — `ordem_servico_service.adicionar_peca`**: stock was never decremented on adding parts to an OS — wired `StockRepository.consumir()` inside the same transaction
+- **HIGH — `auditoria_repository.registar`**: was committing inside the repo, breaking ACID for callers that do multiple operations before committing — removed `self.db.commit()`; `AuditoriaService.registar` and OS service callers now commit themselves
+- **HIGH — `fatura_repository`**: `get_by_id` and `list` had no eager loading — lazy-load AttributeErrors at serialisation — added `joinedload` chains for `ordem_servico → {cliente, trotinete, loja, pecas_aplicadas → peca}`
+- **HIGH — `ordem_servico_repository.list`**: `loja` relationship not joinedloaded, causing AttributeError on `os.loja.nome` — added `joinedload(OrdemServico.loja)`
+- **HIGH — `pedido_peca_repository.list_by_loja`**: passing `loja_id=0` for ADMIN returned no results — changed to accept `None` meaning all shops
+- **HIGH — `loja_service`**: had a local `check_loja_access(current_user, loja_id)` with reversed argument order vs `utils/permissions.check_loja_access(loja_id, current_user)` — removed the duplicate, imported from utils, fixed the call site
+- **HIGH — `cliente_service._calcular_fidelizacao`**: was opening a new `SessionLocal()` connection per call — replaced with a single `COUNT` query on the caller's existing session
+- **HIGH — `ordens_servico.py` router**: missing `POST /` create endpoint; no `response_model` on any endpoint; parameters passed as query strings instead of request body — completely rewritten
+- **HIGH — `ordem_servico_service`**: all service methods returned raw ORM objects but the router declared `response_model=DataResponse[OrdemServicoDetalheResponse]`; the schema has computed fields (`loja_nome`, `subtotal_pecas`, `fatura_id`, `inicio_tempo_atual`, `observacoes`) that don't exist as ORM attributes — added `_build_detalhe_response()` and `_build_peca_resumo()` mapper methods; all endpoints now return correct schema types; `adicionar_peca` now returns `PecaAplicadaResponse` built manually
+- **MEDIUM — `trotinete_service` and `peca_service`**: `__dict__` pattern used everywhere to convert ORM objects to schemas, bypassing Pydantic validation — replaced with `model_validate()` throughout
+- **MEDIUM — `transferencia_service.criar`**: no guard for `current_user.loja_id is None`; `gerentes[0].id` without existence check — added 400 guard and safe fallback to `current_user.id`
+- **LOW — frontend services**: `POST /transferencias`, `/pedidos-peca/`, `/faturas/`, `/ordens-servico/` were missing trailing slashes, causing 307 redirects that drop the request body on some clients — added trailing slashes to all collection-level POST calls
+
+---
+
+### [2026-05-16] Timer per mechanic, mechanic reassignment with auto-close, and OS internal comments
+
+**Prompt:**
+Implement two features. First, associate time records to mechanics so time worked appears per mechanic on the dashboard: add `mecanico_id` to `RegistoTempo`, record who started each timer, implement the missing `parar_tempo` endpoint, and when a mechanic is reassigned automatically close any open timer so time is attributed correctly and the incoming mechanic starts fresh. Second, implement the full stack for OS internal comments (observacoes): database table, model, repository, service, and router endpoint — the schema and frontend call already exist.
+
+**What was done:**
+
+- **Migration `c3d4e5f6a7b8`**: adds `mecanico_id` (nullable FK → `utilizadores`) to `registos_tempo`; creates `os_observacoes` table (`id`, `ordem_servico_id`, `autor_id`, `texto`, `criado_em`)
+- **`models/ordem_servico.py`**: `RegistoTempo` gains `mecanico_id` column and `mecanico` relationship; new `OrdemServicoObservacao` class mapped to `os_observacoes` with `ordem_servico` and `autor` relationships; `OrdemServico` gains an `observacoes` relationship ordered by `criado_em`
+- **`repositories/ordem_servico_repository.py`**: `get_by_id` now joinedloads `observacoes → autor`; new `create_observacao(os_id, autor_id, texto, criado_em)` method
+- **`services/ordem_servico_service.py`**: `iniciar_tempo` rewritten — guards against finalised OS and already-running timer, sets `mecanico_id=current_user.id`, returns `TempoInicioResponse`; new `parar_tempo` closes the open timer, computes session minutes, accumulates on `os.tempo_total_minutos`; new `atualizar_mecanico` auto-closes any open timer (preserving its minutes) before changing `mecanico_id`; new `adicionar_observacao` validates state and calls the repo; `_build_detalhe_response` now populates `observacoes` from `os.observacoes` with `autor_nome` resolved from the eager-loaded `autor` relationship
+- **`routers/ordens_servico.py`**: four new endpoints — `POST /{id}/tempos/iniciar`, `POST /{id}/tempos/parar` (MECANICO + gestão), `PATCH /{id}/mecanico` (gestão + RECECIONISTA), `POST /{id}/observacoes` (all authenticated users)
+- **`schemas/dashboard.py`**: `EficienciaMecanico` gains `minutos_trabalhados_total: int | None` — actual minutes worked by each mechanic, distinct from the average OS completion time
+- **`services/dashboard_service.py`**: Métrica 6 now runs a second aggregation query over `RegistoTempo.minutos_esta_sessao` grouped by `mecanico_id` (joined to `OrdemServico` for date and loja filtering) and populates `minutos_trabalhados_total` per mechanic
+
+---
+
+### [2026-05-23] Full deep codebase audit with graphify + bug fix sweep
+
+**Tool used: graphify**
+
+graphify (`~/.claude/skills/graphify`) was used to build a queryable knowledge graph of the entire DLMCare codebase before performing the audit. It processed all 146 source files (Python backend + Vue frontend), extracted 902 AST nodes and 1684 edges, detected 93 communities, and produced an interactive HTML visualization, a GraphRAG-ready JSON graph, and a GRAPH_REPORT.md summary. Semantic extraction used the Gemini API. The graph reduced the audit context by 32× compared to raw source browsing — allowing structural questions like "why does CurrentUserResponse connect 12 communities?" and "trace the audit trail" to be answered in seconds via `graphify query` and `graphify path` instead of manual grep/read cycles.
+
+**What graphify revealed in this project:**
+`CurrentUserResponse` was identified as the highest-connectivity god node, bridging all 12 service communities, which confirmed the JWT-embedded auth pattern as the central architectural axis. The graph also surfaced dead/inconsistent cross-file relationships between service schema contracts and their callers — inconsistencies that are invisible from individual file inspection.
+
+**Problems found — 25 total:**
+
+| Severity | Count | Examples |
+|---|---|---|
+| Critical | 5 | Stock response missing required fields (always 500), transferencias wrong unwrap (empty lists), Admin OS create null loja_id, invoice numbering broken |
+| High | 13 | Admin scoped to loja #1 silently, em_atraso pagination count broken, timer/delay fields never populated, frontend RBAC matrix diverges from backend, GERENTE_LOJA excluded from OS creation route, 8-hour JWT, MECANICO never times out |
+| Medium | 5 | Wrong audit event key, non-gerente as gerente_origem, no user validation, discount fields zeroed, no 401/refresh interceptor |
+| Low | 3 | N+1 fidelização query, client-side stock filtering, hardcoded page_size=100 |
+
+**What was fixed (see fix sweep below):**
+All 25 issues resolved in a single fix sweep. Backend: stock response fields, invoice numbering, admin loja filter, em_atraso DB filter + field population, tem_timer_ativo population, observation state guard, audit event key, transferencia gerente guard, user validation, discount columns added to Fatura model. Frontend: transferencias unwrap, Create.vue admin loja_id + trotinetes, Detail.vue RBAC matrix, router role guards, removerPeca stub, pecas/Detail stock query, session timeout, CORS tightening. StockLoja unique constraint added via migration.
+
+**Verification:**
+Full smoke test suite run after all fixes: **126/126 tests passing, 0 failures**. All sections covered — Health, Auth, Clientes, Trotinetes, Peças, Stock, Ordens de Serviço, Faturas, Dashboard, Auditoria.
+
+---
+
+### [2026-05-24] Workshop workflow refactor — mechanic diagnostic with service catalog, auto pricing, and client email
+
+**Prompt:**
+Refactor the workshop workflow to move the responsibility of identifying specific problems and services from the receptionist to the mechanic. Currently, concluding a diagnostic is just a formal state transition with no system impact. The following changes should be implemented:
+
+1. Remove the ability for the receptionist to set a service price or type when creating a service order — the price should be determined by the mechanic during diagnosis.
+2. Replace the mechanic's simple "Concluir Diagnóstico" button with a full diagnostic popup: a dropdown of predefined services from a catalog (with their base prices), the ability to add multiple items with a + button, a custom option that reveals a name and price field, and a confirm button disabled until at least one item is added. Prices should be hidden from the mechanic by default (only show totals, not itemised prices — this was clarified later as showing prices is acceptable for UX reasons).
+3. Add a service catalog management page for managers (GERENTE_LOJA and ADMINISTRADOR) to create, edit, and toggle active/inactive services.
+4. When the mechanic submits the diagnostic, the system should auto-calculate the OS total from the selected services, transition the OS to AGUARDA_APROVACAO, and automatically send the client an email listing the identified problems and the estimated total.
+
+**What was done:**
+
+- **Backend — new `Servico` and `OSServico` models** (`models/servico.py`): `Servico` (id, nome, preco_base, ativo) holds the service catalog; `OSServico` (id, ordem_servico_id, servico_id nullable FK, nome, preco) stores per-OS diagnostic items; `OrdemServico` gains a `servicos_diagnostico` relationship
+- **Backend — schema changes** (`schemas/ordem_servico.py`): `preco_servico` in `OrdemServicoCreate` changed from required to default `0.0`; added `OSServicoResumo`, `DiagnosticoItemCreate`, and `DiagnosticoSubmit` schemas; `OrdemServicoDetalheResponse` gains `servicos_diagnostico: list[OSServicoResumo]`
+- **Backend — `submeter_diagnostico` service method**: validates OS is in `EM_DIAGNOSTICO`, removes any previous diagnostic items, creates `OSServico` rows for each item, sums total and writes it to `preco_servico`, transitions to `AGUARDA_APROVACAO`, auto-stops the running timer, commits, then sends the client email (silently swallows SMTP errors)
+- **Backend — `notificar_diagnostico_cliente`** (`utils/email.py`): new email function with an itemised HTML table of services and a bold total, sent to the client when the mechanic submits the diagnostic
+- **Backend — `GET/POST/PATCH /api/v1/servicos`** (`routers/servicos.py` + `services/servico_service.py` + `repositories/servico_repository.py`): full CRUD for the service catalog; create and update restricted to ADMINISTRADOR and GERENTE_LOJA; listing available to all authenticated users
+- **Backend — `POST /api/v1/ordens-servico/{id}/diagnostico`**: new endpoint in `ordens_servico.py` router (MECANICO + gestão); calls `submeter_diagnostico`
+- **Backend — Alembic migration `144c3c3074f5`**: creates `servicos` and `os_servicos` tables; applied successfully
+- **Frontend — OS creation** (`views/ordens-servico/Create.vue`): removed the "Preço do serviço" field and all related validation from Step 3; `submitOS` no longer sends `preco_servico`
+- **Frontend — services** (`services/ordensServico.js`): added `submeterDiagnostico`; new `services/servicos.js` with `getServicos`, `createServico`, `updateServico`
+- **Frontend — mechanic diagnostic modal** (`views/oficina/Detail.vue`): "Concluir Diagnóstico" button now opens a dedicated diagnostic modal instead of the generic state-transition modal; modal loads the active service catalog on open, shows a dropdown to pick a catalog service or a custom option (which reveals name + price inputs), + button adds items to a growing list, each item can be removed, a running total is shown at the bottom; confirm button disabled until at least one item is added; on confirm calls `submeterDiagnostico`, stops the workshop timer, and reloads the OS; the `EM_DIAGNOSTICO` direct transitions array is now empty (no manual state transitions available during diagnosis)
+- **Frontend — service catalog page** (`views/servicos/Index.vue`): table of all services with create/edit modal and toggle-active button; restricted to ADMINISTRADOR and GERENTE_LOJA
+- **Frontend — router** (`router/index.js`): added `/servicos` route (ADMIN + GERENTE_LOJA)
+- **Frontend — sidebar** (`AppSidebar.vue`): added "Catálogo Serviços" nav item for ADMIN + GERENTE_LOJA
+
+---
+
+### [2026-05-24] Admin user management — edit, deactivate, and password reset
+
+**Prompt:**
+Give the administrator full control over user accounts. They should be able to edit any user's details (name, email, role, store, commission, active status), deactivate or reactivate accounts, and reset any user's password. The password reset endpoint must be restricted to administrators only.
+
+**What was done:**
+
+- **Backend — `schemas/utilizador.py`**: added `UtilizadorUpdate` (all fields optional — partial patch) and `PasswordResetRequest` (`{ nova_password: str, min_length: 6 }`)
+- **Backend — `repositories/utilizador_repository.py`**: added `update(utilizador, **kwargs)` method that sets attributes and commits
+- **Backend — `services/utilizador_service.py`**: added `_to_response` helper to avoid repeated dict-build logic; added `atualizar_utilizador` — validates email uniqueness on change, re-runs the perfil/loja/comissao constraint check, clears `comissao` if profile changes away from MECANICO, then patches and returns the updated user; added `alterar_password` — looks up user and updates `password_hash` via `hash_password`
+- **Backend — `routers/utilizadores.py`**: added `PATCH /utilizadores/{id}` and `PATCH /utilizadores/{id}/password` — both protected by `_admin_only`
+- **Frontend — `services/utilizadores.js`**: added `updateUtilizador(id, body)` and `resetPasswordAdmin(id, body)`
+- **Frontend — `views/utilizadores/Index.vue`**: full rewrite — added an actions column to the table with three icon buttons per row: ✏️ edit, 🔑 password reset, ⊘/✓ toggle active; inactive rows are visually dimmed; edit modal pre-fills all current user fields (no password field — use dedicated modal for that); password modal has new password + confirm fields with match validation; deactivate/activate calls `PATCH /{id}` with `{ ativo: !u.ativo }` directly, no modal needed
+
+---
+
+### [2026-05-24] Full audit log system
+
+**Prompt:**
+Implement a comprehensive audit logging system covering every significant transaction in the application. The audit log should capture: authentication events (login success/failure), OS lifecycle events (creation, state changes, diagnostic submission, part additions, mechanic assignment, observations), stock operations (entries, transfers, minimum threshold changes), inter-store transfer requests (create, accept/refuse, confirm reception, cancel), part requests from mechanics (create, respond), invoice emission, and entity creation/updates (clients, scooters, parts, users, services). Managers should be able to filter their store's log; administrators can see all stores.
+
+**What was done:**
+
+- **Backend — `schemas/auditoria.py`**: expanded `TipoEventoAuditoria` enum from 7 to 29 values covering all event categories: `OS_CRIADA`, `OS_DIAGNOSTICO_SUBMETIDO`, `OS_PECA_ADICIONADA`, `OS_MECANICO_ATRIBUIDO`, `OS_OBSERVACAO_ADICIONADA`, `STOCK_MINIMO_ALTERADO`, `TRANSFERENCIA_CRIADA`, `TRANSFERENCIA_RESPONDIDA`, `TRANSFERENCIA_RECEPCAO_CONFIRMADA`, `TRANSFERENCIA_CANCELADA`, `PEDIDO_PECA_CRIADO`, `PEDIDO_PECA_RESPONDIDO`, `CLIENTE_CRIADO`, `CLIENTE_ATUALIZADO`, `TROTINETE_REGISTADA`, `PECA_CRIADA`, `UTILIZADOR_CRIADO`, `UTILIZADOR_ATUALIZADO`, `UTILIZADOR_PASSWORD_ALTERADA`, `SERVICO_CRIADO`, `SERVICO_ATUALIZADO`
+- **Backend — `services/auth_service.py`**: added `AuditoriaRepository`; `login()` now accepts optional `ip: str | None`; logs `LOGIN_SUCESSO` on success and `LOGIN_FALHA` (with reason) on invalid credentials or inactive account — each path commits its own audit record before raising or returning
+- **Backend — `routers/auth.py`**: added `Request` parameter to login endpoint; passes `request.client.host` as the IP to `service.login()`
+- **Backend — `services/ordem_servico_service.py`**: added audit calls for `criar` (`OS_CRIADA`), `adicionar_peca` (`OS_PECA_ADICIONADA`), `atualizar_mecanico` (`OS_MECANICO_ATRIBUIDO`), `adicionar_observacao` (`OS_OBSERVACAO_ADICIONADA`); changed `submeter_diagnostico` event from the generic `OS_ESTADO_ALTERADO` to the specific `OS_DIAGNOSTICO_SUBMETIDO`
+- **Backend — `services/cliente_service.py`**: added `self.auditoria_repo = AuditoriaRepository(self.repo.db)`; logs `CLIENTE_CRIADO` on creation and `CLIENTE_ATUALIZADO` on update
+- **Backend — `services/trotinete_service.py`**: added `self.auditoria_repo`; logs `TROTINETE_REGISTADA` on creation
+- **Backend — `services/peca_service.py`**: added `self.auditoria_repo`; `criar()` now accepts `current_user`; logs `PECA_CRIADA`
+- **Backend — `routers/pecas.py`**: changed `_: CurrentUserResponse` to `current_user: CurrentUserResponse` in `criar` and passes it to service
+- **Backend — `services/stock_service.py`**: added `self.auditoria_repo`; logs `STOCK_ENTRADA` in `entrada()`, `STOCK_TRANSFERENCIA` in `transferencia()`, `STOCK_MINIMO_ALTERADO` in `atualizar_minimo()`
+- **Backend — `services/transferencia_service.py`**: added `self.auditoria_repo`; logs `TRANSFERENCIA_CRIADA` in `criar()`, `TRANSFERENCIA_RESPONDIDA` in `responder()`, `TRANSFERENCIA_RECEPCAO_CONFIRMADA` in `confirmar_recepcao()`, `TRANSFERENCIA_CANCELADA` in `cancelar()`
+- **Backend — `services/pedido_peca_service.py`**: added `self.auditoria_repo`; logs `PEDIDO_PECA_CRIADO` in `criar()` and `PEDIDO_PECA_RESPONDIDO` in `responder()`
+- **Backend — `services/utilizador_service.py`**: added `self.auditoria_repo`; `criar_utilizador`, `atualizar_utilizador`, `alterar_password` each log their respective event (`UTILIZADOR_CRIADO`, `UTILIZADOR_ATUALIZADO`, `UTILIZADOR_PASSWORD_ALTERADA`) and now accept an optional `current_user` parameter
+- **Backend — `routers/utilizadores.py`**: changed `_: CurrentUserResponse` to `current_user` in all three write endpoints and passes it through to service
+- **Backend — `services/servico_service.py`**: added `self.auditoria_repo`; logs `SERVICO_CRIADO` and `SERVICO_ATUALIZADO`
+- **Frontend — `views/auditoria/Index.vue`**: expanded `EVENTOS` dropdown from 7 to 29 entries covering all new event types; added `EVENTO_COLOR` entries for each category using a consistent colour scheme (purple for OS, blue for stock, cyan for transfers, orange for part requests, blue-light for invoices, green shades for entities, pink for password changes)
+
+---
+
+### [2026-05-26] UI consistency overhaul — standard detail page layout across all entities
+
+**Prompt:**
+Nothing is consistent. All the views look different. I need all entity detail pages to follow the same standard: no edit buttons on list rows — those belong inside the detail page. Each detail page should have a read-only info card with an "Editar" button that opens a popup modal, a "Delete" button (meaning deactivate) that shows a confirmation popup, and for users also an "Alterar Password" button that opens its own popup. Clients are left alone. Deactivating an ADMINISTRADOR user should be blocked.
+
+**What was done:**
+
+- **Standard detail page pattern established**: read-only info card + "Editar" button → edit modal; Estado zone card + deactivate/activate button → confirm popup modal; all modals use `Teleport to="body"` and consistent CSS classes (`modal-backdrop`, `modal`, `modal-hd`, `modal-ft`, `zone-card`, `zone-card--danger`, `zone-card--success`)
+- **`views/utilizadores/Detail.vue`**: replaced always-visible edit form with read-only `<dl>` + "Editar" modal; moved password reset into its own "Alterar Password" modal (separate from edit); Estado da Conta zone card with confirm popup; added guard that blocks deactivating users with `perfil === 'ADMINISTRADOR'` (error shown inline in confirm modal)
+- **`views/lojas/Detail.vue`**: complete rewrite — read-only info card with "Editar" modal; Estado da Loja zone card (admin-only) with confirm popup
+- **`views/oficina/Detail.vue` (Oficinas entity)**: same standard layout applied
+- **`views/pecas/Detail.vue`**: Estado da Peça zone card restricted to `isAdmin` (previously `isGestao`); confirm popup added; edit modal covers nome, categoria, unidade, preco_venda, descricao — ativo toggle removed from edit form (now handled by zone card only)
+- **`views/servicos/Detail.vue`** (new file): standard layout for the service catalog entity — read-only info (nome, preco_base, estado), edit modal, Estado do Serviço zone card with confirm popup; restricted to ADMINISTRADOR and GERENTE_LOJA
+- **`backend/app/routers/servicos.py`**: added `GET /servicos/{servico_id}` endpoint returning `DataResponse[ServicoResponse]`
+- **`backend/app/services/servico_service.py`**: added `obter(servico_id)` method
+- **`frontend/src/services/servicos.js`**: added `getServico(id)` call
+- **`frontend/src/router/index.js`**: added `/servicos/:id` route (ADMINISTRADOR + GERENTE_LOJA)
+- **List views** (`views/servicos/Index.vue`, `views/utilizadores/Index.vue`, `views/lojas/Index.vue`, `views/pecas/Index.vue`, `views/oficina/Index.vue`): removed all inline action buttons (edit, activate/deactivate) from table rows; rows are now clickable and navigate to the detail page; create modals navigate to the new detail page on success
+
+---
+
+### [2026-05-26] Diagnostic modal auto-slot + skip manager approval
+
+**Prompt:**
+Two things: instead of clicking a button to add another operation in the diagnostic modal, after selecting an operation it should instantly show another empty dropdown. Also, the manager shouldn't have to approve the OS — after the diagnostic it should go straight to the OS list ready for repair without any approval step.
+
+**What was done:**
+
+- **`frontend/src/views/oficina/Detail.vue` — diagnostic modal**: replaced the explicit `addSlot()` + "Adicionar operação" button with an `onSlotChange(idx)` function that automatically pushes a new `{ servico_id: null }` slot when the last slot receives a selection; `@change="onSlotChange(idx)"` wired to each `<select>`; "+" button and its CSS (`.btn-add-slot`) removed; dialog subtitle updated from "Serão enviadas ao cliente para aprovação" to "A OS passará imediatamente a Em Reparação"; `workshop.set(false)` removed from `confirmDiag` (timer stays running since EM_REPARACAO is also an active-work state)
+- **`backend/app/services/ordem_servico_service.py` — `submeter_diagnostico`**: `os.estado` changed from `EstadoOrdemServico.AGUARDA_APROVACAO` to `EstadoOrdemServico.EM_REPARACAO`; the timer-stopping block (`for rt in os.registos_tempo: if rt.fim is None: ...`) removed — work continues without interruption
+- **`backend/app/services/ordem_servico_service.py` — `_TRANSICOES`**: `(EM_DIAGNOSTICO → AGUARDA_APROVACAO)` entry replaced by `(EM_DIAGNOSTICO → EM_REPARACAO)` for `{ADMINISTRADOR, GERENTE_LOJA, MECANICO}`; the `(AGUARDA_APROVACAO → EM_REPARACAO)` entry kept to support any OS that was already in that state before the change
+- **`frontend/src/views/oficina/Detail.vue` — AGUARDA_APROVACAO card**: removed the "A aguardar aprovação" info card from the right column — that state is no longer reachable through the normal diagnostic flow
+
+---
+
+### [2026-05-26] Bug fixes — disabled Concluir Diagnóstico, gerente deactivating parts, missing Pedir Transferência
+
+**Prompt:**
+Three bugs: the Concluir Diagnóstico button doesn't work. A gerente can deactivate a part, which shouldn't be possible. The Pedir Transferência button disappeared from the part detail page.
+
+**What was done:**
+
+- **`oficina/Detail.vue` — Concluir Diagnóstico button disabled**: after renaming `diagItems` to `diagSlots`, the confirm button's `:disabled` condition still referenced the old name; fixed to `diagSlots.every(s => s.servico_id === null)` so the button enables as soon as one slot is filled
+- **`views/pecas/Detail.vue` — gerente deactivating parts**: the Estado da Peça zone card was gated on `v-if="isGestao"` (which includes GERENTE_LOJA); changed to `v-if="isAdmin"` so only ADMINISTRADOR can deactivate/activate parts
+- **`views/pecas/Detail.vue` — missing Pedir Transferência button**: `canRequest` was defined as `computed(() => perfil === 'GERENTE_LOJA')` referencing an undefined plain variable `perfil` (leftover from an earlier reactivity fix that removed it); fixed to `computed(() => auth.getCurrentUser?.perfil === 'GERENTE_LOJA')` so it reads reactively from the auth store
+
+---
+
+### [2026-05-26] Four fixes — notification redirect, conclude timer guard, OS list mechanic filter, diagnosis email text
+
+**Prompt:**
+Four things: when a mechanic requests a part, the manager gets a notification that redirects to pedidos peça in transferências, which makes no sense — just make it a clickable notification. An OS can be concluded even when nobody is working on it — if there is no active timer it shouldn't be possible to conclude. An active OS shouldn't appear in the OS list for other mechanics. The client should receive an email after the diagnosis showing the operations that will be done.
+
+**What was done:**
+
+- **`views/notificacoes/Index.vue` — part request notification redirect removed**: the `handleClick` branch for `referencia_tipo === 'pedido_peca'` that navigated to `/transferencias?tab=pedidos` was removed; clicking a part-request notification now just marks it as read and stays on the notifications page — the message content (who, what part, which OS) is already shown inline
+- **`views/oficina/Detail.vue` — Concluir Reparação requires active timer**: the "Concluir Reparação" right-column button now has `:disabled="rightColumnAction.estado === 'CONCLUIDA' && !timerAtivo"` with a `title` tooltip explaining why it's blocked; the mechanic must have a running timer session to conclude the OS
+- **`backend/app/repositories/ordem_servico_repository.py` — mechanic OS list filter**: added optional `exclude_timer_not_for: int | None` parameter to `list()`; when set, appends a `~exists()` subquery that excludes any OS where `RegistoTempo.fim IS NULL AND RegistoTempo.mecanico_id != exclude_timer_not_for` — OS with no active timer or with the requesting mechanic's own timer remain visible
+- **`backend/app/services/ordem_servico_service.py` — mechanic OS list filter**: `listar()` now derives `exclude_timer_not_for = current_user.id if current_user.perfil == PerfilUtilizador.MECANICO else None` and passes it to the repository — mechanics only see OS that aren't locked by another mechanic's active timer
+- **`backend/app/utils/email.py` — diagnosis email text updated**: `notificar_diagnostico_cliente` body changed from "aguardam a sua aprovação para iniciar a reparação" to "a reparação foi iniciada … segue abaixo o resumo das operações que serão realizadas" and the closing paragraph from "Para autorizar a reparação, entre em contacto connosco" to "Avisaremos assim que a sua trotinete estiver pronta para levantamento" — matches the new flow where repair starts immediately after diagnosis

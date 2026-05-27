@@ -35,3 +35,19 @@ class LojaRepository:
         if loja:
             return {"nome": loja.nome, "morada": loja.morada, "telefone": loja.telefone}
         return None
+
+    def create(self, **kwargs) -> "Loja":
+        from app.models.loja import Loja as LojaModel
+        nova = LojaModel(**kwargs)
+        nova.ativo = kwargs.get("ativo", True)
+        self.db.add(nova)
+        self.db.commit()
+        self.db.refresh(nova)
+        return nova
+
+    def update(self, loja, **kwargs):
+        for k, v in kwargs.items():
+            setattr(loja, k, v)
+        self.db.commit()
+        self.db.refresh(loja)
+        return loja

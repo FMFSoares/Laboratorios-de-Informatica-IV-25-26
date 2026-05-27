@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.repositories.auditoria_repository import AuditoriaRepository
 from app.repositories.transferencia_repository import TransferenciaRepository
 from app.repositories.stock_repository import StockRepository
 from app.repositories.utilizador_repository import UtilizadorRepository
@@ -16,6 +17,7 @@ from app.schemas.transferencia import (
     PedidoTransferenciaResponse,
 )
 from app.schemas.auth import CurrentUserResponse
+from app.schemas.auditoria import TipoEventoAuditoria
 from app.schemas.notificacao import TipoNotificacao
 from app.schemas.utilizador import PerfilUtilizador
 from app.schemas.common import PaginatedResponse, DataResponse
@@ -28,6 +30,7 @@ class TransferenciaService:
         self.repo = TransferenciaRepository(db)
         self.stock_repo = StockRepository(db)
         self.util_repo = UtilizadorRepository(db)
+        self.auditoria_repo = AuditoriaRepository(db)
 
     def _gerentes_de_loja(self, loja_id: int) -> list:
         return self.util_repo.list_by_perfil(PerfilUtilizador.GERENTE_LOJA, loja_id)
@@ -38,6 +41,8 @@ class TransferenciaService:
                               referencia_id=ref_id, referencia_tipo="pedido_transferencia")
 
     def criar(self, body: PedidoTransferenciaCreate, current_user: CurrentUserResponse):
+        if current_user.loja_id is None:
+            raise HTTPException(status_code=400, detail="Utilizador sem loja associada não pode criar transferências.")
         if body.loja_origem_id == current_user.loja_id:
             raise HTTPException(status_code=400, detail="Não pode pedir peças à sua própria loja.")
 
@@ -49,10 +54,15 @@ class TransferenciaService:
                 detail=f"Quantidade indisponível. Máximo pedível: {max(0, disponivel)} unidades (sem baixar o stock mínimo).",
             )
 
+        gerentes_origem = self._gerentes_de_loja(body.loja_origem_id)
+        if not gerentes_origem:
+            raise HTTPException(status_code=422, detail="Nenhum gerente encontrado na loja de origem")
+        gerente_origem_id = gerentes_origem[0].id
+
         pt = self.repo.create(
             loja_origem_id=body.loja_origem_id,
             loja_destino_id=current_user.loja_id,
-            gerente_origem_id=self._gerentes_de_loja(body.loja_origem_id)[0].id if self._gerentes_de_loja(body.loja_origem_id) else current_user.id,
+            gerente_origem_id=gerente_origem_id,
             gerente_destino_id=current_user.id,
             peca_id=body.peca_id,
             quantidade=body.quantidade,
@@ -67,6 +77,13 @@ class TransferenciaService:
             "Novo pedido de transferência",
             f"{current_user.nome} pediu {body.quantidade}x {pt.peca.nome if pt.peca else ''} da sua loja.",
             pt.id,
+        )
+        self.auditoria_repo.registar(
+            evento=TipoEventoAuditoria.TRANSFERENCIA_CRIADA,
+            descricao=f"Pedido de transferência de {body.quantidade}x '{pt.peca.nome if pt.peca else ''}' da loja #{body.loja_origem_id}",
+            utilizador_id=current_user.id,
+            loja_id=current_user.loja_id,
+            detalhe={"pedido_id": pt.id, "peca_id": body.peca_id, "quantidade": body.quantidade, "loja_origem_id": body.loja_origem_id, "loja_destino_id": current_user.loja_id},
         )
         self.db.commit()
         pt = self.repo.get_by_id(pt.id)
@@ -110,6 +127,7 @@ class TransferenciaService:
         pt.data_resposta = agora
         pt.observacoes_resposta = body.observacoes
 
+        peca_nome = pt.peca.nome if pt.peca else f"peça #{pt.peca_id}"
         if body.aceitar:
             self.stock_repo.consumir(pt.peca_id, pt.loja_origem_id, pt.quantidade)
             pt.estado = EstadoPedidoTransferencia.ACEITE
@@ -118,7 +136,7 @@ class TransferenciaService:
                 pt.loja_destino_id,
                 TipoNotificacao.TRANSFERENCIA_ACEITE,
                 "Transferência aceite",
-                f"O seu pedido de {pt.quantidade}x {pt.peca.nome if pt.peca else ''} foi aceite. Confirme a receção quando chegar.",
+                f"O seu pedido de {pt.quantidade}x {peca_nome} foi aceite. Confirme a receção quando chegar.",
                 pt.id,
             )
         else:
@@ -127,10 +145,17 @@ class TransferenciaService:
                 pt.loja_destino_id,
                 TipoNotificacao.TRANSFERENCIA_RECUSADA,
                 "Transferência recusada",
-                f"O seu pedido de {pt.quantidade}x {pt.peca.nome if pt.peca else ''} foi recusado.",
+                f"O seu pedido de {pt.quantidade}x {peca_nome} foi recusado.",
                 pt.id,
             )
 
+        self.auditoria_repo.registar(
+            evento=TipoEventoAuditoria.TRANSFERENCIA_RESPONDIDA,
+            descricao=f"Pedido de transferência #{pt_id} {'aceite' if body.aceitar else 'recusado'} — {pt.quantidade}x '{peca_nome}'",
+            utilizador_id=current_user.id,
+            loja_id=pt.loja_origem_id,
+            detalhe={"pedido_id": pt_id, "aceite": body.aceitar, "peca_id": pt.peca_id, "quantidade": pt.quantidade},
+        )
         self.db.commit()
         self.db.refresh(pt)
         return DataResponse[PedidoTransferenciaResponse](
@@ -148,6 +173,7 @@ class TransferenciaService:
             raise HTTPException(status_code=403, detail="Só o gerente da loja de destino pode confirmar.")
 
         agora = datetime.now(timezone.utc)
+        peca_nome = pt.peca.nome if pt.peca else f"peça #{pt.peca_id}"
         self.stock_repo.adicionar(pt.peca_id, pt.loja_destino_id, pt.quantidade)
         pt.estado = EstadoPedidoTransferencia.CONCLUIDA
         pt.data_recepcao = agora
@@ -157,8 +183,15 @@ class TransferenciaService:
             pt.loja_origem_id,
             TipoNotificacao.TRANSFERENCIA_CONCLUIDA,
             "Transferência concluída",
-            f"A loja de destino confirmou a receção de {pt.quantidade}x {pt.peca.nome if pt.peca else ''}.",
+            f"A loja de destino confirmou a receção de {pt.quantidade}x {peca_nome}.",
             pt.id,
+        )
+        self.auditoria_repo.registar(
+            evento=TipoEventoAuditoria.TRANSFERENCIA_RECEPCAO_CONFIRMADA,
+            descricao=f"Receção confirmada — {pt.quantidade}x '{peca_nome}' na loja #{pt.loja_destino_id}",
+            utilizador_id=current_user.id,
+            loja_id=pt.loja_destino_id,
+            detalhe={"pedido_id": pt_id, "peca_id": pt.peca_id, "quantidade": pt.quantidade, "loja_origem_id": pt.loja_origem_id, "loja_destino_id": pt.loja_destino_id},
         )
         self.db.commit()
         self.db.refresh(pt)
@@ -177,6 +210,13 @@ class TransferenciaService:
             raise HTTPException(status_code=403, detail="Só o gerente solicitante pode cancelar.")
 
         pt.estado = EstadoPedidoTransferencia.CANCELADO
+        self.auditoria_repo.registar(
+            evento=TipoEventoAuditoria.TRANSFERENCIA_CANCELADA,
+            descricao=f"Pedido de transferência #{pt_id} cancelado",
+            utilizador_id=current_user.id,
+            loja_id=pt.loja_destino_id,
+            detalhe={"pedido_id": pt_id, "peca_id": pt.peca_id, "quantidade": pt.quantidade},
+        )
         self.db.commit()
         self.db.refresh(pt)
         return DataResponse[PedidoTransferenciaResponse](

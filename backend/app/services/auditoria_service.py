@@ -21,7 +21,7 @@ class AuditoriaService:
         loja_id: int | None = None,
         detalhe: dict | None = None,
     ) -> Auditoria:
-        return self.repo.registar(
+        novo = self.repo.registar(
             evento=evento,
             descricao=descricao,
             ip_origem=ip_origem,
@@ -30,6 +30,9 @@ class AuditoriaService:
             loja_id=loja_id,
             detalhe=detalhe,
         )
+        self.repo.db.commit()
+        self.repo.db.refresh(novo)
+        return novo
 
     def listar(
         self,

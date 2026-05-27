@@ -30,8 +30,7 @@ def obter_fatura(
     current_user: CurrentUserResponse = Depends(get_current_user),
     service: FaturaService = Depends(get_fatura_service)
 ):
-    fatura = service.obter(fatura_id, current_user)
-    return DataResponse[FaturaResponse](data=fatura)
+    return DataResponse[FaturaResponse](data=service.obter(fatura_id, current_user))
 
 @router.get("/", response_model=PaginatedResponse[FaturaResumo])
 def listar_faturas(

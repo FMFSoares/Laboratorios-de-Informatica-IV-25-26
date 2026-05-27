@@ -22,7 +22,7 @@ onMounted(() => {
   workshop.refresh()
   pollInterval = setInterval(workshop.refresh, 30000)
   const perfil = authStore.getCurrentUser?.perfil
-  if (perfil === 'GERENTE_LOJA' || perfil === 'ADMINISTRADOR') {
+  if (['ADMINISTRADOR', 'GERENTE_LOJA', 'MECANICO'].includes(perfil)) {
     notifStore.fetchCount()
     pollInterval = setInterval(() => {
       workshop.refresh()
@@ -45,11 +45,15 @@ const ALL_NAV = [
   { label: 'Dashboard',          to: '/dashboard',       roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
   { label: 'Clientes',           to: '/clientes',        roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
   { label: 'Ordens de Serviço',  to: '/ordens-servico',  roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
-  { label: 'Inventário',         to: '/stock',           roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+  { label: 'Catálogo Peças',    to: '/pecas',           roles: ['ADMINISTRADOR'] },
+  { label: 'Inventário',         to: '/stock',           roles: ['GERENTE_LOJA'] },
   { label: 'Transferências',     to: '/transferencias',  roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
-  { label: 'Notificações',       to: '/notificacoes',    roles: ['ADMINISTRADOR', 'GERENTE_LOJA'], badge: true },
+  { label: 'Notificações',       to: '/notificacoes',    roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'MECANICO'], badge: true },
   { label: 'Faturas',            to: '/faturas',         roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+  { label: 'Catálogo Serviços', to: '/servicos',        roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
   { label: 'Utilizadores',       to: '/utilizadores',    roles: ['ADMINISTRADOR'] },
+  { label: 'Lojas',              to: '/lojas',           roles: ['ADMINISTRADOR'] },
+  { label: 'Auditoria',          to: '/auditoria',       roles: ['ADMINISTRADOR'] },
 
   // ── Mecânico ──────────────────────────────────────────────
   { label: 'OS Activa',          to: '/oficina/ativa',      roles: ['MECANICO'] },

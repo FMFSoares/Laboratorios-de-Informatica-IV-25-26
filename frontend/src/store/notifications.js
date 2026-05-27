@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { countNaoLidas, getNotificacoes, marcarLida, marcarTodasLidas, apagarTodas } from '../services/notificacoes.js'
+import { countNaoLidas, getNotificacoes, marcarLida, marcarTodasLidas, apagarUma, apagarTodas } from '../services/notificacoes.js'
 
 export const useNotificationsStore = defineStore('notifications', () => {
   const count = ref(0)
@@ -34,11 +34,17 @@ export const useNotificationsStore = defineStore('notifications', () => {
     count.value = 0
   }
 
+  async function deleteOne(id) {
+    try { await apagarUma(id) } catch {}
+    notifications.value = notifications.value.filter(n => n.id !== id)
+    count.value = notifications.value.filter(n => !n.lida).length
+  }
+
   async function clearAll() {
     try { await apagarTodas() } catch {}
     notifications.value = []
     count.value = 0
   }
 
-  return { count, notifications, fetchCount, fetchAll, markRead, markAllRead, clearAll }
+  return { count, notifications, fetchCount, fetchAll, markRead, markAllRead, deleteOne, clearAll }
 })

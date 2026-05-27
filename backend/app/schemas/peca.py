@@ -99,12 +99,22 @@ class PecaResponse(BaseModel):
     )
 
 
+class PecaUpdate(BaseModel):
+    """Body do PATCH /pecas/{id} — todos os campos opcionais. Referência não é editável."""
+    nome: str | None = Field(None, min_length=1)
+    categoria: CategoriaPeca | None = None
+    descricao: str | None = None
+    unidade: str | None = None
+    preco_custo: float | None = Field(None, ge=0.0)
+    preco_venda: float | None = Field(None, ge=0.0)
+    ativo: bool | None = None
+
+
 class PecaDetalheResponse(PecaResponse):
     """
-    Resposta de detalhe de uma peça (GET /api/v1/pecas/{id}).
-    Idêntico a PecaResponse — extensível para campos adicionais futuros.
-    preco_custo continua OMITIDO.
+    Resposta de detalhe de uma peça — inclui preco_custo para uso interno (admin/gerente).
     """
+    preco_custo: float | None = None
 
 
 class PecaResumo(BaseModel):

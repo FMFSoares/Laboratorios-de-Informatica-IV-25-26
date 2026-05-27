@@ -27,9 +27,11 @@ class PedidoPecaRepository:
         return self._base_query().filter(PedidoPeca.id == pp_id).first()
 
     def list_by_loja(
-        self, loja_id: int, estado: EstadoPedidoPeca | None, skip: int, limit: int
+        self, loja_id: int | None, estado: EstadoPedidoPeca | None, skip: int, limit: int
     ) -> tuple[list[PedidoPeca], int]:
-        query = self._base_query().filter(PedidoPeca.loja_id == loja_id)
+        query = self._base_query()
+        if loja_id is not None:
+            query = query.filter(PedidoPeca.loja_id == loja_id)
         if estado is not None:
             query = query.filter(PedidoPeca.estado == estado)
         total = query.count()

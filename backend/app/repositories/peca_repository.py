@@ -19,8 +19,11 @@ class PecaRepository:
         categoria: CategoriaPeca | None,
         skip: int,
         limit: int,
+        incluir_inativos: bool = False,
     ) -> tuple[list[Peca], int]:
-        query_obj = self.db.query(Peca).filter(Peca.ativo == True)
+        query_obj = self.db.query(Peca)
+        if not incluir_inativos:
+            query_obj = query_obj.filter(Peca.ativo == True)
         if categoria:
             query_obj = query_obj.filter(Peca.categoria == categoria)
         if query:
@@ -45,3 +48,10 @@ class PecaRepository:
         self.db.commit()
         self.db.refresh(nova)
         return nova
+
+    def update(self, peca: Peca, **kwargs) -> Peca:
+        for k, v in kwargs.items():
+            setattr(peca, k, v)
+        self.db.commit()
+        self.db.refresh(peca)
+        return peca

@@ -102,6 +102,7 @@ from app.schemas.dashboard import (
     DashboardPeriodo,
     DashboardResponse,
     EficienciaMecanico,
+    FaturacaoPorLoja,
     OrdensConcluidasPorLoja,
     PecaAbaixoStockMinimo,
 )
@@ -187,6 +188,7 @@ __all__ = [
     "DashboardPeriodo",
     "DashboardResponse",
     "EficienciaMecanico",
+    "FaturacaoPorLoja",
     "OrdensConcluidasPorLoja",
     "PecaAbaixoStockMinimo",
     # auditoria

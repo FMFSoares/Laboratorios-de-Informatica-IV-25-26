@@ -14,7 +14,7 @@ class OrdemServico(Base):
     __tablename__ = "ordens_servico"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    numero: Mapped[str] = mapped_column(String(50), unique=True)
+    numero: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
     trotinete_id: Mapped[int] = mapped_column(ForeignKey("trotinetes.id"))
     cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"))
     loja_id: Mapped[int] = mapped_column(ForeignKey("lojas.id"))
@@ -35,6 +35,8 @@ class OrdemServico(Base):
     pecas_aplicadas: Mapped[list["OSPeca"]] = relationship(back_populates="ordem_servico")
     registos_tempo: Mapped[list["RegistoTempo"]] = relationship(back_populates="ordem_servico")
     fatura: Mapped[Optional["Fatura"]] = relationship(back_populates="ordem_servico")
+    observacoes: Mapped[list["OrdemServicoObservacao"]] = relationship(back_populates="ordem_servico", order_by="OrdemServicoObservacao.criado_em")
+    servicos_diagnostico: Mapped[list["OSServico"]] = relationship(back_populates="ordem_servico")
 
 
 class OSPeca(Base):
@@ -60,6 +62,21 @@ class RegistoTempo(Base):
     fim: Mapped[datetime | None]
     minutos_esta_sessao: Mapped[int | None]
     tempo_total_acumulado_minutos: Mapped[int | None]
+    mecanico_id: Mapped[int | None] = mapped_column(ForeignKey("utilizadores.id"))
+    mecanico: Mapped[Optional["Utilizador"]] = relationship()
 
     # Relacionamentos
     ordem_servico: Mapped["OrdemServico"] = relationship(back_populates="registos_tempo")
+
+
+class OrdemServicoObservacao(Base):
+    __tablename__ = "os_observacoes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ordem_servico_id: Mapped[int] = mapped_column(ForeignKey("ordens_servico.id"))
+    autor_id: Mapped[int] = mapped_column(ForeignKey("utilizadores.id"))
+    texto: Mapped[str] = mapped_column(String(1000))
+    criado_em: Mapped[datetime]
+
+    ordem_servico: Mapped["OrdemServico"] = relationship(back_populates="observacoes")
+    autor: Mapped["Utilizador"] = relationship()

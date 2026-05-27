@@ -121,6 +121,70 @@ def notificar_trotinete_pronta(
     send_email(to=cliente_email, subject=subject, body_html=body_html)
 
 
+def notificar_diagnostico_cliente(
+    cliente_email: str,
+    cliente_nome: str,
+    os_numero: str,
+    loja_nome: str,
+    loja_telefone: str,
+    servicos: list[dict],
+    total: float,
+) -> None:
+    linhas = "".join(
+        f"<tr>"
+        f"<td style='padding: 6px 12px; border-bottom: 1px solid #e5e7eb;'>{s['nome']}</td>"
+        f"<td style='padding: 6px 12px; border-bottom: 1px solid #e5e7eb; text-align: right;'>{s['preco']:.2f} €</td>"
+        f"</tr>"
+        for s in servicos
+    )
+    subject = f"Diagnóstico da sua trotinete — {os_numero}"
+    body_html = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto;">
+        <div style="background-color: #1abc9c; padding: 24px; text-align: center;">
+          <h1 style="color: white; margin: 0;">DLMCare</h1>
+        </div>
+        <div style="padding: 32px;">
+          <p>Olá, <strong>{cliente_nome}</strong>,</p>
+          <p>
+            O diagnóstico da sua trotinete foi concluído e a reparação foi iniciada.
+            Segue abaixo o resumo das operações que serão realizadas.
+          </p>
+          <div style="background-color: #f4f4f4; border-radius: 8px; padding: 16px; margin: 24px 0;">
+            <p style="margin: 0;"><strong>Ordem de serviço:</strong> {os_numero}</p>
+            <p style="margin: 8px 0 0;"><strong>Loja:</strong> {loja_nome}</p>
+            <p style="margin: 8px 0 0;"><strong>Contacto:</strong> {loja_telefone}</p>
+          </div>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+            <thead>
+              <tr style="background: #f0fdf4;">
+                <th style="padding: 8px 12px; text-align: left; font-size: 12px; color: #6b7280; text-transform: uppercase;">Serviço</th>
+                <th style="padding: 8px 12px; text-align: right; font-size: 12px; color: #6b7280; text-transform: uppercase;">Preço</th>
+              </tr>
+            </thead>
+            <tbody>{linhas}</tbody>
+            <tfoot>
+              <tr>
+                <td style="padding: 10px 12px; font-weight: 700;">Total estimado</td>
+                <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #1abc9c;">{total:.2f} €</td>
+              </tr>
+            </tfoot>
+          </table>
+          <p>
+            Avisaremos assim que a sua trotinete estiver pronta para levantamento.
+            Se tiver alguma questão, não hesite em contactar-nos pelo número acima.
+          </p>
+          <p>Obrigado pela sua confiança,<br><strong>Equipa DLMCare</strong></p>
+        </div>
+        <div style="background-color: #f0f0f0; padding: 16px; text-align: center; font-size: 12px; color: #888;">
+          Este email foi enviado automaticamente. Por favor não responda a este endereço.
+        </div>
+      </body>
+    </html>
+    """
+    send_email(to=cliente_email, subject=subject, body_html=body_html)
+
+
 def notificar_os_cancelada(
     cliente_email: str,
     cliente_nome: str,

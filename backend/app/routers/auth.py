@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
 
@@ -30,8 +30,9 @@ def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
         403: {"description": "Conta inativa"},
     },
 )
-def login(body: LoginRequest, service: AuthService = Depends(get_auth_service)) -> TokenResponse:
-    return service.login(body.email, body.password)
+def login(body: LoginRequest, request: Request, service: AuthService = Depends(get_auth_service)) -> TokenResponse:
+    ip = request.client.host if request.client else None
+    return service.login(body.email, body.password, ip=ip)
 
 
 @router.post(

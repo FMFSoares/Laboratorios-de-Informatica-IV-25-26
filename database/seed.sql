@@ -11,6 +11,7 @@ TRUNCATE TABLE stock_lojas;
 TRUNCATE TABLE pecas;
 TRUNCATE TABLE utilizadores;
 TRUNCATE TABLE lojas;
+TRUNCATE TABLE servicos;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -57,6 +58,37 @@ INSERT INTO pecas (id, referencia, nome, categoria, descricao, unidade, preco_cu
 
 
 -- 4. STOCK (Inventário cruzado)
+-- Serviços do catálogo
+INSERT INTO servicos (id, nome, preco_base, ativo) VALUES
+-- Diagnóstico
+(1,  'Diagnóstico Geral',                    15.00, 1),
+-- Bateria
+(2,  'Substituição de Bateria',              49.00, 1),
+(3,  'Calibração de Bateria',                12.00, 1),
+-- Pneus
+(4,  'Substituição de Pneu Dianteiro',       18.00, 1),
+(5,  'Substituição de Pneu Traseiro',        18.00, 1),
+(6,  'Reparação de Furo',                    10.00, 1),
+-- Travões
+(7,  'Regulação de Travões',                  8.00, 1),
+(8,  'Substituição de Pastilhas de Travão',  22.00, 1),
+(9,  'Substituição de Cabos de Travão',      14.00, 1),
+-- Motor / Controlador
+(10, 'Verificação e Limpeza do Motor',       20.00, 1),
+(11, 'Substituição de Motor',                95.00, 1),
+(12, 'Substituição de Controlador',          75.00, 1),
+-- Iluminação
+(13, 'Substituição de Farol Dianteiro',      12.00, 1),
+(14, 'Substituição de Luz Traseira',          9.00, 1),
+-- Limpeza e revisão
+(15, 'Revisão Completa',                     35.00, 1),
+(16, 'Limpeza e Lubrificação Geral',         10.00, 1),
+-- Acessórios / outros
+(17, 'Substituição de Guiador',              25.00, 1),
+(18, 'Substituição de Pega',                  6.00, 1),
+(19, 'Ajuste de Suspensão',                  15.00, 1),
+(20, 'Serviço Personalizado',                 0.00, 1);
+
 -- Inserções das 12 peças geradas automaticamente para as 3 lojas
 -- Quantidades entre 0-20, limites entre 2-5
 INSERT INTO stock_lojas (peca_id, loja_id, quantidade, limite_minimo) VALUES

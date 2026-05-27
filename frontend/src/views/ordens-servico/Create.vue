@@ -1,18 +1,31 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getClientes, createCliente } from '../../services/clientes.js'
-import { createTrotinete } from '../../services/trotinetes.js'
+import { getClientes, getCliente, createCliente } from '../../services/clientes.js'
+import { getTrotinetes, createTrotinete } from '../../services/trotinetes.js'
 import { createOrdemServico } from '../../services/ordensServico.js'
+import { getLojas } from '../../services/lojas.js'
 import { useAuthStore } from '../../store/auth.js'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
+const isAdmin = auth.getCurrentUser?.perfil === 'ADMINISTRADOR'
+
 const step = ref(1)
 const error = ref('')
 const loading = ref(false)
+
+// ── Loja selection (ADMINISTRADOR only) ───────────────────────
+const lojas = ref([])
+const lojaIdSelecionada = ref(null)
+
+if (isAdmin) {
+  getLojas({ page_size: 100 }).then(({ data }) => {
+    lojas.value = data.data ?? []
+  }).catch(() => {})
+}
 
 // ── Step 1: cliente ────────────────────────────────────────────
 const clienteSearch = ref('')
@@ -37,9 +50,10 @@ async function searchClientes() {
   }
 }
 
-function selectCliente(c) {
+async function selectCliente(c) {
   clienteSelecionado.value = c
   criandoCliente.value = false
+  await fetchTrotinetes(c.id)
   step.value = 2
 }
 
@@ -53,6 +67,7 @@ async function createAndSelectCliente() {
   try {
     const { data } = await createCliente(novoCliente.value)
     clienteSelecionado.value = data.data
+    clienteTrotinetes.value = []
     step.value = 2
   } catch (e) {
     error.value = e.response?.data?.detail?.detail || 'Erro ao criar cliente.'
@@ -62,9 +77,20 @@ async function createAndSelectCliente() {
 }
 
 // ── Step 2: trotinete ──────────────────────────────────────────
+const clienteTrotinetes = ref([])
 const trotSelecionada = ref(null)
 const criandoTrot = ref(false)
 const novaTrot = ref({ marca: '', modelo: '', numero_serie: '', ano_compra: '', cor: '' })
+
+async function fetchTrotinetes(clienteId) {
+  clienteTrotinetes.value = []
+  try {
+    const { data } = await getTrotinetes({ cliente_id: clienteId, page_size: 100 })
+    clienteTrotinetes.value = data.data ?? []
+  } catch {
+    clienteTrotinetes.value = []
+  }
+}
 
 function selectTrot(t) {
   trotSelecionada.value = t
@@ -98,7 +124,6 @@ async function createAndSelectTrot() {
 const osForm = ref({
   descricao_problema: '',
   prioridade: 'NORMAL',
-  preco_servico: '',
 })
 
 const PRIORIDADES = [
@@ -109,8 +134,13 @@ const PRIORIDADES = [
 ]
 
 async function submitOS() {
-  if (!osForm.value.descricao_problema.trim() || !osForm.value.preco_servico) {
-    error.value = 'Preencha todos os campos obrigatórios.'
+  if (!osForm.value.descricao_problema.trim()) {
+    error.value = 'Preencha a descrição do problema.'
+    return
+  }
+  const lojaId = isAdmin ? lojaIdSelecionada.value : auth.getCurrentUser.loja_id
+  if (!lojaId) {
+    error.value = 'Selecione uma loja antes de continuar.'
     return
   }
   loading.value = true
@@ -118,10 +148,9 @@ async function submitOS() {
   try {
     const body = {
       trotinete_id: trotSelecionada.value.id,
-      loja_id: auth.getCurrentUser.loja_id,
+      loja_id: lojaId,
       descricao_problema: osForm.value.descricao_problema.trim(),
       prioridade: osForm.value.prioridade,
-      preco_servico: parseFloat(osForm.value.preco_servico),
     }
     const { data } = await createOrdemServico(body)
     router.push(`/ordens-servico/${data.data.id}`)
@@ -137,9 +166,9 @@ onMounted(async () => {
   const clienteId = route.query.cliente_id
   if (clienteId) {
     try {
-      const { getCliente } = await import('../../services/clientes.js')
       const { data } = await getCliente(clienteId)
       clienteSelecionado.value = data.data
+      await fetchTrotinetes(clienteId)
       step.value = 2
     } catch {
       // ignore
@@ -246,11 +275,11 @@ onMounted(async () => {
 
         <div v-if="!criandoTrot">
           <div
-            v-if="clienteSelecionado?.trotinetes?.length > 0"
+            v-if="clienteTrotinetes.length > 0"
             class="results-list"
           >
             <div
-              v-for="t in clienteSelecionado.trotinetes"
+              v-for="t in clienteTrotinetes"
               :key="t.id"
               class="result-item"
               @click="selectTrot(t)"
@@ -310,6 +339,13 @@ onMounted(async () => {
         </div>
 
         <div class="form-grid" style="margin-top: 1.25rem">
+          <div v-if="isAdmin" class="field field--full">
+            <label>Loja *</label>
+            <select v-model="lojaIdSelecionada" required>
+              <option :value="null" disabled>Selecione a loja...</option>
+              <option v-for="l in lojas" :key="l.id" :value="l.id">{{ l.nome }}</option>
+            </select>
+          </div>
           <div class="field field--full">
             <label>Descrição do problema *</label>
             <textarea
@@ -323,16 +359,6 @@ onMounted(async () => {
             <select v-model="osForm.prioridade">
               <option v-for="p in PRIORIDADES" :key="p.value" :value="p.value">{{ p.label }}</option>
             </select>
-          </div>
-          <div class="field">
-            <label>Preço do serviço (€) *</label>
-            <input
-              v-model="osForm.preco_servico"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0.00"
-            />
           </div>
           <p v-if="error" class="form-error field--full">{{ error }}</p>
           <div class="field--full step-actions">

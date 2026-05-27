@@ -88,7 +88,7 @@ let pollInterval
 async function fetch() {
   loading.value = true
   try {
-    const { data } = await getOrdensServico({ page_size: 100 })
+    const { data } = await getOrdensServico({ mecanico_id: auth.getCurrentUser?.id, page_size: 100 })
     ordens.value = data.data
   } catch {
     ordens.value = []

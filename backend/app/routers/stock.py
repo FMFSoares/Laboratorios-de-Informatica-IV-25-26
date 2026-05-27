@@ -17,13 +17,14 @@ def get_stock_service(db: Session = Depends(get_db)) -> StockService:
 @router.get("/", response_model=PaginatedResponse[StockItemResponse])
 def listar_stock(
     loja_id: int | None = Query(None),
+    peca_id: int | None = Query(None),
     apenas_alertas: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: CurrentUserResponse = Depends(get_current_user),
     service: StockService = Depends(get_stock_service)
 ):
-    return service.listar(loja_id, apenas_alertas, page, page_size, current_user)
+    return service.listar(loja_id, apenas_alertas, page, page_size, current_user, peca_id=peca_id)
 
 @router.post("/entradas", response_model=DataResponse[StockEntradaResponse], status_code=status.HTTP_201_CREATED)
 def registar_entrada(

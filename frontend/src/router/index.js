@@ -52,7 +52,7 @@ const routes = [
         path: 'ordens-servico/nova',
         name: 'OrdemServicoNova',
         component: () => import('../views/ordens-servico/Create.vue'),
-        meta: { roles: ['ADMINISTRADOR', 'RECECIONISTA'] },
+        meta: { roles: ['ADMINISTRADOR', 'RECECIONISTA', 'GERENTE_LOJA'] },
       },
       {
         path: 'ordens-servico/:id',
@@ -122,6 +122,64 @@ const routes = [
         component: () => import('../views/utilizadores/Index.vue'),
         meta: { roles: ['ADMINISTRADOR'] },
       },
+      {
+        path: 'utilizadores/:id',
+        name: 'UtilizadorDetalhe',
+        component: () => import('../views/utilizadores/Detail.vue'),
+        meta: { roles: ['ADMINISTRADOR'] },
+      },
+
+      // ── Lojas ────────────────────────────────────────────────
+      {
+        path: 'lojas',
+        name: 'Lojas',
+        component: () => import('../views/lojas/Index.vue'),
+        meta: { roles: ['ADMINISTRADOR'] },
+      },
+      {
+        path: 'lojas/:id',
+        name: 'LojaDetalhe',
+        component: () => import('../views/lojas/Detail.vue'),
+        meta: { roles: ['ADMINISTRADOR'] },
+      },
+
+      // ── Catálogo de Peças ─────────────────────────────────────
+      {
+        path: 'pecas',
+        name: 'CatalogoPecas',
+        component: () => import('../views/pecas/Index.vue'),
+        meta: { roles: ['ADMINISTRADOR'] },
+      },
+
+      // ── Trotinetes ───────────────────────────────────────────
+      {
+        path: 'trotinetes/:id',
+        name: 'TrotineteDetalhe',
+        component: () => import('../views/trotinetes/Detail.vue'),
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
+      },
+
+      // ── Catálogo de Serviços ─────────────────────────────────
+      {
+        path: 'servicos',
+        name: 'Servicos',
+        component: () => import('../views/servicos/Index.vue'),
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+      },
+      {
+        path: 'servicos/:id',
+        name: 'ServicoDetalhe',
+        component: () => import('../views/servicos/Detail.vue'),
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+      },
+
+      // ── Auditoria ────────────────────────────────────────────
+      {
+        path: 'auditoria',
+        name: 'Auditoria',
+        component: () => import('../views/auditoria/Index.vue'),
+        meta: { roles: ['ADMINISTRADOR'] },
+      },
 
       // ── Transferências ───────────────────────────────────────
       {
@@ -142,7 +200,7 @@ const routes = [
         path: 'notificacoes',
         name: 'Notificacoes',
         component: () => import('../views/notificacoes/Index.vue'),
-        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'MECANICO'] },
       },
 
       // ── Conta ────────────────────────────────────────────────
