@@ -1,0 +1,4 @@
+[run]
+omit = 
+    backend/app/utils/*
+    backend/app/main.py

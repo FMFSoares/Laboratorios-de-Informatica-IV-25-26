@@ -225,7 +225,7 @@ def test_atualizar_estado_os_invalido(admin_client):
     res = admin_client.patch("/api/v1/ordens-servico/1/estado", json={"novo_estado": "ESTADO_INEXISTENTE"})
     assert res.status_code == 422 # Erro de validação do Enum
 
-# 1. Teste de Auditoria Completo (Cobre AuditoriaRepository)
+# Teste de Auditoria Completo (Cobre AuditoriaRepository)
 def test_cobertura_fluxo_auditoria(admin_client):
     """Garante que ações de escrita geram entradas na auditoria."""
     # Ação de escrita
@@ -242,7 +242,7 @@ def test_cobertura_fluxo_auditoria(admin_client):
     # Verifica se a última ação foi a criação da peça
     assert "PECA_CRIADA" in logs[0]["evento"]
 
-# 2. Teste de Estado Inválido (Cobre OrdemServicoService - ramos de erro)
+# Teste de Estado Inválido (Cobre OrdemServicoService - ramos de erro)
 def test_ordem_servico_transicao_estado_invalida(admin_client):
     """Tenta atualizar estado para algo que não existe."""
     # Usando o endpoint de atualização de estado
@@ -252,7 +252,7 @@ def test_ordem_servico_transicao_estado_invalida(admin_client):
     )
     assert res.status_code == 422 
 
-# 3. Teste de Paginação e Filtros (Cobre Repositories de Cliente e Peca)
+# Teste de Paginação e Filtros (Cobre Repositories de Cliente e Peca)
 @pytest.mark.parametrize("page, page_size", [(1, 5), (2, 2)])
 def test_listagem_paginacao_e_filtros(admin_client, page, page_size):
     """Testa os parâmetros de paginação nos repositórios."""
@@ -263,9 +263,18 @@ def test_listagem_paginacao_e_filtros(admin_client, page, page_size):
     assert "data" in data
     assert len(data["data"]) <= page_size
 
-# 4. Teste de Erro de Stock no Service (Cobre StockService.consumir_stock)
+# Teste de Erro de Stock no Service (Cobre StockService.consumir_stock)
 def test_stock_consumo_excessivo_service(mec_client):
     """Força erro de stock insuficiente via service."""
     # Peca 1 tem 10 de stock no conftest. Pedir 999.
     res = mec_client.post("/api/v1/ordens-servico/1/pecas", json={"peca_id": 1, "quantidade": 999})
     assert res.status_code == 400
+
+def test_ordem_servico_peca_cenarios_erro(admin_client):
+    # 1. Tentar adicionar peça em OS inexistente (404)
+    res = admin_client.post("/api/v1/ordens-servico/9999/pecas", json={"peca_id": 1, "quantidade": 1})
+    assert res.status_code == 404
+
+    # 2. Tentar adicionar peça com quantidade negativa (422 ou 400 dependendo da validação)
+    res = admin_client.post("/api/v1/ordens-servico/1/pecas", json={"peca_id": 1, "quantidade": -5})
+    assert res.status_code == 422
