@@ -448,6 +448,25 @@ function fmtDateTime(dt) {
             </div>
           </div>
 
+          <!-- Serviços do Diagnóstico -->
+          <div class="card" v-if="['EM_REPARACAO', 'AGUARDA_PECAS', 'CONCLUIDA'].includes(os.estado) && os.servicos_diagnostico?.length > 0">
+            <div class="card-title">Serviços do Diagnóstico</div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Operação</th>
+                  <th class="col-right">Preço</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in os.servicos_diagnostico" :key="s.id">
+                  <td>{{ s.nome }}</td>
+                  <td class="col-right">{{ s.preco.toFixed(2) }} €</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
           <!-- State actions -->
           <div class="card" v-if="timerAtivo || canResume || mainActions.length > 0">
             <div class="card-title">Próxima Ação</div>
@@ -597,12 +616,13 @@ function fmtDateTime(dt) {
           <div class="card card--conclude" v-if="rightColumnAction">
             <button
               class="btn btn--primary btn--action"
-              :disabled="rightColumnAction.estado === 'CONCLUIDA' && !timerAtivo"
-              :title="rightColumnAction.estado === 'CONCLUIDA' && !timerAtivo ? 'O timer deve estar ativo para concluir' : ''"
+              :disabled="!timerAtivo"
+              :title="!timerAtivo ? 'O timer deve estar ativo para continuar' : ''"
               @click="rightColumnAction.isDiag ? openDiagModal() : startTransition(rightColumnAction)"
             >
               ✓ {{ rightColumnAction.label }}
             </button>
+            <p v-if="!timerAtivo" class="timer-warn">Inicia o timer para continuar.</p>
           </div>
 
           <OsObservacoes
@@ -766,6 +786,7 @@ function fmtDateTime(dt) {
 
 .empty-msg { color: #6b7280; font-size: 0.875rem; }
 .form-error { color: #dc2626; font-size: 0.85rem; }
+.timer-warn { color: #9ca3af; font-size: 0.8rem; margin-top: 0.5rem; text-align: center; }
 
 .prio-baixa { color: #6b7280; }
 .prio-normal { color: #374151; }

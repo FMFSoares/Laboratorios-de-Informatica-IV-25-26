@@ -31,8 +31,12 @@ class UtilizadorBase(BaseModel):
     )
     ativo: bool = Field(True, description="Indica se a conta está activa.")
     comissao: int | None = Field(
-        None, 
+        None,
         description="Percentagem de cada serviço. Apenas para o perfil MECANICO."
+    )
+    salario_base: float | None = Field(
+        None,
+        description="Salário base mensal em euros.",
     )
 
 
@@ -73,6 +77,7 @@ class UtilizadorUpdate(BaseModel):
     loja_id: int | None = None
     ativo: bool | None = None
     comissao: int | None = None
+    salario_base: float | None = None
 
 
 class PasswordResetRequest(BaseModel):

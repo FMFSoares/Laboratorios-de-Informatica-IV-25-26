@@ -23,7 +23,7 @@ const createError = ref('')
 const createForm  = ref(emptyForm())
 
 function emptyForm() {
-  return { nome: '', email: '', password: '', perfil: '', loja_id: null, ativo: true, comissao: null }
+  return { nome: '', email: '', password: '', perfil: '', loja_id: null, ativo: true, comissao: null, salario_base: null }
 }
 
 const PERFIS = [
@@ -121,6 +121,7 @@ async function submitCreate() {
     loja_id:  createForm.value.perfil === 'ADMINISTRADOR' ? null : Number(createForm.value.loja_id),
     ativo:    createForm.value.ativo,
     comissao: createIsMecanico.value && createForm.value.comissao ? Number(createForm.value.comissao) : null,
+    salario_base: createForm.value.salario_base ? Number(createForm.value.salario_base) : null,
   }
 
   creating.value = true
@@ -225,6 +226,10 @@ onMounted(load)
             <option :value="null">Selecionar loja…</option>
             <option v-for="l in lojas" :key="l.id" :value="l.id">{{ l.nome }}</option>
           </select>
+        </div>
+        <div class="field">
+          <label>Salário Base (€)</label>
+          <input v-model="createForm.salario_base" type="number" min="0" step="0.01" placeholder="Ex: 1200" />
         </div>
         <div class="field" v-if="createIsMecanico">
           <label>Comissão (%)</label>

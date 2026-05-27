@@ -190,6 +190,14 @@ const routes = [
         meta: { roles: ['ADMINISTRADOR'] },
       },
 
+      // ── Salários ─────────────────────────────────────────────
+      {
+        path: 'salarios',
+        name: 'Salarios',
+        component: () => import('../views/salarios/Index.vue'),
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+      },
+
       // ── Transferências ───────────────────────────────────────
       {
         path: 'transferencias',

@@ -206,6 +206,7 @@ class OrdemServicoService:
                 loja_nome=os.loja.nome if os.loja else None,
                 cliente_nome=os.cliente.nome if os.cliente else None,
                 trotinete_numero_serie=os.trotinete.numero_serie if os.trotinete else None,
+                mecanico_id=os.mecanico_id,
                 mecanico_nome=os.mecanico.nome if os.mecanico else None,
                 data_entrada=os.data_entrada,
                 data_conclusao=os.data_conclusao,
@@ -244,6 +245,8 @@ class OrdemServicoService:
                     status_code=409,
                     detail="Já tens uma OS activa. Conclui o trabalho antes de iniciar outra.",
                 )
+            if os.mecanico_id is None:
+                os.mecanico_id = current_user.id
 
         estado_anterior = os.estado
         os.estado = novo_estado

@@ -196,6 +196,7 @@ class OrdemServicoResumo(BaseModel):
     loja_nome: str | None
     cliente_nome: str | None
     trotinete_numero_serie: str | None
+    mecanico_id: int | None = None
     mecanico_nome: str | None
     data_entrada: datetime
     data_conclusao: datetime | None = None

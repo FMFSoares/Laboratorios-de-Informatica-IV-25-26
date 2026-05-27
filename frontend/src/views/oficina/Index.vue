@@ -47,13 +47,24 @@ function matchSearch(o) {
   )
 }
 
+const uid = computed(() => auth.getCurrentUser?.id)
+const isMecanico = computed(() => auth.getCurrentUser?.perfil === 'MECANICO')
+
 const avaliacao = computed(() => {
-  const filtered = ordens.value.filter(o => ESTADOS_AVALIACAO.includes(o.estado) && matchSearch(o))
+  const filtered = ordens.value.filter(o => {
+    if (!ESTADOS_AVALIACAO.includes(o.estado)) return false
+    if (isMecanico.value && o.estado !== 'PENDENTE' && o.mecanico_id !== uid.value) return false
+    return matchSearch(o)
+  })
   return applySort(filtered, avalSort.value)
 })
 
 const reparacao = computed(() => {
-  const filtered = ordens.value.filter(o => ESTADOS_REPARACAO.includes(o.estado) && matchSearch(o))
+  const filtered = ordens.value.filter(o => {
+    if (!ESTADOS_REPARACAO.includes(o.estado)) return false
+    if (isMecanico.value && o.mecanico_id !== uid.value) return false
+    return matchSearch(o)
+  })
   return applySort(filtered, repSort.value)
 })
 

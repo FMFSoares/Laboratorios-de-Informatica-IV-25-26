@@ -18,6 +18,7 @@ class Utilizador(Base):
     loja_id: Mapped[int | None] = mapped_column(ForeignKey("lojas.id"))
     ativo: Mapped[bool] = mapped_column(default=True)
     comissao: Mapped[int | None]
+    salario_base: Mapped[float | None]
 
     # Relacionamentos
     loja: Mapped["Loja"] = relationship(back_populates="utilizadores")

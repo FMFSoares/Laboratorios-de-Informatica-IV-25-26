@@ -1,10 +1,14 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getServico, updateServico } from '../../services/servicos.js'
+import { useAuthStore } from '../../store/auth.js'
 
 const route  = useRoute()
 const router = useRouter()
+const auth   = useAuthStore()
+
+const canEdit = computed(() => ['ADMINISTRADOR', 'GERENTE_LOJA'].includes(auth.getCurrentUser?.perfil))
 
 const servico  = ref(null)
 const loading  = ref(true)
@@ -108,7 +112,7 @@ async function confirmToggle() {
           <div class="card">
             <div class="card-hd">
               <span class="card-title">Informações</span>
-              <button class="btn btn--ghost btn--sm" @click="openEdit">Editar</button>
+              <button v-if="canEdit" class="btn btn--ghost btn--sm" @click="openEdit">Editar</button>
             </div>
             <dl class="info-list">
               <div class="info-row">
@@ -131,7 +135,7 @@ async function confirmToggle() {
           </div>
         </div>
 
-        <div class="col">
+        <div v-if="canEdit" class="col">
           <div class="card zone-card" :class="servico.ativo ? 'zone-card--danger' : 'zone-card--success'">
             <div class="card-hd"><span class="card-title">Estado do Serviço</span></div>
             <p class="zone-desc">

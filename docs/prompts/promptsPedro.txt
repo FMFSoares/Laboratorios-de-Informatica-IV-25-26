@@ -975,3 +975,23 @@ When I click on an old OS while an OS is active it automatically redirects to th
 - **Root cause**: `frontend/src/views/oficina/Historico.vue` (the mechanic's completed-OS history page) was navigating to `/ordens-servico/${o.id}` on row click. MECANICOs don't have access to the `ordens-servico/:id` route (restricted to ADMINISTRADOR, GERENTE_LOJA, RECECIONISTA). The RBAC guard redirected them to `/oficina/ativa`, which then found the active OS and redirected there
 - **Fix**: changed the row click handler in `Historico.vue` to navigate to `/oficina/${o.id}` instead — a route accessible to both MECANICO and ADMINISTRADOR
   - Marca + Modelo displayed stacked in one column; client name highlighted
+
+---
+
+### [2026-05-27] Salary management tab for managers
+
+**Prompt:**
+Implement salaries for all workers. Add a tab for that in Gerente and Administrador. Check if there's any calculation logic in the codebase — if not, there's a commission field, so suggest an approach. After scouting, the chosen approach was: add a `salario_base` field to all users and build a monthly salary tab showing base salary + commission earned (for mechanics) per period. Then populate the base salaries with realistic values.
+
+**What was done:**
+- Added `salario_base` (Float, nullable) to `Utilizador` model and all relevant schemas (`UtilizadorBase`, `UtilizadorUpdate`)
+- Created Alembic migration `a1b2c3d4e5f6` to add the column
+- Created `SalarioUtilizador` response schema (`app/schemas/salario.py`)
+- Created `SalarioService` (`app/services/salario_service.py`): fetches all active workers (scoped to store for GERENTE_LOJA), runs a single grouped query on `faturas → ordens_servico` to compute commission earned per mechanic in the period, returns `salario_base + comissao_ganha` per worker
+  - Commission formula: `SUM(fatura.valor_final) × (comissao / 100)` grouped by `mecanico_id`, filtered by `Fatura.data_emissao` in the selected month
+- Created `GET /api/v1/salarios?ano=&mes=` router (ADMINISTRADOR + GERENTE_LOJA only)
+- Registered router in `main.py`
+- Created `frontend/src/views/salarios/Index.vue`: month/year picker, table with base salary, commission %, commission earned, total per worker, and a payroll total footer row
+- Added `/salarios` route (router) and sidebar nav item for ADMINISTRADOR + GERENTE_LOJA
+- Added `salario_base` field to user create form (`utilizadores/Index.vue`) and edit form + detail view (`utilizadores/Detail.vue`)
+- Populated seed salaries via direct SQL: ADMINISTRADOR €3 500, GERENTE_LOJA €2 200–€2 400, RECECIONISTA €1 100–€1 150, MECANICO €1 350–€1 450 (plus their commission)

@@ -72,11 +72,12 @@ function resetEditForm() {
   const u = utilizador.value
   if (!u) return
   editForm.value = {
-    nome:     u.nome,
-    email:    u.email,
-    perfil:   u.perfil,
-    loja_id:  u.loja_id,
-    comissao: u.comissao,
+    nome:        u.nome,
+    email:       u.email,
+    perfil:      u.perfil,
+    loja_id:     u.loja_id,
+    comissao:    u.comissao,
+    salario_base: u.salario_base,
   }
   editError.value = ''
   editOk.value    = false
@@ -105,7 +106,8 @@ async function submitEdit() {
       email:    editForm.value.email.trim(),
       perfil:   editForm.value.perfil,
       loja_id:  editForm.value.perfil === 'ADMINISTRADOR' ? null : Number(editForm.value.loja_id),
-      comissao: editIsMecanico.value && editForm.value.comissao ? Number(editForm.value.comissao) : null,
+      comissao:    editIsMecanico.value && editForm.value.comissao ? Number(editForm.value.comissao) : null,
+      salario_base: editForm.value.salario_base ? Number(editForm.value.salario_base) : null,
     })
     editOk.value = true
     await load()
@@ -241,6 +243,10 @@ async function confirmToggle() {
                 <dt>Loja</dt>
                 <dd>{{ lojaNome }}</dd>
               </div>
+              <div class="info-row">
+                <dt>Salário Base</dt>
+                <dd>{{ utilizador.salario_base != null ? utilizador.salario_base.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }) : '—' }}</dd>
+              </div>
               <div class="info-row" v-if="utilizador.perfil === 'MECANICO'">
                 <dt>Comissão</dt>
                 <dd>{{ utilizador.comissao != null ? utilizador.comissao + '%' : '—' }}</dd>
@@ -311,6 +317,10 @@ async function confirmToggle() {
                 <option :value="null">Selecionar loja…</option>
                 <option v-for="l in lojas" :key="l.id" :value="l.id">{{ l.nome }}</option>
               </select>
+            </div>
+            <div class="field">
+              <label>Salário Base (€)</label>
+              <input v-model="editForm.salario_base" type="number" min="0" step="0.01" placeholder="Ex: 1200" />
             </div>
             <div v-if="editIsMecanico" class="field">
               <label>Comissão (%)</label>

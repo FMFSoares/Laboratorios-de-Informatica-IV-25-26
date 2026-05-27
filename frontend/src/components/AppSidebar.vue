@@ -49,6 +49,7 @@ const ALL_NAV = [
   { label: 'Catálogo Peças',    to: '/pecas',           roles: ['ADMINISTRADOR'] },
   { label: 'Inventário',         to: '/stock',           roles: ['GERENTE_LOJA'] },
   { label: 'Transferências',     to: '/transferencias',  roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+  { label: 'Salários',           to: '/salarios',        roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
   { label: 'Notificações',       to: '/notificacoes',    roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'MECANICO'], badge: true },
   { label: 'Faturas',            to: '/faturas',         roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
   { label: 'Catálogo Serviços', to: '/servicos',        roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },

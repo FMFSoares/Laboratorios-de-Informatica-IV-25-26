@@ -48,7 +48,7 @@ def health():
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────
-from app.routers import auth, clientes, trotinetes, pecas, stock, ordens_servico, faturas, dashboard, auditoria, utilizadores, lojas, notificacoes, transferencias, pedidos_peca, servicos
+from app.routers import auth, clientes, trotinetes, pecas, stock, ordens_servico, faturas, dashboard, auditoria, utilizadores, lojas, notificacoes, transferencias, pedidos_peca, servicos, salarios
 
 app.include_router(auth.router,            prefix="/api/v1")
 app.include_router(clientes.router,        prefix="/api/v1")
@@ -65,3 +65,4 @@ app.include_router(notificacoes.router,    prefix="/api/v1")
 app.include_router(transferencias.router,  prefix="/api/v1")
 app.include_router(pedidos_peca.router,    prefix="/api/v1")
 app.include_router(servicos.router,        prefix="/api/v1")
+app.include_router(salarios.router,        prefix="/api/v1")
