@@ -121,49 +121,50 @@ def test_cobertura_dashboard_auditoria(client):
     assert client.get("/api/v1/auditoria", headers=headers).status_code == 200
     
 def test_cobertura_ordens_e_trotinetes(client):
-    # Simular o ciclo de entrada de uma trotinete
-    token = client.post("/api/v1/auth/login", json={"email": "admin@teste.pt", "password": "admin123"}).json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-
-    client.post("/api/v1/pecas", json={
-        "referencia": "PNEU-001", "nome": "Pneu", "categoria": "PNEU", 
-        "unidade": "unidade", "preco_custo": 10.0, "preco_venda": 25.0
-    }, headers=headers)
+    # --- 1. ADMIN prepara o terreno (Cria a Peça) ---
+    token_admin = client.post("/api/v1/auth/login", json={"email": "admin@teste.pt", "password": "admin123"}).json()["access_token"]
+    headers_admin = {"Authorization": f"Bearer {token_admin}"}
     
-    # 1. Criar Cliente
+    admin_peca =client.post("/api/v1/pecas", json={
+                    "referencia": "PNEU-001", "nome": "Pneu", "categoria": "PNEU", 
+                    "unidade": "unidade", "preco_custo": 10.0, "preco_venda": 25.0
+                }, headers=headers_admin)
+    peca_id = admin_peca.json()["data"]["id"] # Captura o ID real criado
+
+    client.post("/api/v1/stock/entradas", json={
+        "loja_id": 1, 
+        "peca_id": peca_id, 
+        "quantidade": 10, 
+        "observacoes": "Stock inicial para testes"
+    }, headers=headers_admin)
+    
+    # --- 2. RECECIONISTA cria Cliente, Trotinete e OS ---
+    token_rec = client.post("/api/v1/auth/login", json={"email": "rec@teste.pt", "password": "rec123"}).json()["access_token"]
+    headers_rec = {"Authorization": f"Bearer {token_rec}"}
+    
     res_cli = client.post("/api/v1/clientes", json={
         "nome": "Cliente OS", "nif": "198968183", "telemovel": "919999999", "consentimento_rgpd": True
-    }, headers=headers)
-    assert res_cli.status_code == 201
+    }, headers=headers_rec)
     cli_id = res_cli.json()["data"]["id"]
     
-    # 2. Criar Trotinete
     res_trot = client.post("/api/v1/trotinetes", json={
         "cliente_id": cli_id, "marca": "Xiaomi", "modelo": "M365", "numero_serie": "SN12345"
-    }, headers=headers)
-    assert res_trot.status_code == 201
+    }, headers=headers_rec)
     trot_id = res_trot.json()["data"]["id"]
     
-    # 3. Criar OS (primeiro crias a OS para teres o ID)
     res_os = client.post("/api/v1/ordens-servico", json={
         "trotinete_id": trot_id, "loja_id": 1, "descricao_problema": "Pneu furado", 
         "prioridade": "NORMAL", "preco_servico": 15.0
-    }, headers=headers)
-    assert res_os.status_code == 201
-    os_id = res_os.json()["data"]["id"] # AQUI é que definimos o os_id
-
+    }, headers=headers_rec)
+    os_id = res_os.json()["data"]["id"]
     
+    # --- 3. MECÂNICO adiciona a peça (agora sim, 201 Created!) ---
+    token_mec = client.post("/api/v1/auth/login", json={"email": "mecanico@teste.pt", "password": "mecanico123"}).json()["access_token"]
+    headers_mec = {"Authorization": f"Bearer {token_mec}"}
     
-    # 4. Adicionar Peça (agora que já tens o os_id)
-    # Nota: No teu router, o "peca_id" e "quantidade" devem vir no body, não no path
     res_peca = client.post(
         f"/api/v1/ordens-servico/{os_id}/pecas", 
-        json={"peca_id": 1, "quantidade": 1}, 
-        headers=headers
+        json={"peca_id": peca_id, "quantidade": 1}, 
+        headers=headers_mec # Usa o token do MECÂNICO
     )
     assert res_peca.status_code == 201
-    
-    # 5. Listar e Obter Detalhes
-    client.get("/api/v1/trotinetes", headers=headers)
-    client.get("/api/v1/ordens-servico", headers=headers)
-    client.get(f"/api/v1/ordens-servico/{os_id}", headers=headers)

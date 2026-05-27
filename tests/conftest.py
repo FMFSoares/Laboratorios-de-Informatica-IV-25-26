@@ -57,9 +57,23 @@ def db_session():
     db.commit()
     db.refresh(loja1)
     
-    admin = Utilizador(nome="Admin", email="admin@teste.pt", password_hash=hash_password("admin123"), perfil=PerfilUtilizador.ADMINISTRADOR, ativo=True)
-    rececionista = Utilizador(nome="Rececionista", email="rec@teste.pt", password_hash=hash_password("rec123"), perfil=PerfilUtilizador.RECECIONISTA, loja_id=loja1.id, ativo=True)
-    db.add_all([admin, rececionista])
+    admin = Utilizador(
+        nome="Admin", email="admin@teste.pt", password_hash=hash_password("admin123"), 
+        perfil=PerfilUtilizador.ADMINISTRADOR, ativo=True
+    )
+    gerente = Utilizador(
+        nome="Gerente", email="gerente@teste.pt", password_hash=hash_password("gerente123"), 
+        perfil=PerfilUtilizador.GERENTE_LOJA, loja_id=loja1.id, ativo=True
+    )
+    rececionista = Utilizador(
+        nome="Rececionista", email="rec@teste.pt", password_hash=hash_password("rec123"), 
+        perfil=PerfilUtilizador.RECECIONISTA, loja_id=loja1.id, ativo=True
+    )
+    mecanico = Utilizador(
+        nome="Mecanico", email="mecanico@teste.pt", password_hash=hash_password("mecanico123"), 
+        perfil=PerfilUtilizador.MECANICO, loja_id=loja1.id, ativo=True
+    )
+    db.add_all([admin, gerente, rececionista, mecanico])
     db.commit()
 
     yield db  # Cede a sessão para o teste
