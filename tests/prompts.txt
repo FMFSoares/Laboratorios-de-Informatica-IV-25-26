@@ -1,0 +1,66 @@
+PROJETO: Laboratórios de Informática IV - 2026
+CONTEXTO: Refatoração da Suite de Testes de Integração (Pytest/FastAPI)
+
+OBJETIVO:
+Consolidar a suite de testes no `test_api.py` e garantir a integridade do seed de testes no `conftest.py`, aplicando uma matriz de permissões (RBAC) e assegurando o fluxo completo de negócio (Admin -> Rececionista -> Mecânico).
+
+1. CONTEXTO DO CONFFTEST.PY:
+- Utilização de `sqlite:///:memory:` com `StaticPool` para persistência entre threads.
+- Seed de utilizadores obrigatório: ADMIN, GERENTE, RECECIONISTA, MECÂNICO.
+- Fixture `db_session` responsável pela criação/drop de tabelas e injeção de dados de teste (Lojas e Utilizadores).
+
+2. CONTEXTO DO TEST_API.PY:
+- Testes de Fluxo (Happy Path):
+    a) Admin cria Peça no catálogo.
+    b) Admin injeta Stock inicial (loja_id: 1).
+    c) Rececionista cria Cliente, Trotinete e Ordem de Serviço (OS).
+    d) Mecânico aplica Peça à OS (validação de estado 201).
+- Testes de Permissões (Matriz RBAC parametrizada):
+    - Validar que Rececionista não cria peças (403).
+    - Validar que Admin/Gerente podem criar peças (201).
+    - Validar que apenas perfis operacionais conseguem consumir peças em OS.
+
+3. REGRAS DE SEGURANÇA:
+- Seguir o princípio do menor privilégio.
+- Utilizar `pytest.mark.parametrize` para evitar repetição de código em testes de autorização.
+- Garantir que cada teste limpa o seu estado ou que a fixture `db_session` garante isolamento.
+
+4. DIRETRIZES DE DEBBUGING:
+- Sempre que um teste falhar num endpoint de escrita, verificar:
+    a) Se o utilizador tem permissão (require_roles).
+    b) Se existe stock suficiente para a peça na loja especificada.
+    c) Se o ID da peça utilizado é dinâmico (capturado no passo de criação).
+
+---
+
+OBJETIVO:
+Atuar como Engenheiro de Qualidade de Software (QA Automation) para aumentar a cobertura de testes (Code Coverage) do projeto de backend (FastAPI/SQLAlchemy) para > 85%, focando em branches de erro, validações de negócio e estados de transição.
+
+DIRETRIZES DE IMPLEMENTAÇÃO:
+
+1. ANÁLISE DE LACUNAS (Gap Analysis):
+- Identificar todas as funções com < 50% de cobertura no relatório `pytest-cov`.
+- Priorizar testes para blocos 'except', verificações 'if obj is None' e 'else' não testados.
+
+2. ESTRATÉGIA DE TESTE (Caminhos de Erro):
+- Adicionar testes de "Negativa": Tentar operações com IDs inexistentes (404), estados de objeto inválidos (400) e violações de regras de negócio (ex: stock insuficiente, transferência para a mesma loja).
+- Parametrizar testes de validação de schemas (Pydantic) para inputs inválidos (ex: NIFs curtos, formatos de data incorretos, Enums fora do range permitido), esperando sempre o código 422.
+
+3. TESTES DE INTEGRIDADE DE DADOS E AUDITORIA:
+- Implementar testes de fluxo "End-to-End" (E2E) que garantam que cada operação de escrita (POST/PATCH/DELETE) gera o log correto na Auditoria.
+- Validar se as Foreign Keys estão a ser respeitadas através da criação sequencial de objetos no `db_session` (Seed de Cliente -> Trotinete -> OS -> Peca).
+
+4. BOAS PRÁTICAS (Brío Técnico):
+- Utilizar `pytest.mark.parametrize` para testar múltiplos cenários de permutação com uma única função.
+- Garantir que cada teste limpa o seu estado ou que a fixture `db_session` isola os dados.
+- A asserção deve ser específica: não validar apenas o status code, mas também a mensagem de erro (detail) e o código interno (`code`) retornado pelo servidor.
+
+5. PRIORIDADES DE COBERTURA:
+- Focar primeiro em: `OrdemServicoService`, `TransferenciaService` e `StockService`.
+- Implementar testes de "borda" na paginação (Listar com page=0, page=9999, size=1000).
+
+EXEMPLO DE ESTRUTURA DE TESTE ESPERADA:
+def test_operacao_falha_por_regras_de_negocio(client):
+    # Setup de um cenário inválido...
+    # Act: Realizar o pedido...
+    # Assert: Verificar se o status_code é 400 E o código de erro no JSON é o esperado.
