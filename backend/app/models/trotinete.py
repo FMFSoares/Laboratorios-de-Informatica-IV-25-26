@@ -23,4 +23,4 @@ class Trotinete(Base):
 
     # Relacionamentos
     cliente: Mapped["Cliente"] = relationship(back_populates="trotinetes")
-    ordens_servico: Mapped[list["OrdemServico"]] = relationship(back_populates="trotinete")
+    ordens_servico: Mapped[list["OrdemServico"]] = relationship(back_populates="trotinete", cascade="all, delete-orphan")

@@ -44,6 +44,7 @@ const ALL_NAV = [
   // ── Non-mechanic ──────────────────────────────────────────
   { label: 'Dashboard',          to: '/dashboard',       roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
   { label: 'Clientes',           to: '/clientes',        roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
+  { label: 'Trotinetes',         to: '/trotinetes',      roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
   { label: 'Ordens de Serviço',  to: '/ordens-servico',  roles: ['ADMINISTRADOR', 'GERENTE_LOJA', 'RECECIONISTA'] },
   { label: 'Catálogo Peças',    to: '/pecas',           roles: ['ADMINISTRADOR'] },
   { label: 'Inventário',         to: '/stock',           roles: ['GERENTE_LOJA'] },

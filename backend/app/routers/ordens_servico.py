@@ -143,6 +143,15 @@ def submeter_diagnostico(
     return DataResponse[OrdemServicoDetalheResponse](data=service.submeter_diagnostico(os_id, body, current_user))
 
 
+@router.delete("/{os_id}", status_code=204)
+def apagar_os(
+    os_id: int,
+    current_user: CurrentUserResponse = Depends(require_roles(PerfilUtilizador.ADMINISTRADOR)),
+    service: OrdemServicoService = Depends(get_os_service),
+):
+    service.apagar(os_id, current_user)
+
+
 @router.post("/{os_id}/observacoes", response_model=DataResponse[OrdemServicoObservacaoResponse], status_code=status.HTTP_201_CREATED)
 def adicionar_observacao(
     os_id: int,

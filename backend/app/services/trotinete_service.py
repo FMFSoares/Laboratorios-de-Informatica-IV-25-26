@@ -84,3 +84,10 @@ class TrotineteService:
             total_ordens=total_ordens,
         )
         return DataResponse[TrotineteDetalheResponse](data=detalhe)
+
+    def apagar(self, trotinete_id: int, current_user: CurrentUserResponse) -> None:
+        if current_user.perfil != PerfilUtilizador.ADMINISTRADOR:
+            raise HTTPException(status_code=403, detail="Apenas administradores podem eliminar trotinetes.")
+        trotinete = self._find(trotinete_id)
+        self.db.delete(trotinete)
+        self.db.commit()

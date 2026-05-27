@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # ── Schema de criação ─────────────────────────────────────────────────────────
@@ -62,6 +64,14 @@ class TrotineteResponse(BaseModel):
     cor: str | None
     observacoes_tecnicas: str | None
     data_registo: datetime
+    cliente_nome: str | None = None
+
+    @model_validator(mode='before')
+    @classmethod
+    def _populate_cliente_nome(cls, data: Any) -> Any:
+        if not isinstance(data, dict) and hasattr(data, 'cliente') and data.cliente is not None:
+            data.cliente_nome = data.cliente.nome
+        return data
 
     model_config = ConfigDict(
         from_attributes=True,

@@ -34,7 +34,7 @@ class OrdemServicoService:
     _TRANSICOES = {
         (EstadoOrdemServico.PENDENTE,           EstadoOrdemServico.EM_DIAGNOSTICO):   {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.RECECIONISTA, PerfilUtilizador.MECANICO},
         (EstadoOrdemServico.PENDENTE,           EstadoOrdemServico.CANCELADA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.RECECIONISTA},
-        (EstadoOrdemServico.EM_DIAGNOSTICO,     EstadoOrdemServico.EM_REPARACAO):      {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
+        (EstadoOrdemServico.EM_DIAGNOSTICO,     EstadoOrdemServico.AGUARDA_APROVACAO): {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA, PerfilUtilizador.MECANICO},
         (EstadoOrdemServico.EM_DIAGNOSTICO,     EstadoOrdemServico.CANCELADA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
         (EstadoOrdemServico.AGUARDA_APROVACAO,  EstadoOrdemServico.EM_REPARACAO):      {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
         (EstadoOrdemServico.AGUARDA_APROVACAO,  EstadoOrdemServico.CANCELADA):         {PerfilUtilizador.ADMINISTRADOR, PerfilUtilizador.GERENTE_LOJA},
@@ -432,3 +432,10 @@ class OrdemServicoService:
             autor_nome=obs.autor.nome,
             criado_em=obs.criado_em,
         )
+
+    def apagar(self, os_id: int, current_user: CurrentUserResponse) -> None:
+        os = self.repo.get_by_id(os_id)
+        if not os:
+            raise HTTPException(status_code=404, detail="Ordem de serviço não encontrada.")
+        self.db.delete(os)
+        self.db.commit()

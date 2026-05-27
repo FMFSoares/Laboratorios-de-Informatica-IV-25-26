@@ -153,6 +153,12 @@ const routes = [
 
       // ── Trotinetes ───────────────────────────────────────────
       {
+        path: 'trotinetes',
+        name: 'Trotinetes',
+        component: () => import('../views/trotinetes/Index.vue'),
+        meta: { roles: ['ADMINISTRADOR', 'GERENTE_LOJA'] },
+      },
+      {
         path: 'trotinetes/:id',
         name: 'TrotineteDetalhe',
         component: () => import('../views/trotinetes/Detail.vue'),

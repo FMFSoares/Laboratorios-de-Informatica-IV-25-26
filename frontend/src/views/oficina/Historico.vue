@@ -114,8 +114,7 @@ function clearSearch() {
 async function fetch() {
   loading.value = true
   try {
-    const mecanicoId = auth.getCurrentUser?.id
-    const { data } = await getOrdensServico({ mecanico_id: mecanicoId, page_size: 100 })
+    const { data } = await getOrdensServico({ page_size: 100 })
     ordens.value = data.data
   } catch {
     ordens.value = []
