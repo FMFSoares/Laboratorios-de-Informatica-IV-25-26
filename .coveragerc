@@ -1,4 +1,16 @@
 [run]
+# Define a pasta principal onde está o código
+source = backend/app
+
+# Omitir o que não queres medir (Utils, Migrations, etc)
 omit = 
     backend/app/utils/*
     backend/app/main.py
+    backend/app/database.py
+    */__init__.py
+    */tests/*
+
+[report]
+# Isto garante que o terminal também seja rigoroso com branches
+show_missing = True
+skip_covered = True

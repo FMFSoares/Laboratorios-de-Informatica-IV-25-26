@@ -12,6 +12,6 @@
 # 4. Execute o Pytest. O comando irá descobrir e correr os testes em tests/test_api.py
 #    e gerar um relatório de cobertura na pasta `htmlcov/`.
 #    Se o objetivo for verificar onde falta coverage, substituir html por term-missing
-pytest -v --cov=app --cov-report=html tests/test_api.py
 
+pytest --cov=backend/app --cov-config=.coveragerc --cov-report=html --cov-report=term tests/test_api.py
 
