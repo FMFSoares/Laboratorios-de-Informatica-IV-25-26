@@ -324,6 +324,34 @@ class OrdemServicoService:
             subtotal=nova_peca_os.quantidade * nova_peca_os.preco_venda_unitario,
         )
 
+    def remover_peca(self, os_id: int, peca_id: int, current_user: CurrentUserResponse) -> None:
+        from app.repositories.stock_repository import StockRepository
+
+        os = self._get_os_or_404(os_id, current_user)
+        if os.estado in [EstadoOrdemServico.CONCLUIDA, EstadoOrdemServico.CANCELADA]:
+            raise HTTPException(status_code=409, detail="Não é possível remover peças de uma OS finalizada.")
+
+        os_peca = self.repo.get_peca_os(os_id, peca_id)
+        if not os_peca:
+            raise HTTPException(status_code=404, detail="Peça não encontrada nesta OS.")
+
+        quantidade = os_peca.quantidade
+        peca_nome = os_peca.peca.nome
+
+        stock_repo = StockRepository(self.db)
+        stock_repo.adicionar(peca_id, os.loja_id, quantidade)
+
+        self.repo.remover_peca_os(os_peca)
+
+        self.auditoria_repo.registar(
+            evento=TipoEventoAuditoria.OS_PECA_REMOVIDA,
+            descricao=f"Peça '{peca_nome}' (x{quantidade}) removida da OS #{os.numero}",
+            utilizador_id=current_user.id,
+            loja_id=os.loja_id,
+            detalhe={"os_id": os.id, "peca_id": peca_id, "peca_nome": peca_nome, "quantidade": quantidade},
+        )
+        self.db.commit()
+
     def iniciar_tempo(self, os_id: int, current_user: CurrentUserResponse) -> TempoInicioResponse:
         os = self._get_os_or_404(os_id, current_user)
         if os.estado in [EstadoOrdemServico.CONCLUIDA, EstadoOrdemServico.FATURADA, EstadoOrdemServico.CANCELADA]:

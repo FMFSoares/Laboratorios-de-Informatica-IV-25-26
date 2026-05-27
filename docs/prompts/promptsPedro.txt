@@ -1054,3 +1054,26 @@ Two bugs in the OS detail page: (1) when concluding a diagnosis the timer jumps 
 - **Timer UTC offset fix** (`frontend/src/views/oficina/Detail.vue`, `minutosTrabalhadosLive`): the backend returns `inicio_tempo_atual` as a naive datetime string (no timezone suffix, e.g. `"2026-05-27T14:00:00"`). JavaScript's `new Date()` was parsing this as *local time* (Portugal = UTC+1), while `Date.now()` is always UTC — producing a ~60-minute phantom elapsed time. Fix: append `'Z'` to the string before parsing if it has no timezone info, so it is correctly treated as UTC. Guard checks for existing `'Z'` or `'+'` to avoid double-applying.
 
 - **Parts dropdown scroll** (`frontend/src/views/oficina/Detail.vue`, `.peca-dropdown`): changed `overflow: hidden` to `overflow-y: auto`, added `max-height: 260px` and `-webkit-overflow-scrolling: touch`. The dropdown now scrolls independently within a fixed height, so all results are reachable on small screens without scrolling the whole page.
+
+---
+
+### [2026-05-27] OS Detail — quantity stepper, dropdown z-index fix, remove applied part
+
+**Prompt:**
+Three fixes in the OS detail view: (1) on mobile the quantity input for adding a part shows as a native number spinner/slider — replace it with a proper − / number / + stepper with a bigger "Adicionar" button; (2) the parts dropdown was still hidden behind the sticky footer bar even after adding max-height and scroll — the last items weren't reachable; (3) there is no way to remove a part that was already applied to an OS — add that capability system-wide.
+
+**What was done:**
+
+- **Dropdown z-index fix** (`frontend/src/views/oficina/Detail.vue`): raised `.peca-dropdown` z-index from `100` to `450` (above the `.mobile-cta` bar at `400`). The sticky footer was painting over the bottom of the dropdown, hiding the last items even though the dropdown itself was scrollable. Also added `padding-bottom: 0.5rem` on mobile so the last item isn't flush against the edge.
+
+- **Quantity stepper** (`frontend/src/views/oficina/Detail.vue`): replaced `<input type="number">` in the add-part form with a `−` / number display / `+` button layout (`.qty-stepper`). Styled as a bordered pill with equal-width cells. On mobile (`≤1280px`): buttons are 48×48px, number cell 48px wide, "Adicionar" button `min-height: 48px`.
+
+- **Remove applied part — backend** (`backend/`):
+  - `schemas/auditoria.py`: added `OS_PECA_REMOVIDA` to `TipoEventoAuditoria` enum.
+  - `repositories/ordem_servico_repository.py`: added `get_peca_os(os_id, peca_id)` and `remover_peca_os(os_peca)`.
+  - `services/ordem_servico_service.py`: added `remover_peca()` — validates OS state (blocks CONCLUIDA/CANCELADA), fetches the `OSPeca` record, restores stock via `stock_repo.adicionar()`, deletes the row, logs `OS_PECA_REMOVIDA` audit event.
+  - `routers/ordens_servico.py`: added `DELETE /{os_id}/pecas/{peca_id}` (HTTP 204, roles: ADMINISTRADOR, GERENTE_LOJA, MECANICO).
+
+- **Remove applied part — frontend** (`frontend/`):
+  - `services/ordensServico.js`: added `removerPeca(id, pecaId)` calling `DELETE /ordens-servico/{id}/pecas/{pecaId}`.
+  - `Detail.vue`: parts table now has a `✕` remove button column (only rendered when `canAddParts`). Calls `removerPecaOS(peca_id)` which hits the new endpoint and calls `load()` to refresh.
