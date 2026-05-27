@@ -10,3 +10,4 @@ export const iniciarTempo = (id) => api.post(`/ordens-servico/${id}/tempos/inici
 export const pararTempo = (id) => api.post(`/ordens-servico/${id}/tempos/parar`)
 export const adicionarObservacao = (id, body) => api.post(`/ordens-servico/${id}/observacoes`, body)
 export const submeterDiagnostico = (id, body) => api.post(`/ordens-servico/${id}/diagnostico`, body)
+export const deletarOS = (id) => api.delete(`/ordens-servico/${id}`)

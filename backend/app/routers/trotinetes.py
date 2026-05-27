@@ -47,3 +47,12 @@ def criar(
     service: TrotineteService = Depends(get_trotinete_service)
 ):
     return service.criar(body, current_user)
+
+
+@router.delete("/{trotinete_id}", status_code=204)
+def apagar(
+    trotinete_id: int,
+    current_user: CurrentUserResponse = Depends(require_roles(PerfilUtilizador.ADMINISTRADOR)),
+    service: TrotineteService = Depends(get_trotinete_service),
+):
+    service.apagar(trotinete_id, current_user)

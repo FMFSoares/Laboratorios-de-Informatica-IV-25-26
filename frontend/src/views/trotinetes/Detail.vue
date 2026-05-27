@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getTrotinete, updateTrotinete } from '../../services/trotinetes.js'
+import { getTrotinete, updateTrotinete, deleteTrotinete } from '../../services/trotinetes.js'
 import { getOrdensServico } from '../../services/ordensServico.js'
 import { useAuthStore } from '../../store/auth.js'
 import StatusBadge from '../../components/ui/StatusBadge.vue'
@@ -11,6 +11,7 @@ const route  = useRoute()
 const router = useRouter()
 const auth   = useAuthStore()
 const isGestao = computed(() => ['ADMINISTRADOR', 'GERENTE_LOJA'].includes(auth.getCurrentUser?.perfil))
+const isAdmin = computed(() => auth.getCurrentUser?.perfil === 'ADMINISTRADOR')
 
 const trotinete = ref(null)
 const historico  = ref([])
@@ -71,6 +72,16 @@ async function submitEdit() {
     editError.value = e?.response?.data?.detail?.detail ?? 'Erro ao atualizar trotinete.'
   } finally {
     editLoading.value = false
+  }
+}
+
+async function deletar() {
+  if (!confirm('Eliminar esta trotinete e todo o seu histórico? Esta ação não pode ser desfeita.')) return
+  try {
+    await deleteTrotinete(trotinete.value.id)
+    router.back()
+  } catch (e) {
+    editError.value = e?.response?.data?.detail?.detail ?? 'Erro ao eliminar trotinete.'
   }
 }
 
@@ -177,6 +188,14 @@ function fmt(dt) {
             </button>
           </div>
         </form>
+      </div>
+
+      <!-- Eliminar (admin only) -->
+      <div v-if="isAdmin && !editing" class="card info-card" style="border: 1px solid #fecaca;">
+        <div class="info-card-header">
+          <span class="info-card-title" style="color:#dc2626">Zona de Perigo</span>
+        </div>
+        <button class="btn btn--danger" @click="deletar">Eliminar Trotinete</button>
       </div>
 
       <!-- Histórico de OS -->

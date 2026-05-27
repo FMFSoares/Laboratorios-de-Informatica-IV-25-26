@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
+from sqlalchemy.orm import joinedload
 from app.models.trotinete import Trotinete
 from app.models.ordem_servico import OrdemServico
 from app.models.cliente import Cliente
@@ -12,18 +13,18 @@ class TrotineteRepository:
         self.db = db
 
     def get_by_id(self, trotinete_id: int) -> Trotinete | None:
-        return self.db.query(Trotinete).filter(Trotinete.id == trotinete_id).first()
+        return self.db.query(Trotinete).options(joinedload(Trotinete.cliente)).filter(Trotinete.id == trotinete_id).first()
 
     def list(self, loja_id: int | None, cliente_id: int | None, numero_serie: str | None, skip: int, limit: int) -> tuple[list[Trotinete], int]:
-        query = self.db.query(Trotinete)
-        
+        query = self.db.query(Trotinete).options(joinedload(Trotinete.cliente))
+
         if loja_id is not None:
             query = query.join(Cliente).filter(Cliente.loja_id == loja_id)
         if cliente_id is not None:
             query = query.filter(Trotinete.cliente_id == cliente_id)
         if numero_serie is not None:
             query = query.filter(Trotinete.numero_serie == numero_serie)
-            
+
         total = query.count()
         itens = query.offset(skip).limit(limit).all()
         return itens, total

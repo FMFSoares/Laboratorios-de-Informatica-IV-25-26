@@ -32,11 +32,12 @@ class OrdemServico(Base):
     cliente: Mapped["Cliente"] = relationship(back_populates="ordens_servico")
     trotinete: Mapped["Trotinete"] = relationship(back_populates="ordens_servico")
     mecanico: Mapped["Utilizador"] = relationship(back_populates="ordens_mecanico")
-    pecas_aplicadas: Mapped[list["OSPeca"]] = relationship(back_populates="ordem_servico")
-    registos_tempo: Mapped[list["RegistoTempo"]] = relationship(back_populates="ordem_servico")
-    fatura: Mapped[Optional["Fatura"]] = relationship(back_populates="ordem_servico")
-    observacoes: Mapped[list["OrdemServicoObservacao"]] = relationship(back_populates="ordem_servico", order_by="OrdemServicoObservacao.criado_em")
-    servicos_diagnostico: Mapped[list["OSServico"]] = relationship(back_populates="ordem_servico")
+    pecas_aplicadas: Mapped[list["OSPeca"]] = relationship(back_populates="ordem_servico", cascade="all, delete-orphan")
+    registos_tempo: Mapped[list["RegistoTempo"]] = relationship(back_populates="ordem_servico", cascade="all, delete-orphan")
+    fatura: Mapped[Optional["Fatura"]] = relationship(back_populates="ordem_servico", cascade="all, delete-orphan", single_parent=True)
+    observacoes: Mapped[list["OrdemServicoObservacao"]] = relationship(back_populates="ordem_servico", order_by="OrdemServicoObservacao.criado_em", cascade="all, delete-orphan")
+    servicos_diagnostico: Mapped[list["OSServico"]] = relationship(back_populates="ordem_servico", cascade="all, delete-orphan")
+    pedidos_peca: Mapped[list["PedidoPeca"]] = relationship(foreign_keys="PedidoPeca.ordem_servico_id", cascade="all, delete-orphan")
 
 
 class OSPeca(Base):
