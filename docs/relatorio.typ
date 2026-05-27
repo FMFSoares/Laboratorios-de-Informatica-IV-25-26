@@ -1818,4 +1818,203 @@ def test_transferencia_stock_insuficiente(admin_client):
     # A validação de stock deve ser prioritária e falhar.
     assert res.status_code == 400
     assert "insuficiente" in res.json()["detail"].lower()
+
+== 9. Implementação do Frontend
+
+=== 9.1 Organização e Abordagem de Desenvolvimento
+
+A implementação do frontend concretizou a camada de apresentação do sistema DLMCare como uma Single Page Application (SPA) desenvolvida em Vue.js 3, com Vite como bundler e Pinia como gestor de estado. O desenvolvimento decorreu em paralelo com o backend, possibilitado pela definição prévia do contrato da API, que eliminou ambiguidades entre as duas equipas.
+
+A organização do código segue uma estrutura em camadas análoga à do backend:
+
+- *#raw("src/services/")* — ficheiros de serviço por domínio (9 módulos: `clientes.js`, `ordensServico.js`, `trotinetes.js`, `pecas.js`, `stock.js`, `faturas.js`, `utilizadores.js`, `servicos.js`, `notificacoes.js`, entre outros). As views nunca contactam o axios diretamente — toda a comunicação com a API passa por estas funções, centralizando o tratamento de endpoints e a gestão de cabeçalhos de autenticação.
+- *#raw("src/views/")* — vistas organizadas em subpastas por domínio (`clientes/`, `ordens-servico/`, `oficina/`, `stock/`, `faturas/`, etc.), cada uma com um ficheiro `Index.vue` de listagem e, quando aplicável, um `Detail.vue` de detalhe.
+- *#raw("src/components/")* — componentes reutilizáveis partilhados entre vistas, incluindo o layout principal (`AppLayout.vue`, `AppSidebar.vue`) e os componentes de UI genéricos.
+- *#raw("src/store/")* — stores Pinia (`auth.js` para sessão JWT e `workshop.js` para o estado do timer do mecânico).
+- *#raw("src/composables/")* — composables Vue reutilizáveis, nomeadamente `useSessionTimeout.js`.
+- *#raw("src/router/index.js")* — definição centralizada de todas as rotas com metadados de controlo de acesso por perfil (`meta: { roles: [...] }`).
+
+=== 9.2 Autenticação, Sessão e Controlo de Acesso
+
+==== 9.2.1 Autenticação e Armazenamento de Token
+
+O fluxo de autenticação inicia-se na página de login (Figura 1). Após a validação das credenciais, o backend devolve um access token JWT e um refresh token. O token é armazenado em `sessionStorage` (em oposição a `localStorage`), uma decisão deliberada que confere isolamento por aba do browser: múltiplos utilizadores com perfis diferentes podem ser testados em abas separadas sem que um token sobrescreva o outro. A contrapartida é que o fecho da aba termina automaticamente a sessão, o que é aceitável num sistema de uso interno.
+
+#figure(
+  image("images/ui_01_login.png", width: 75%),
+  caption: [Página de autenticação do sistema DLMCare.],
+)
+
+==== 9.2.2 Controlo de Acesso Baseado em Perfil (RBAC)
+
+O router Vue implementa um guarda de navegação global (`beforeEach`) que interceta cada tentativa de acesso a uma rota. O guarda verifica se o utilizador está autenticado e se o seu `perfil` (extraído do JWT) está incluído no array `meta.roles` da rota de destino. Em caso de acesso não autorizado, o redirecionamento é feito para a rota de entrada do perfil — `MECANICO` é redirecionado para `/oficina/ativa`, `RECECIONISTA` para `/ordens-servico`, e os restantes para `/dashboard`. Esta lógica garante que um utilizador nunca vê URLs de outros perfis, mesmo que os tente aceder diretamente na barra de endereços.
+
+==== 9.2.3 Timeout de Sessão por Perfil (RNF08)
+
+O composable `useSessionTimeout.js`, montado no `AppLayout.vue`, implementa o requisito RNF08. Qualquer evento de interação do utilizador (movimento do rato, toque, tecla) reinicia um temporizador de inatividade. Decorridos 60 minutos sem interação, o sistema efetua logout automático. A implementação suporta configuração por perfil através do mapa `IDLE_TIMEOUTS`: `ADMINISTRADOR`, `GERENTE_LOJA` e `RECECIONISTA` têm timeout de 60 minutos; `MECANICO` tem valor `null`, que desativa o mecanismo sem overhead — os tablets de oficina são dispositivos dedicados onde um logout automático a meio de uma reparação seria disruptivo.
+
+=== 9.3 Layout, Navegação e Sidebar Adaptativa
+
+O layout principal consiste numa sidebar lateral escura de largura fixa e uma área de conteúdo que ocupa o restante da viewport. A sidebar adapta dinamicamente os seus itens de navegação ao perfil do utilizador autenticado: o `ADMINISTRADOR` vê todos os módulos; o `GERENTE_LOJA` não vê a gestão de utilizadores mas acede a transferências, notificações e salários; o `RECECIONISTA` vê apenas os módulos operacionais do atendimento; e o `MECANICO` tem acesso exclusivo à Oficina (com os sub-itens OS Activa, Ordens de Serviço, Histórico e Inventário). A sidebar inclui ainda uma secção inferior com o avatar e o perfil do utilizador, que leva à página de Conta, e um ícone de logout rápido.
+
+Para o perfil `MECANICO`, a sidebar exibe um ponto verde animado junto ao item "OS Activa" sempre que existe uma ordem de serviço com o timer ativo. Este indicador é atualizado por polling a cada 30 segundos, permitindo ao mecânico saber, sem navegar, se tem trabalho em curso.
+
+=== 9.4 Dashboard e KPIs (Administrador e Gerente de Loja)
+
+O Dashboard (Figura 2) apresenta um painel de controlo com cinco cartões de KPI no topo: Faturação total no período, Lucro Líquido (faturação menos custo das peças), OS Ativas (ordens em curso), Tempo Médio de Reparação, e Alertas de Stock (peças abaixo do mínimo definido). O período é selecionável entre 30 dias, 90 dias ou um intervalo personalizado.
+
+Abaixo dos KPIs, a distribuição das ordens de serviço por estado é apresentada em cartões coloridos, com contagem de OS em cada fase. Uma segunda coluna mostra os alertas de stock, permitindo ao gestor identificar imediatamente que peças necessitam de reposição. Para o `ADMINISTRADOR`, é adicionalmente apresentada uma tabela de faturação e lucro por loja.
+
+#figure(
+  image("images/ui_02_dashboard.png", width: 100%),
+  caption: [Dashboard do Administrador com KPIs, distribuição de OS por estado e alertas de stock.],
+)
+
+=== 9.5 Módulo de Ordens de Serviço (Rececionista e Gestão)
+
+==== 9.5.1 Lista de Ordens de Serviço
+
+A vista de listagem de OS (Figura 3) apresenta uma tabela paginada com filtros por estado, intervalo de datas e flag de atraso. Cada coluna é clicável para ordenação crescente/decrescente. O estado de cada OS é apresentado através do componente `StatusBadge`, com uma cor distinta por fase do ciclo de vida. A coluna "Mecânico" exibe um indicador verde para as OS atualmente em diagnóstico ou reparação, mostrando o nome do técnico responsável. OS marcadas como em atraso exibem um ícone de aviso.
+
+#figure(
+  image("images/ui_03_os_list.png", width: 100%),
+  caption: [Lista de Ordens de Serviço com filtros, ordenação por coluna e badges de estado coloridos.],
+)
+
+==== 9.5.2 Wizard de Criação de OS
+
+A criação de uma nova OS é guiada por um wizard de três passos (Figura 4): *Passo 1* — pesquisa do cliente por nome, NIF ou telemóvel via combobox com autocomplete (debounce de 300 ms), com opção de registar um cliente novo inline; *Passo 2* — seleção da trotinete do cliente, com opção de registar uma nova; *Passo 3* — preenchimento da descrição do problema e prioridade. O `loja_id` é extraído automaticamente do JWT, eliminando a possibilidade de uma rececionista criar OS para outra loja. O wizard aceita o parâmetro `?cliente_id=` para pré-preenchimento a partir do perfil do cliente.
+
+#figure(
+  image("images/ui_03c_os_create.png", width: 75%),
+  caption: [Wizard de criação de Nova Ordem de Serviço — Passo 1: seleção de cliente por autocomplete.],
+)
+
+==== 9.5.3 Detalhe de Ordem de Serviço
+
+A página de detalhe de uma OS (Figura 5) tem um layout de duas colunas. A coluna esquerda apresenta o cartão de informação (cliente, trotinete, mecânico, prioridade), a descrição do problema, a estimativa de custo (serviço + peças), as peças aplicadas, os serviços do diagnóstico e o histórico de auditoria da OS. A coluna direita contém os botões de transição de estado disponíveis para o perfil do utilizador (calculados a partir de uma matriz `TRANSICOES` que espelha a máquina de estados do backend), a zona de observações internas com suporte a badges de cor por tipo de transição, e a zona de perigo com o botão de eliminação.
+
+#figure(
+  image("images/ui_03b_os_detail.png", width: 100%),
+  caption: [Detalhe de Ordem de Serviço com informação, estimativa de custo e ações de transição de estado.],
+)
+
+=== 9.6 Módulo de Clientes e Trotinetes
+
+A vista de clientes (Figura 6) apresenta pesquisa em tempo real por nome, NIF, telemóvel ou email. A criação de um novo cliente inclui uma checkbox de consentimento RGPD obrigatória — a submissão do formulário é bloqueada se esta não estiver assinalada, implementando o requisito legal diretamente na interface.
+
+#figure(
+  image("images/ui_04_clientes.png", width: 100%),
+  caption: [Lista de Clientes com pesquisa por múltiplos campos.],
+)
+
+O detalhe de cliente (Figura 7) agrega, numa única vista, o perfil do cliente, a lista das suas trotinetes com navegação direta para cada uma, e o histórico completo de ordens de serviço. Esta centralização de informação é um dos requisitos centrais do sistema, permitindo à rececionista responder imediatamente a qualquer questão de um cliente sem navegar entre múltiplos ecrãs.
+
+#figure(
+  image("images/ui_04b_cliente_detail.png", width: 100%),
+  caption: [Detalhe de Cliente com informação pessoal, trotinetes registadas e histórico de OS.],
+)
+
+=== 9.7 Módulo de Oficina (Mecânico)
+
+==== 9.7.1 Lista de OS do Mecânico
+
+A vista de oficina (Figura 8) apresenta duas secções distintas: *Avaliação* (OS em estado Pendente ou Em Diagnóstico) e *Reparação* (OS em estado Em Reparação ou Aguarda Peças). Esta separação visual permite ao mecânico identificar imediatamente qual o tipo de trabalho à sua frente. A lista é atualizada por polling a cada 30 segundos, garantindo sincronização em tempo real com as ações de outros utilizadores (como a criação de uma nova OS pela rececionista). A pesquisa por número de OS, cliente ou número de série da trotinete é aplicada sobre os dados já carregados sem nova chamada à API.
+
+#figure(
+  image("images/ui_15_oficina_list.png", width: 80%),
+  caption: [Vista de Oficina do Mecânico, com secções separadas para Avaliação e Reparação.],
+)
+
+==== 9.7.2 Detalhe de OS do Mecânico
+
+A página de detalhe da OS para o mecânico (Figura 9) é uma vista simplificada orientada ao trabalho prático. Apresenta o problema reportado, o tempo total trabalhado, os serviços identificados no diagnóstico, as peças aplicadas, um formulário de adição de peças (com pesquisa autocomplete no catálogo de peças), e as ações disponíveis para o estado atual. Quando o mecânico clica em "Concluir Diagnóstico", é apresentado um modal de diagnóstico com seletores encadeados de serviços do catálogo — após selecionar um serviço, um novo seletor vazio aparece automaticamente. O custo de serviço não é visível ao mecânico na perspetiva de preço individual, evitando a gestão de preços numa vista operacional. A conclusão de uma OS está bloqueada por interface (`disabled`) se o timer não estiver ativo.
+
+#figure(
+  image("images/ui_15b_oficina_detail.png", width: 80%),
+  caption: [Detalhe de OS na vista do Mecânico, com serviços do diagnóstico, peças aplicadas e ações de transição.],
+)
+
+==== 9.7.3 OS Activa e Histórico
+
+A página "OS Activa" (Figura 10) mostra ao mecânico qual a ordem de serviço com o timer atualmente em execução. Quando nenhum timer está ativo, apresenta um estado vazio com link direto para a lista de ordens. A página "Histórico" permite ao mecânico consultar as suas OS concluídas, faturadas e canceladas, com filtros por período predefinido (Hoje, Esta semana, Este mês, Personalizado) e pesquisa com ordenação por colunas.
+
+#figure(
+  image("images/ui_15c_os_ativa.png", width: 80%),
+  caption: [Página de OS Activa do Mecânico, mostrando ausência de timer ativo com link para a lista.],
+)
+
+=== 9.8 Módulo de Stock e Catálogo de Peças
+
+A vista de inventário adapta o seu comportamento ao perfil do utilizador. Para o `MECANICO`, apresenta uma tabela simples com referência, nome e quantidade — itens esgotados a cinzento, sem alertas de mínimos nem botões de gestão. Para `GERENTE_LOJA` e `ADMINISTRADOR`, a tabela inclui destaque visual por linhas (amarelo para alerta, cinzento para esgotado), badge de estado (OK / Alerta / Esgotado), coluna de mínimos, filtros por texto e loja, e botões de "Registar Entrada" e "Transferir" com modais inline.
+
+#figure(
+  image("images/ui_06_stock.png", width: 100%),
+  caption: [Inventário de Stock na vista de gestão, com destaques visuais de alerta e botões de ação.],
+)
+
+O detalhe de cada peça (Figura 12) apresenta a descrição técnica, especificações (unidade, preço de venda, categoria), e uma tabela de stock por loja com o estado de cada. Para o `GERENTE_LOJA`, cada linha inclui edição inline do mínimo de stock por loja (confirmação com Enter ou ✓, cancelamento com Esc) e um botão "Pedir Transferência" que abre um modal para solicitar stock a outra loja.
+
+#figure(
+  image("images/ui_06b_peca_detail.png", width: 100%),
+  caption: [Detalhe de Peça com especificações técnicas e gestão de stock mínimo por loja.],
+)
+
+=== 9.9 Módulo de Faturação
+
+A lista de faturas inclui pesquisa por número, cliente ou NIF, filtro por estado (Emitida / Anulada) e intervalo de datas, com ordenação por colunas. A vista de detalhe de fatura (Figura 13) renderiza um cartão de fatura formatado como documento imprimível, com os dados da loja e da fatura no cabeçalho, informação do cliente e trotinete, tabela de serviços, tabela de peças (quando aplicável), e totais alinhados à direita. O botão "Descarregar PDF" gera o documento no backend via `fpdf2` e abre-o numa nova aba do browser.
+
+#figure(
+  image("images/ui_07b_fatura_detail.png", width: 100%),
+  caption: [Detalhe de Fatura com layout de documento, dados do cliente, serviço prestado e totais.],
+)
+
+Quando a rececionista emite uma fatura a partir do detalhe de uma OS concluída, é apresentado o componente `FaturaEmitirModal` — um modal com pré-visualização em tempo real da fatura e controlos de desconto inline na tabela de totais. O tipo de desconto (percentual ou fixo) e o valor são ajustáveis, com o total a recalcular em tempo real via `computed`. O nível de fidelização do cliente e o desconto sugerido pelo sistema são pré-preenchidos automaticamente. Após confirmação, o backend emite a fatura, gera o PDF e envia-o automaticamente ao cliente por email (RF14).
+
+=== 9.10 Módulo de Transferências Inter-Lojas e Pedidos de Peças
+
+A vista de Transferências (Figura 14) apresenta os pedidos de transferência de stock entre lojas numa tabela com filtros por período (Hoje / Esta semana / Este mês / Personalizado) e pesquisa por número, peça ou loja. O fluxo completo — criação do pedido a partir do detalhe de peça, aprovação/recusa pelo gerente de origem, confirmação de receção pelo gerente de destino — é gerido a partir desta vista e da vista de detalhe de cada transferência, que inclui o estado das assinaturas e os botões de ação para cada fase.
+
+O mecânico pode solicitar uma peça ao seu gerente diretamente a partir do detalhe de uma OS em reparação. O gerente recebe uma notificação e pode responder (aprovar ou recusar) a partir da sua vista de Transferências, na aba de Pedidos de Peça.
+
+#figure(
+  image("images/ui_10_transferencias.png", width: 100%),
+  caption: [Vista de Transferências Inter-Lojas com filtros por período e pesquisa.],
+)
+
+=== 9.11 Notificações, Auditoria e Salários
+
+O sistema de notificações inclui um ícone na sidebar com um badge de contagem não lida (atualizado por polling de 30 segundos). A caixa de entrada de notificações lista cada evento com tipo, cor, título e mensagem, com opção de marcar tudo como lido.
+
+O módulo de auditoria (Figura 15) permite ao `ADMINISTRADOR` e `GERENTE_LOJA` consultar o registo completo de 29 tipos de eventos auditáveis, com filtros por tipo de evento, loja e intervalo de datas. Os eventos são coloridos por categoria (autenticação, OS, stock, transferências, faturação, entidades).
+
+#figure(
+  image("images/ui_11_auditoria.png", width: 100%),
+  caption: [Registo de Auditoria com filtros por tipo de evento, loja e intervalo de datas.],
+)
+
+O módulo de salários (Figura 16) apresenta uma tabela de todos os trabalhadores ativos com salário base, percentagem de comissão, comissão ganha no mês selecionado (calculada a partir das faturas emitidas cujas OS foram atribuídas ao mecânico) e total a pagar. O período é selecionável por mês e ano. O rodapé da tabela apresenta a massa salarial total da seleção.
+
+#figure(
+  image("images/ui_12_salarios.png", width: 100%),
+  caption: [Módulo de Salários com cálculo de comissões por período e massa salarial total.],
+)
+
+=== 9.12 Componentes Reutilizáveis
+
+Para garantir consistência visual e evitar duplicação de código, foram desenvolvidos os seguintes componentes partilhados em #raw("src/components/ui/"):
+
+- *`DataTable.vue`* — tabela paginada com suporte a colunas ordenáveis (ícones ↕/↑/↓, estado ativo a verde), slot nomeado para células customizadas e slot de ações por linha. A ordenação e a paginação são geridas pelo componente pai, que passa as linhas já ordenadas.
+- *`StatusBadge.vue`* — pílula colorida com rótulo por estado de OS e fatura, incluindo mapeamento de cores e legendas em português para todos os estados do sistema.
+- *`StatCard.vue`* — cartão de KPI com label, valor destacado e sublabel, usado no Dashboard.
+- *`ConfirmDialog.vue`* — modal genérico de confirmação com variante "danger" (fundo vermelho) para operações destrutivas, renderizado via `Teleport to="body"` para evitar problemas de z-index.
+- *`OsObservacoes.vue`* — componente de observações internas de OS partilhado entre a vista da rececionista e a do mecânico, com suporte a badges coloridos para observações de transição de estado (indigo para diagnóstico, verde para reparação, vermelho para cancelamento).
+
+=== 9.13 Funcionalidades Transversais
+
+*Atualização em Tempo Real:* As listas de OS (rececionista, mecânico e gerente) e a sidebar do mecânico implementam polling a cada 30 segundos via `setInterval` com limpeza no `onUnmounted`. O polling é suspenso enquanto um modal de confirmação está aberto, evitando recarregamentos que interrompam a interação do utilizador.
+
+*Acesso em Rede Local:* O servidor de desenvolvimento Vite está configurado com `server.host: true`, expondo a aplicação na rede local para permitir acesso a partir de outros dispositivos (como os tablets da oficina). Para garantir segurança, um proxy Vite encaminha todos os pedidos `/api` para `localhost:8000` no servidor — o backend nunca é exposto diretamente na rede. A variável `VITE_API_BASE_URL` é deixada vazia no ficheiro `.env.local`, fazendo com que todos os pedidos da API usem caminhos relativos e sejam interceptados pelo proxy.
+
+*Padrão de Detalhes com Edição Inline:* Todas as vistas de detalhe de entidades (utilizadores, peças, serviços, lojas) seguem o mesmo padrão: cartão de informação em modo de leitura com botão "Editar" que abre um modal, e uma "Zona de Estado" separada com botão de ativação/desativação e modal de confirmação. Este padrão reduz o risco de edições acidentais e mantém a consistência visual em todo o backoffice.
 ```
