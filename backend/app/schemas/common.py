@@ -16,7 +16,7 @@ def validate_nif(value: str) -> str:
         raise ValueError("NIF deve ter exatamente 9 dígitos numéricos.")
 
     PREFIXOS_VALIDOS = {'1', '2', '3',  # pessoas singulares
-                    '45',               # cidadãos nao residentes que apenas obtenham rendimentos sujeitos a retenção na fonte a título definitivo.
+                    '45',               # cidadãos estrangeiros 
                     '5',                # pessoas coletivas
                     '6',                # administração pública
                     '7',                # outras entidades
