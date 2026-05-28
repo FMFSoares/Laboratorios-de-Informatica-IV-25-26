@@ -8,6 +8,7 @@ import {
   iniciarTempo,
   pararTempo,
   adicionarPeca,
+  removerPeca,
   submeterDiagnostico,
 } from '../../services/ordensServico.js'
 import { getServicos } from '../../services/servicos.js'
@@ -156,7 +157,10 @@ let clockInterval = null
 const minutosTrabalhadosLive = computed(() => {
   const base = os.value?.tempo_total_minutos ?? 0
   if (!os.value?.inicio_tempo_atual) return base
-  const sessao = Math.max(0, Math.floor((now.value - new Date(os.value.inicio_tempo_atual).getTime()) / 60000))
+  const ts = os.value.inicio_tempo_atual
+  // Backend returns naive datetimes (no tz suffix) — treat as UTC
+  const start = new Date(ts.endsWith('Z') || ts.includes('+') ? ts : ts + 'Z')
+  const sessao = Math.max(0, Math.floor((now.value - start.getTime()) / 60000))
   return base + sessao
 })
 const canResume = computed(() =>
@@ -317,6 +321,11 @@ function focusPecaSearch() {
   }
 }
 
+function blurPecaSearch() {
+  // delay so touchstart/mousedown on a dropdown item fires before we clear
+  setTimeout(() => { pecaResults.value = [] }, 150)
+}
+
 function selectPeca(p) {
   pecaSelecionada.value = p
   pecaSearch.value = p.nome
@@ -339,6 +348,13 @@ async function submitPeca() {
   } finally {
     pecaLoading.value = false
   }
+}
+
+async function removerPecaOS(pecaId) {
+  try {
+    await removerPeca(os.value.id, pecaId)
+    await load()
+  } catch { /* ignore */ }
 }
 
 // Part request (pedido de peça ao gerente)
@@ -514,12 +530,16 @@ function fmtDateTime(dt) {
                 <tr>
                   <th>Peça</th>
                   <th class="col-right">Qtd</th>
+                  <th v-if="canAddParts" class="col-remove"></th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="p in os.pecas_aplicadas" :key="p.peca_id">
                   <td>{{ p.peca_nome }}</td>
                   <td class="col-right">{{ p.quantidade }}</td>
+                  <td v-if="canAddParts" class="col-remove">
+                    <button class="btn-remove" @click="removerPecaOS(p.peca_id)" title="Remover peça">✕</button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -533,6 +553,7 @@ function fmtDateTime(dt) {
                   placeholder="Pesquisar ou toque para ver peças..."
                   @input="watchPecaSearch"
                   @focus="focusPecaSearch"
+                  @blur="blurPecaSearch"
                   autocomplete="off"
                 />
                 <div v-if="pecaResults.length > 0" class="peca-dropdown">
@@ -553,7 +574,11 @@ function fmtDateTime(dt) {
                 <span>{{ pecaSelecionada.nome }}</span>
                 <div class="qty-row">
                   <label>Quantidade</label>
-                  <input v-model.number="pecaQty" type="number" min="1" style="width: 80px" />
+                  <div class="qty-stepper">
+                    <button class="qty-btn" @click="pecaQty = Math.max(1, pecaQty - 1)">−</button>
+                    <span class="qty-val">{{ pecaQty }}</span>
+                    <button class="qty-btn" @click="pecaQty++">+</button>
+                  </div>
                   <button class="btn btn--primary btn--sm" :disabled="pecaLoading" @click="submitPeca">
                     {{ pecaLoading ? '...' : 'Adicionar' }}
                   </button>
@@ -807,16 +832,24 @@ function fmtDateTime(dt) {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.1);
-  z-index: 100;
-  overflow: hidden;
+  z-index: 450;
+  max-height: 260px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .peca-option { padding: 0.75rem 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
 .peca-option:hover { background: #f0fdf4; }
 .peca-nome { font-weight: 500; color: #111827; font-size: 0.875rem; }
 .peca-ref { font-size: 0.8rem; color: #6b7280; }
 .peca-selected { background: #f0fdf4; border-radius: 6px; padding: 0.75rem; margin-bottom: 0.5rem; font-size: 0.875rem; color: #065f46; }
-.qty-row { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; }
+.qty-row { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; flex-wrap: wrap; }
 .qty-row label { margin: 0; white-space: nowrap; }
+
+.qty-stepper { display: flex; align-items: center; gap: 0; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
+.qty-btn { background: #f9fafb; border: none; color: #374151; font-size: 1.1rem; font-weight: 700; width: 36px; height: 36px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.1s; user-select: none; -webkit-tap-highlight-color: transparent; }
+.qty-btn:hover { background: #f3f4f6; }
+.qty-btn:active { background: #e5e7eb; }
+.qty-val { min-width: 36px; text-align: center; font-size: 0.95rem; font-weight: 600; color: #111827; border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; height: 36px; display: flex; align-items: center; justify-content: center; }
 
 .price-rows { display: flex; flex-direction: column; gap: 0.6rem; }
 .price-row { display: flex; justify-content: space-between; font-size: 0.9rem; color: #374151; }
@@ -941,9 +974,19 @@ function fmtDateTime(dt) {
     width: calc(100% - 1.5rem);
     max-width: none;
     padding: 1.5rem 1.25rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
   }
-  .dialog-actions { gap: 0.5rem; }
+  .dialog-actions { gap: 0.5rem; flex-shrink: 0; }
   .dialog-actions .btn { flex: 1; min-height: 46px; }
+
+  /* Diagnosis slots scroll inside dialog so action buttons stay visible */
+  .diag-slots {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    flex: 1;
+  }
 
   /* Bigger diagnosis service selects */
   .diag-select {
@@ -957,7 +1000,13 @@ function fmtDateTime(dt) {
     font-size: 1rem;
   }
 
-  /* Parts dropdown: bigger tap targets */
+  /* Quantity stepper — bigger tap targets */
+  .qty-btn { width: 48px; height: 48px; font-size: 1.4rem; }
+  .qty-val { min-width: 48px; height: 48px; font-size: 1.1rem; }
+  .qty-row .btn--sm { min-height: 48px; font-size: 1rem; padding: 0 1.25rem; }
+
+  /* Parts dropdown: bigger tap targets, extra bottom room */
+  .peca-dropdown { padding-bottom: 0.5rem; }
   .peca-option {
     padding: 1rem 1rem;
     min-height: 52px;

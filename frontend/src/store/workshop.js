@@ -20,5 +20,9 @@ export const useWorkshopStore = defineStore('workshop', () => {
     } catch { /* ignore */ }
   }
 
-  return { hasActiveOS, set, refresh }
+  function reset() {
+    hasActiveOS.value = false
+  }
+
+  return { hasActiveOS, set, refresh, reset }
 })

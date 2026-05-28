@@ -85,6 +85,22 @@ def atualizar_estado_os(
     return DataResponse[OrdemServicoDetalheResponse](data=os)
 
 
+@router.delete("/{os_id}/pecas/{peca_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remover_peca(
+    os_id: int,
+    peca_id: int,
+    current_user: CurrentUserResponse = Depends(
+        require_roles(
+            PerfilUtilizador.ADMINISTRADOR,
+            PerfilUtilizador.GERENTE_LOJA,
+            PerfilUtilizador.MECANICO,
+        )
+    ),
+    service: OrdemServicoService = Depends(get_os_service),
+):
+    service.remover_peca(os_id, peca_id, current_user)
+
+
 @router.post("/{os_id}/pecas", response_model=DataResponse[PecaAplicadaResponse], status_code=status.HTTP_201_CREATED)
 def adicionar_peca(
     os_id: int,

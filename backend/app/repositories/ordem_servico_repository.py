@@ -75,6 +75,12 @@ class OrdemServicoRepository:
         self.db.add(os_peca)
         return os_peca
 
+    def get_peca_os(self, os_id: int, peca_id: int) -> OSPeca | None:
+        return self.db.query(OSPeca).filter(OSPeca.ordem_servico_id == os_id, OSPeca.peca_id == peca_id).first()
+
+    def remover_peca_os(self, os_peca: OSPeca) -> None:
+        self.db.delete(os_peca)
+
     def create_observacao(self, os_id: int, autor_id: int, texto: str, criado_em) -> OrdemServicoObservacao:
         obs = OrdemServicoObservacao(
             ordem_servico_id=os_id,
