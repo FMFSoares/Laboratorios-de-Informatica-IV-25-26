@@ -8,6 +8,7 @@ import {
   iniciarTempo,
   pararTempo,
   adicionarPeca,
+  removerPeca,
   submeterDiagnostico,
 } from '../../services/ordensServico.js'
 import { getServicos } from '../../services/servicos.js'
@@ -156,7 +157,10 @@ let clockInterval = null
 const minutosTrabalhadosLive = computed(() => {
   const base = os.value?.tempo_total_minutos ?? 0
   if (!os.value?.inicio_tempo_atual) return base
-  const sessao = Math.max(0, Math.floor((now.value - new Date(os.value.inicio_tempo_atual).getTime()) / 60000))
+  const ts = os.value.inicio_tempo_atual
+  // Backend returns naive datetimes (no tz suffix) — treat as UTC
+  const start = new Date(ts.endsWith('Z') || ts.includes('+') ? ts : ts + 'Z')
+  const sessao = Math.max(0, Math.floor((now.value - start.getTime()) / 60000))
   return base + sessao
 })
 const canResume = computed(() =>
@@ -292,10 +296,11 @@ async function confirmTransition() {
 
 // Parts search
 async function searchPecas() {
-  if (!pecaSearch.value.trim()) { pecaResults.value = []; return }
   pecaSearchLoading.value = true
   try {
-    const { data } = await getPecas({ query: pecaSearch.value.trim(), page_size: 8 })
+    const params = { page_size: 12 }
+    if (pecaSearch.value.trim()) params.query = pecaSearch.value.trim()
+    const { data } = await getPecas(params)
     pecaResults.value = data.data
   } catch {
     pecaResults.value = []
@@ -308,6 +313,17 @@ function watchPecaSearch() {
   clearTimeout(pecaSearchTimer)
   pecaSelecionada.value = null
   pecaSearchTimer = setTimeout(searchPecas, 300)
+}
+
+function focusPecaSearch() {
+  if (!pecaSelecionada.value && pecaResults.value.length === 0) {
+    searchPecas()
+  }
+}
+
+function blurPecaSearch() {
+  // delay so touchstart/mousedown on a dropdown item fires before we clear
+  setTimeout(() => { pecaResults.value = [] }, 150)
 }
 
 function selectPeca(p) {
@@ -332,6 +348,13 @@ async function submitPeca() {
   } finally {
     pecaLoading.value = false
   }
+}
+
+async function removerPecaOS(pecaId) {
+  try {
+    await removerPeca(os.value.id, pecaId)
+    await load()
+  } catch { /* ignore */ }
 }
 
 // Part request (pedido de peça ao gerente)
@@ -468,7 +491,7 @@ function fmtDateTime(dt) {
           </div>
 
           <!-- State actions -->
-          <div class="card" v-if="timerAtivo || canResume || mainActions.length > 0">
+          <div class="card card--proxima-acao" v-if="timerAtivo || canResume || mainActions.length > 0">
             <div class="card-title">Próxima Ação</div>
             <div class="action-list">
               <button
@@ -507,12 +530,16 @@ function fmtDateTime(dt) {
                 <tr>
                   <th>Peça</th>
                   <th class="col-right">Qtd</th>
+                  <th v-if="canAddParts" class="col-remove"></th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="p in os.pecas_aplicadas" :key="p.peca_id">
                   <td>{{ p.peca_nome }}</td>
                   <td class="col-right">{{ p.quantidade }}</td>
+                  <td v-if="canAddParts" class="col-remove">
+                    <button class="btn-remove" @click="removerPecaOS(p.peca_id)" title="Remover peça">✕</button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -523,8 +550,10 @@ function fmtDateTime(dt) {
               <div class="peca-search-wrap">
                 <input
                   v-model="pecaSearch"
-                  placeholder="Pesquisar peça por nome ou referência..."
+                  placeholder="Pesquisar ou toque para ver peças..."
                   @input="watchPecaSearch"
+                  @focus="focusPecaSearch"
+                  @blur="blurPecaSearch"
                   autocomplete="off"
                 />
                 <div v-if="pecaResults.length > 0" class="peca-dropdown">
@@ -533,6 +562,7 @@ function fmtDateTime(dt) {
                     :key="p.id"
                     class="peca-option"
                     @mousedown.prevent="selectPeca(p)"
+                    @touchstart.prevent="selectPeca(p)"
                   >
                     <span class="peca-nome">{{ p.nome }}</span>
                     <span class="peca-ref">{{ p.referencia }}</span>
@@ -544,7 +574,11 @@ function fmtDateTime(dt) {
                 <span>{{ pecaSelecionada.nome }}</span>
                 <div class="qty-row">
                   <label>Quantidade</label>
-                  <input v-model.number="pecaQty" type="number" min="1" style="width: 80px" />
+                  <div class="qty-stepper">
+                    <button class="qty-btn" @click="pecaQty = Math.max(1, pecaQty - 1)">−</button>
+                    <span class="qty-val">{{ pecaQty }}</span>
+                    <button class="qty-btn" @click="pecaQty++">+</button>
+                  </div>
                   <button class="btn btn--primary btn--sm" :disabled="pecaLoading" @click="submitPeca">
                     {{ pecaLoading ? '...' : 'Adicionar' }}
                   </button>
@@ -632,6 +666,36 @@ function fmtDateTime(dt) {
             @refresh="load"
           />
         </div>
+      </div>
+
+      <!-- Mobile sticky action bar — sits above the bottom nav -->
+      <div
+        class="mobile-cta"
+        v-if="timerAtivo || canResume || rightColumnAction || mainActions.length"
+      >
+        <button
+          v-if="timerAtivo"
+          class="mcta-btn mcta-stop"
+          :disabled="pauseLoading"
+          @click="pause"
+        >⏹ Parar</button>
+        <button
+          v-else-if="canResume"
+          class="mcta-btn mcta-resume"
+          @click="resumeWork"
+        >▶ {{ os.estado === 'EM_DIAGNOSTICO' ? 'Retomar Avaliação' : 'Retomar' }}</button>
+
+        <button
+          v-if="rightColumnAction"
+          class="mcta-btn mcta-primary"
+          :disabled="!timerAtivo"
+          @click="rightColumnAction.isDiag ? openDiagModal() : startTransition(rightColumnAction)"
+        >✓ {{ rightColumnAction.label }}</button>
+        <button
+          v-else-if="!timerAtivo && !canResume && mainActions.length"
+          class="mcta-btn mcta-primary"
+          @click="directTransition(mainActions[0])"
+        >{{ mainActions[0].label }}</button>
       </div>
     </template>
 
@@ -768,16 +832,24 @@ function fmtDateTime(dt) {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.1);
-  z-index: 100;
-  overflow: hidden;
+  z-index: 450;
+  max-height: 260px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .peca-option { padding: 0.75rem 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
 .peca-option:hover { background: #f0fdf4; }
 .peca-nome { font-weight: 500; color: #111827; font-size: 0.875rem; }
 .peca-ref { font-size: 0.8rem; color: #6b7280; }
 .peca-selected { background: #f0fdf4; border-radius: 6px; padding: 0.75rem; margin-bottom: 0.5rem; font-size: 0.875rem; color: #065f46; }
-.qty-row { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; }
+.qty-row { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; flex-wrap: wrap; }
 .qty-row label { margin: 0; white-space: nowrap; }
+
+.qty-stepper { display: flex; align-items: center; gap: 0; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
+.qty-btn { background: #f9fafb; border: none; color: #374151; font-size: 1.1rem; font-weight: 700; width: 36px; height: 36px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.1s; user-select: none; -webkit-tap-highlight-color: transparent; }
+.qty-btn:hover { background: #f3f4f6; }
+.qty-btn:active { background: #e5e7eb; }
+.qty-val { min-width: 36px; text-align: center; font-size: 0.95rem; font-weight: 600; color: #111827; border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; height: 36px; display: flex; align-items: center; justify-content: center; }
 
 .price-rows { display: flex; flex-direction: column; gap: 0.6rem; }
 .price-row { display: flex; justify-content: space-between; font-size: 0.9rem; color: #374151; }
@@ -832,4 +904,115 @@ function fmtDateTime(dt) {
 .diag-select:focus { border-color: #1abc9c; }
 .btn-remove-slot { background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 0.85rem; padding: 0.25rem 0.5rem; border-radius: 4px; flex-shrink: 0; transition: color 0.1s, background 0.1s; }
 .btn-remove-slot:hover { color: #dc2626; background: #fef2f2; }
+
+/* ── Mobile ──────────────────────────────────────────────────── */
+.mobile-cta { display: none; }
+
+@media (max-width: 1280px) {
+  .page {
+    padding: 1rem;
+    /* bottom nav 64px + sticky bar ~80px + breathing room */
+    padding-bottom: 180px;
+  }
+
+  .card { padding: 1.1rem; }
+
+  /* Hide cards duplicated in the sticky bar */
+  .card--conclude { display: none; }
+  .card--proxima-acao { display: none; }
+
+  /* Back button is redundant on mobile — use the bottom nav */
+  .back-row { display: none; }
+
+  /* Bigger tap targets for action buttons */
+  .btn--action {
+    min-height: 52px;
+    font-size: 1rem;
+    border-radius: 10px;
+  }
+
+  /* Sticky action bar */
+  .mobile-cta {
+    display: flex;
+    position: fixed;
+    bottom: 64px;
+    left: 0;
+    right: 0;
+    padding: 0.75rem 1rem;
+    gap: 0.625rem;
+    background: #fff;
+    border-top: 2px solid #e5e7eb;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.09);
+    z-index: 400;
+  }
+
+  .mcta-btn {
+    flex: 1;
+    min-height: 52px;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mcta-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .mcta-btn:active:not(:disabled) { opacity: 0.82; }
+
+  .mcta-stop   { background: #fef2f2; color: #dc2626; flex: 0 0 auto; padding: 0 1.1rem; }
+  .mcta-resume { background: #ecfdf5; color: #065f46; flex: 0 0 auto; padding: 0 1.1rem; }
+  .mcta-primary { background: #1abc9c; color: #fff; }
+
+  /* Dialogs: full-width sheet on mobile */
+  .dialog {
+    margin: 0.75rem;
+    width: calc(100% - 1.5rem);
+    max-width: none;
+    padding: 1.5rem 1.25rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .dialog-actions { gap: 0.5rem; flex-shrink: 0; }
+  .dialog-actions .btn { flex: 1; min-height: 46px; }
+
+  /* Diagnosis slots scroll inside dialog so action buttons stay visible */
+  .diag-slots {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    flex: 1;
+  }
+
+  /* Bigger diagnosis service selects */
+  .diag-select {
+    font-size: 1rem;
+    padding: 0.75rem 1rem;
+    min-height: 52px;
+  }
+  .btn-remove-slot {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 1rem;
+  }
+
+  /* Quantity stepper — bigger tap targets */
+  .qty-btn { width: 48px; height: 48px; font-size: 1.4rem; }
+  .qty-val { min-width: 48px; height: 48px; font-size: 1.1rem; }
+  .qty-row .btn--sm { min-height: 48px; font-size: 1rem; padding: 0 1.25rem; }
+
+  /* Parts dropdown: bigger tap targets, extra bottom room */
+  .peca-dropdown { padding-bottom: 0.5rem; }
+  .peca-option {
+    padding: 1rem 1rem;
+    min-height: 52px;
+    align-items: center;
+  }
+  .peca-nome { font-size: 1rem; }
+  .peca-ref  { font-size: 0.85rem; }
+}
 </style>

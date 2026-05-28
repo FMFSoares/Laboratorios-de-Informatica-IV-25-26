@@ -995,3 +995,108 @@ Implement salaries for all workers. Add a tab for that in Gerente and Administra
 - Added `/salarios` route (router) and sidebar nav item for ADMINISTRADOR + GERENTE_LOJA
 - Added `salario_base` field to user create form (`utilizadores/Index.vue`) and edit form + detail view (`utilizadores/Detail.vue`)
 - Populated seed salaries via direct SQL: ADMINISTRADOR €3 500, GERENTE_LOJA €2 200–€2 400, RECECIONISTA €1 100–€1 150, MECANICO €1 350–€1 450 (plus their commission)
+
+---
+
+### [2026-05-27] Mobile UI for the mechanic role — bottom nav bar, card lists, sticky action bar
+
+**Prompt:**
+Port the whole mechanic view to a mobile version. The UI should have bigger, simpler, more intuitive controls with larger buttons. Use a bottom navigation bar instead of the sidebar.
+
+**What was done:**
+
+- **`frontend/src/components/MobileBottomNav.vue`** (new): fixed bottom nav bar (64px, `#1e293b` background), rendered only for MECANICO. Five tabs with SVG icons: Ordens (`/oficina`), Activa (`/oficina/ativa`), Histórico (`/oficina/historico`), Stock (`/stock`), Notif. (`/notificacoes`). Active-dot on Activa tab when `workshop.hasActiveOS` is true. Unread-count badge on Notif. tab. Hidden on desktop via `display: none` outside `@media (max-width: 768px)`. Custom `isActive()` logic: `/oficina` is exact-match only; any `/oficina/:id` detail page maps to the Activa tab (not Ordens).
+
+- **`frontend/src/components/AppSidebar.vue`**: added `@media (max-width: 768px) { .sidebar { display: none } }` — sidebar hidden on all mobile, replaced by the bottom nav for mechanics.
+
+- **`frontend/src/components/AppLayout.vue`**: imports and mounts `<MobileBottomNav />`; added `@media (max-width: 768px) { .main-content { padding-bottom: 64px } }` so page content is not hidden behind the bottom nav.
+
+- **`frontend/src/views/oficina/Index.vue`**: each section (`v-if/v-else-if/v-else`) now uses `<template v-else>` to render both the desktop `<table>` and a `.cards` div. On mobile (`max-width: 768px`): `.table { display: none }`, `.cards { display: flex; flex-direction: column; gap: 0.5rem }`. Each card shows OS number + StatusBadge + atraso badge (top row), client name + priority (middle row), scooter serial + timer-live indicator or date (bottom row). Cards have a green left border when `tem_timer_ativo`. Tap state via `:active`.
+
+- **`frontend/src/views/oficina/Historico.vue`**: same card pattern. Cards show OS number + status (top), client + priority (middle), serial + entry→conclusion dates (bottom).
+
+- **`frontend/src/views/oficina/Detail.vue`**: added a `.mobile-cta` sticky bar (`position: fixed; bottom: 64px`) visible only on mobile. Shows: timer stop button (red tint) or resume button (green tint) when applicable, plus the primary CTA (`✓ Concluir Diagnóstico` / `✓ Concluir Reparação`) or the first `mainAction` when no rightColumnAction exists. The existing `.card--conclude` in the right column is hidden on mobile (`display: none`) since it is duplicated in the sticky bar. Action buttons in cards get `min-height: 52px` on mobile. Page `padding-bottom: 180px` on mobile to avoid content hidden behind both bars. Modals become near-full-width sheets on mobile.
+
+- **`frontend/src/views/oficina/Ativa.vue`**: added mobile CSS — bigger empty-state icon, `min-height: 52px` button, and `padding-bottom: calc(64px + 1.5rem)`.
+
+**Breakpoint:** `@media (max-width: 768px)` throughout.
+
+**Testing:**
+- Browser: F12 → device toolbar (Ctrl+Shift+M) → iPhone SE or Pixel 5 → reload
+- Real phone: connect to same Wi-Fi → `http://<LAN_IP>:5173` (get IP with `hostname -I | awk '{print $1}'`)
+
+---
+
+### [2026-05-27] Mobile mechanic UI — follow-up fixes
+
+**Prompt:**
+Fix the following issues in the mobile mechanic UI: (1) landscape orientation on iPad (1180×820) was still showing the desktop sidebar and layout; (2) OS detail page had two identical "Iniciar Diagnóstico" buttons — one in the "Próxima Ação" card and one in the sticky bottom bar; (3) the "← Voltar" back button is unnecessary on mobile since navigation is handled by the bottom nav; (4) there was no way for the mechanic to log out since the sidebar footer (which contains the logout button) is hidden on mobile.
+
+**What was done:**
+
+- **Breakpoint raised to `@media (max-width: 1280px)`** across all mobile-specific CSS blocks (`MobileBottomNav.vue`, `AppSidebar.vue`, `AppLayout.vue`, `Index.vue`, `Historico.vue`, `Detail.vue`, `Ativa.vue`). Previous breakpoints (768px → 1024px) did not cover iPad 10th gen in landscape (1180px wide). 1280px covers all tablets up to a standard iPad Pro landscape.
+
+- **Duplicate action button removed** (`frontend/src/views/oficina/Detail.vue`): added class `card--proxima-acao` to the "Próxima Ação" in-page card and set `display: none` on mobile. The sticky `.mobile-cta` bar already renders all the same actions (stop/resume timer + primary CTA), so the in-page card is fully redundant on mobile.
+
+- **Back button hidden on mobile** (`frontend/src/views/oficina/Detail.vue`): added `.back-row { display: none }` to the mobile media query. Navigation back to the OS list is done via the bottom nav tabs.
+
+- **"Conta" tab added to bottom nav** (`frontend/src/components/MobileBottomNav.vue`): added a 6th tab with a person SVG icon labelled "Conta" linking to `/conta`. The `/conta` page already has a "Terminar sessão" button, giving mechanics a way to log out on mobile.
+
+---
+
+### [2026-05-27] OS Detail — timer UTC offset bug + parts dropdown scroll
+
+**Prompt:**
+Two bugs in the OS detail page: (1) when concluding a diagnosis the timer jumps instantly to ~59 minutes; after concluding the OS it resets to the correct time. (2) The parts search dropdown can't be scrolled on mobile — the screen is too small to see all results.
+
+**What was done:**
+
+- **Timer UTC offset fix** (`frontend/src/views/oficina/Detail.vue`, `minutosTrabalhadosLive`): the backend returns `inicio_tempo_atual` as a naive datetime string (no timezone suffix, e.g. `"2026-05-27T14:00:00"`). JavaScript's `new Date()` was parsing this as *local time* (Portugal = UTC+1), while `Date.now()` is always UTC — producing a ~60-minute phantom elapsed time. Fix: append `'Z'` to the string before parsing if it has no timezone info, so it is correctly treated as UTC. Guard checks for existing `'Z'` or `'+'` to avoid double-applying.
+
+- **Parts dropdown scroll** (`frontend/src/views/oficina/Detail.vue`, `.peca-dropdown`): changed `overflow: hidden` to `overflow-y: auto`, added `max-height: 260px` and `-webkit-overflow-scrolling: touch`. The dropdown now scrolls independently within a fixed height, so all results are reachable on small screens without scrolling the whole page.
+
+---
+
+### [2026-05-27] OS Detail — quantity stepper, dropdown z-index fix, remove applied part
+
+**Prompt:**
+Three fixes in the OS detail view: (1) on mobile the quantity input for adding a part shows as a native number spinner/slider — replace it with a proper − / number / + stepper with a bigger "Adicionar" button; (2) the parts dropdown was still hidden behind the sticky footer bar even after adding max-height and scroll — the last items weren't reachable; (3) there is no way to remove a part that was already applied to an OS — add that capability system-wide.
+
+**What was done:**
+
+- **Dropdown z-index fix** (`frontend/src/views/oficina/Detail.vue`): raised `.peca-dropdown` z-index from `100` to `450` (above the `.mobile-cta` bar at `400`). The sticky footer was painting over the bottom of the dropdown, hiding the last items even though the dropdown itself was scrollable. Also added `padding-bottom: 0.5rem` on mobile so the last item isn't flush against the edge.
+
+- **Quantity stepper** (`frontend/src/views/oficina/Detail.vue`): replaced `<input type="number">` in the add-part form with a `−` / number display / `+` button layout (`.qty-stepper`). Styled as a bordered pill with equal-width cells. On mobile (`≤1280px`): buttons are 48×48px, number cell 48px wide, "Adicionar" button `min-height: 48px`.
+
+- **Remove applied part — backend** (`backend/`):
+  - `schemas/auditoria.py`: added `OS_PECA_REMOVIDA` to `TipoEventoAuditoria` enum.
+  - `repositories/ordem_servico_repository.py`: added `get_peca_os(os_id, peca_id)` and `remover_peca_os(os_peca)`.
+  - `services/ordem_servico_service.py`: added `remover_peca()` — validates OS state (blocks CONCLUIDA/CANCELADA), fetches the `OSPeca` record, restores stock via `stock_repo.adicionar()`, deletes the row, logs `OS_PECA_REMOVIDA` audit event.
+  - `routers/ordens_servico.py`: added `DELETE /{os_id}/pecas/{peca_id}` (HTTP 204, roles: ADMINISTRADOR, GERENTE_LOJA, MECANICO).
+
+- **Remove applied part — frontend** (`frontend/`):
+  - `services/ordensServico.js`: added `removerPeca(id, pecaId)` calling `DELETE /ordens-servico/{id}/pecas/{pecaId}`.
+  - `Detail.vue`: parts table now has a `✕` remove button column (only rendered when `canAddParts`). Calls `removerPecaOS(peca_id)` which hits the new endpoint and calls `load()` to refresh.
+
+---
+
+### [2026-05-27] Bug fixes — salario_base lost on user creation, transfers table empty, admin missing stock nav, timer leak, timezone crash on timer stop, login redirect, stale store after logout
+
+**Prompt:**
+Fix the following bugs: salario_base is not being saved when creating a user; the transfers table is always empty; the administrator has no Inventário link in the sidebar; there is a timer leak in the sidebar polling; stopping the work timer can crash with a timezone error; after login the page always redirects to the dashboard regardless of role; after logout and re-login as a different user, the previous user's notification count and active OS state are still visible.
+
+**What was done:**
+
+- **`backend/app/services/utilizador_service.py`** — `criar_utilizador` never passed `salario_base` to `repo.create()`, causing every new user to be saved with `salario_base=NULL`. Added `salario_base=body.salario_base` to the `repo.create()` call.
+
+- **`frontend/src/views/transferencias/Index.vue`** — `getTransferencias` already unwraps the Axios response via `.then(r => r.data)`, returning the JSON body directly. The component was then accessing `r.data.data` — a double-unwrap producing `undefined`. The table was permanently empty. Fixed: `r.data.data ?? []` → `r.data ?? []`.
+
+- **`frontend/src/components/AppSidebar.vue`** — The `Inventário` nav item had `roles: ['GERENTE_LOJA']`, excluding ADMINISTRADOR. Fixed by adding `'ADMINISTRADOR'` to the roles array.
+
+- **`frontend/src/components/AppSidebar.vue`** — `onMounted` assigned `pollInterval` to a first `setInterval`, then immediately overwrote it with a second one. The first timer was never cleared by `onUnmounted`. Fixed: removed the leaked first `setInterval`; added an `else` branch so RECECIONISTA also gets a proper poll interval.
+
+- **`backend/app/services/ordem_servico_service.py`** — `parar_tempo` and `atualizar_mecanico` computed elapsed time as `agora - rt.inicio.replace(tzinfo=timezone.utc)`. MySQL `DATETIME` columns return timezone-naive values on read; if `rt.inicio` already has timezone info the subtraction raises `TypeError`. Fixed with a guard: `inicio_utc = rt.inicio if rt.inicio.tzinfo else rt.inicio.replace(tzinfo=timezone.utc)` in both locations.
+
+- **`frontend/src/views/Login.vue`** — After login the redirect was always `router.push({ name: 'Dashboard' })` regardless of role, causing an extra navigation cycle and route flash for MECANICO and RECECIONISTA. Fixed: MECANICO → `/oficina/ativa`, RECECIONISTA → `/ordens-servico`, others → `/dashboard`.
+
+- **`frontend/src/store/auth.js` / `workshop.js` / `notifications.js`** — `logout()` cleared auth state but left `workshop.hasActiveOS` and `notifStore.count`/`notifications` with the previous user's data until the next poll. Added a `reset()` function to both setup stores; `logout()` now calls both after clearing session storage.

@@ -11,7 +11,7 @@ from app.models.ordem_servico import OrdemServico
 from app.models.utilizador import Utilizador
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.common import DataResponse
-from app.schemas.salario import SalarioUtilizador
+from app.schemas.salario import SalarioHistoricoItem, SalarioUtilizador
 from app.schemas.utilizador import PerfilUtilizador as P
 
 
@@ -77,5 +77,68 @@ class SalarioService:
                     total=round(base + comissao_ganha, 2),
                 )
             )
+
+        return DataResponse(data=result)
+
+    def calcular_historico(
+        self,
+        utilizador_id: int,
+        meses: int,
+    ) -> DataResponse[list[SalarioHistoricoItem]]:
+        from fastapi import HTTPException
+        user = self.db.query(Utilizador).filter(Utilizador.id == utilizador_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail={"detail": "Utilizador não encontrado.", "code": "NOT_FOUND"})
+
+        MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                    "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+
+        hoje = date.today()
+        # Compute start of the oldest month we need
+        total_months_now = hoje.year * 12 + hoje.month - 1
+        oldest = total_months_now - meses + 1
+        ano_inicio = oldest // 12
+        mes_inicio = oldest % 12 + 1
+        inicio_range = date(ano_inicio, mes_inicio, 1)
+
+        # Single query: faturado per month for this mechanic across the full range
+        faturado_por_mes: dict[tuple[int, int], float] = {}
+        if user.perfil == P.MECANICO and user.comissao:
+            rows = (
+                self.db.query(
+                    func.year(Fatura.data_emissao).label("ano"),
+                    func.month(Fatura.data_emissao).label("mes"),
+                    func.sum(Fatura.valor_final).label("total"),
+                )
+                .join(OrdemServico, OrdemServico.id == Fatura.ordem_servico_id)
+                .filter(
+                    OrdemServico.mecanico_id == utilizador_id,
+                    cast(Fatura.data_emissao, Date) >= inicio_range,
+                )
+                .group_by(func.year(Fatura.data_emissao), func.month(Fatura.data_emissao))
+                .all()
+            )
+            faturado_por_mes = {(r.ano, r.mes): float(r.total) for r in rows}
+
+        result = []
+        for i in range(meses - 1, -1, -1):  # oldest → newest
+            tm = total_months_now - i
+            ano = tm // 12
+            mes = tm % 12 + 1
+
+            base = float(user.salario_base or 0.0)
+            comissao_ganha = 0.0
+            if user.perfil == P.MECANICO and user.comissao:
+                faturado = faturado_por_mes.get((ano, mes), 0.0)
+                comissao_ganha = round(faturado * user.comissao / 100, 2)
+
+            result.append(SalarioHistoricoItem(
+                ano=ano,
+                mes=mes,
+                mes_label=f"{MESES_PT[mes - 1]} {ano}",
+                salario_base=base,
+                comissao_ganha=comissao_ganha,
+                total=round(base + comissao_ganha, 2),
+            ))
 
         return DataResponse(data=result)
