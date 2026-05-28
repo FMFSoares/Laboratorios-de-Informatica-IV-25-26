@@ -16,11 +16,12 @@ def validate_nif(value: str) -> str:
         raise ValueError("NIF deve ter exatamente 9 dígitos numéricos.")
 
     PREFIXOS_VALIDOS = {'1', '2', '3',  # pessoas singulares
-                    '5',             # pessoas coletivas
-                    '6',             # administração pública
-                    '7',             # outras entidades
-                    '8',             # empresários em nome individual
-                    '9'}             # condomínios e outras formas
+                    '45',               # cidadãos nao residentes que apenas obtenham rendimentos sujeitos a retenção na fonte a título definitivo.
+                    '5',                # pessoas coletivas
+                    '6',                # administração pública
+                    '7',                # outras entidades
+                    '8',                # empresários em nome individual
+                    '9'}                # condomínios e outras formas
 
     if value[0] not in PREFIXOS_VALIDOS:
         raise ValueError("NIF inválido (prefixo não reconhecido).")
