@@ -853,6 +853,108 @@ Com base nos casos de uso acima apresentados, foi desenvolvido um diagrama de ca
   *Modelo:* Gemini
 ]
 
+=== 2.7 Especificação de Requisitos de Software (SRS — IEEE 29148)
+
+A presente secção apresenta uma síntese formal da Especificação de Requisitos de Software (SRS) do sistema DLMCare, estruturada de acordo com a norma IEEE 29148:2018 (sucessora da IEEE 830-1998). Esta especificação consolida os requisitos elicitados nas secções anteriores num documento normativo, servindo de referência vinculativa para as etapas de Arquitetura, Implementação e Verificação.
+
+==== 2.7.1 Introdução
+
+*Propósito:* Este documento especifica os requisitos do sistema de informação centralizado DLMCare, destinado à gestão operacional e financeira de uma cadeia de três oficinas de reparação de trotinetes elétricas (Lisboa, Porto e Braga). Destina-se à equipa de desenvolvimento (implementação e testes) e ao Product Owner (validação e aceitação).
+
+*Âmbito:* O sistema DLMCare é uma aplicação web cloud, acessível via browser em desktops e tablets, que suporta os processos de: registo de clientes e equipamentos, gestão do ciclo de vida de Ordens de Serviço, controlo de inventário multi-loja, faturação automática, notificações ao cliente e reporting analítico. O sistema não inclui a gestão de encomendas a fornecedores externos (ver restrição 1.5.1).
+
+*Definições e Acrónimos:*
+
+#table(
+  columns: (5em, 1fr),
+  align: (left, left),
+  fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
+  table.header([*Acrónimo*], [*Definição*]),
+  [OS], [Ordem de Serviço — documento central que regista uma intervenção de reparação],
+  [RF], [Requisito Funcional],
+  [RNF], [Requisito Não Funcional],
+  [RGPD], [Regulamento Geral sobre a Proteção de Dados (UE 2016/679)],
+  [JWT], [JSON Web Token — mecanismo de autenticação stateless],
+  [RBAC], [Role-Based Access Control — controlo de acesso por perfil],
+  [ACID], [Atomicity, Consistency, Isolation, Durability — propriedades transacionais],
+  [SRS], [Software Requirements Specification],
+  [UAT], [User Acceptance Testing — testes de aceitação pelo utilizador],
+  [API], [Application Programming Interface],
+  [SPA], [Single Page Application],
+)
+
+*Referências:* IEEE 29148:2018 — Systems and Software Engineering, Life Cycle Processes, Requirements Engineering; IEEE 12207:2017 — Software Life Cycle Processes; ISO/IEC 25010:2011 — Systems and Software Quality Models; RGPD — Regulamento (UE) 2016/679.
+
+==== 2.7.2 Descrição Geral
+
+*Perspetiva do Produto:* O sistema DLMCare é uma nova plataforma standalone que não integra nem substitui sistemas pré-existentes. Foi desenvolvida para eliminar os processos manuais em papel e os grupos de WhatsApp atualmente utilizados nas três filiais, integrando pela primeira vez os dados de clientes, trotinetes, OS, stock e faturação numa base de dados centralizada acessível em tempo real.
+
+*Funções Principais do Produto:*
++ Autenticação e controlo de acesso por perfil (Administrador, Gerente de Loja, Rececionista, Mecânico).
++ Registo e consulta centralizada de clientes e trotinetes, com histórico acessível em qualquer filial.
++ Criação, acompanhamento e encerramento de Ordens de Serviço com máquina de estados de oito fases.
++ Registo de tempos de mão de obra (start/stop) e associação de peças a cada OS.
++ Gestão de inventário por loja com abate automático de stock e alertas de stock mínimo.
++ Transferências internas de stock entre filiais com workflow de aprovação.
++ Faturação automática com snapshot de preços no momento da intervenção e descontos de fidelização.
++ Notificações automáticas ao cliente (email) em cada mudança de estado da OS.
++ Dashboard analítico com KPIs financeiros e operacionais filtráveis por loja e período.
++ Registo de auditoria de todas as operações críticas do sistema.
+
+*Características dos Utilizadores:* Quatro perfis com diferentes níveis de literacia digital e contextos de uso. O Mecânico utiliza tablets em ambiente de oficina e necessita de uma interface com ações executáveis em no máximo 3 toques (RNF02.1). Os restantes perfis utilizam desktops em ambiente de escritório ou receção.
+
+*Restrições Gerais:* Ver Secção 1.5 (Restrições Legais, Operacionais e Técnicas). O sistema deve estar disponível durante o horário de funcionamento das oficinas (segunda a sábado, 08h00–20h00) com uptime de 99,9%. O custo de aquisição das peças (#raw("preco_custo")) é interno e nunca exposto em faturas ou respostas da API pública.
+
+*Pressupostos e Dependências:* Os dispositivos dos utilizadores têm acesso à internet. O serviço SMTP externo para envio de emails está disponível. As peças encomendadas a fornecedores externos chegam fisicamente à loja antes de serem registadas no sistema (a gestão de encomendas a fornecedores está fora do âmbito do sistema).
+
+==== 2.7.3 Requisitos do Sistema
+
+Os requisitos funcionais (RF01–RF19) e não funcionais (RNF01–RNF08) com as suas refinações encontram-se especificados nas Secções 2.3 e 2.4. A tabela seguinte apresenta a matriz de rastreabilidade entre os requisitos e os casos de uso que os implementam:
+
+#table(
+  columns: (4.5em, 1fr, 5.5em),
+  align: (center, left, center),
+  fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
+  table.header([*Requisito*], [*Descrição Resumida*], [*Casos de Uso*]),
+  [RF01–02], [Registo e consulta centralizada de clientes e trotinetes], [UC01, UC06],
+  [RF03–05], [Criação e gestão do ciclo de vida de OS (estados padronizados)], [UC02, UC03],
+  [RF06–07], [Dashboard analítico, relatórios operacionais e financeiros], [UC05],
+  [RF08–11], [Inventário centralizado, abate automático e alertas de stock mínimo], [UC02, UC07],
+  [RF12–13], [Cálculo automático do valor da OS e faturação discriminada], [UC04],
+  [RF14], [Notificações automáticas ao cliente (email) em mudanças de estado], [UC03],
+  [RF15], [Registo de auditoria de todas as alterações de estado de OS], [UC02–UC04],
+  [RF16], [Descontos de fidelização (percentuais ou fixos) em faturação], [UC04],
+  [RF17], [Alerta de OS em atraso ao Gerente de Loja], [UC03],
+  [RF18], [Recolha de consentimento RGPD explícito no registo de cliente], [UC01],
+  [RF19], [Log de auditoria de todas as alterações manuais ao inventário], [UC07],
+  [RNF01–04], [Desempenho (< 2s), usabilidade (≤ 3 interações) e suporte a tablets], [Todos],
+  [RNF05–08], [Segurança (bcrypt), cloud, encriptação e timeout de sessão (60 min)], [Todos],
+)
+
+*Requisitos de Interface:*
+
+- *Interface de Utilizador:* Aplicação web responsiva (Vue.js SPA), suportando resoluções desde 375 px (smartphone) até ecrãs wide (≥ 1440 px). Abaixo de 1280 px, o perfil Mecânico vê uma interface mobile com bottom navigation bar e cards de OS em lugar de tabelas HTML.
+
+- *Interface de Software:* API REST com prefixo #raw("/api/v1"), formato JSON, autenticação via Bearer token (JWT). Documentação interativa disponível automaticamente em #raw("/docs") (OpenAPI/Swagger). Ver Secção 6.1 para a especificação completa de endpoints, métodos, permissões e formatos de resposta.
+
+- *Interface de Hardware:* A aplicação é acessível em qualquer dispositivo com browser moderno (Chromium ≥ 100, Firefox ≥ 100). As operações de oficina são otimizadas para ecrãs touch ≥ 10", com botões de dimensão mínima compatível com uso com luvas.
+
+- *Interface de Comunicação:* Comunicação HTTPS entre cliente e servidor; envio de notificações ao cliente via SMTP com templates HTML para quatro eventos (diagnóstico, conclusão, cancelamento e fatura); geração de documentos PDF (faturas e transferências de stock) via fpdf2 no servidor, enviados diretamente ao cliente por email ou descarregáveis na interface.
+
+#prompt-box[
+  *Prompt*
+
+  Com base na norma IEEE 29148:2018, estrutura uma secção SRS formal para o sistema DLMCare. Inclui: propósito, âmbito, definições, descrição geral (perspetiva do produto, funções principais, perfis de utilizadores, restrições e pressupostos) e uma matriz de rastreabilidade RF/RNF → Casos de Uso. O tom deve ser normativo e técnico.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  O output inicial omitia a tabela de rastreabilidade e a secção de interfaces. Foi necessário pedir explicitamente a decomposição em interfaces de utilizador, software, hardware e comunicação para cobrir todos os aspetos da norma. A matriz de rastreabilidade foi ajustada para refletir os casos de uso reais do sistema, garantindo que nenhum requisito fica sem cobertura funcional identificada.
+
+  #v(6pt)
+  *Modelo:* Gemini
+]
+
 // ============================================================
 // CAPÍTULO 2
 // ============================================================
@@ -1080,7 +1182,7 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
 *OrdemServico*
 
 #table(
-  columns: (5.5em, 1fr, 5em, 2.5em, 5.5em),
+  columns: (auto, 1fr, auto, auto, auto),
   align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
   table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
@@ -1096,7 +1198,7 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
 *Cliente*
 
 #table(
-  columns: (6em, 1fr, 5.5em, 2.5em, 6em),
+  columns: (auto, 1fr, auto, auto, auto),
   align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
   table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
@@ -1108,29 +1210,56 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
   [consentimentoRGPD], [Confirmação de aceitação dos termos de privacidade (RGPD)], [BOOLEAN], [N], [TRUE],
 )
 
-*Utilizador (e subclasses)*
+*Utilizador* (atributos partilhados por todas as subclasses)
 
 #table(
-  columns: (5.5em, 5.5em, 1fr, 5em, 2.5em, 5em),
-  align: (left, left, left, left, center, left),
+  columns: (auto, 1fr, auto, auto, auto),
+  align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
-  table.header([*Classe*], [*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
-  [Utilizador], [idUtilizador], [Identificador único], [INT], [N], [10],
-  [], [nome], [Nome completo], [VARCHAR(150)], [N], [João Ruca Silva],
-  [], [email], [Email do utilizador], [VARCHAR(150)], [N], [dlm\@gmail.com],
-  [], [passwordHash], [Password encriptada], [VARCHAR(255)], [N], [---],
-  [Administrador], [nivelAcesso], [Nível de privilégio global], [INT], [N], [1],
-  [GerenteLoja], [idLoja], [Referência à loja (FK)], [INT], [N], [1],
-  [Rececionista], [idLoja], [Referência à loja (FK)], [INT], [N], [2],
-  [Mecanico], [idLoja], [Referência à loja (FK)], [INT], [N], [3],
-  [], [especialidade], [Área de especialização], [VARCHAR(100)], [N], [Eletrónica],
-  [], [comissão], [Percentagem de cada serviço], [INT], [N], [10],
+  table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
+  [idUtilizador], [Identificador único do utilizador (Chave Primária)], [INT], [N], [10],
+  [nome], [Nome completo], [VARCHAR(150)], [N], [João Ruca Silva],
+  [email], [Email de autenticação], [VARCHAR(150)], [N], [dlm\@gmail.com],
+  [passwordHash], [Password encriptada com bcrypt], [VARCHAR(255)], [N], [---],
+  [perfil], [Papel do utilizador no sistema], [Enum], [N], [MECANICO],
+)
+
+*Administrador* (atributos adicionais)
+
+#table(
+  columns: (auto, 1fr, auto, auto, auto),
+  align: (left, left, left, center, left),
+  fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
+  table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
+  [nivelAcesso], [Nível de privilégio global no sistema], [INT], [N], [1],
+)
+
+*GerenteLoja / Rececionista* (atributos adicionais)
+
+#table(
+  columns: (auto, 1fr, auto, auto, auto),
+  align: (left, left, left, center, left),
+  fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
+  table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
+  [idLoja], [Referência à loja onde o utilizador está afeto (FK)], [INT], [N], [2],
+)
+
+*Mecanico* (atributos adicionais)
+
+#table(
+  columns: (auto, 1fr, auto, auto, auto),
+  align: (left, left, left, center, left),
+  fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
+  table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
+  [idLoja], [Referência à loja onde o mecânico está afeto (FK)], [INT], [N], [3],
+  [especialidade], [Área técnica de especialização], [VARCHAR(100)], [N], [Eletrónica],
+  [comissao], [Percentagem de comissão por serviço executado], [INT], [N], [10],
 )
 
 *Trotinete*
 
 #table(
-  columns: (5.5em, 1fr, 5em, 2.5em, 5.5em),
+  columns: (auto, 1fr, auto, auto, auto),
   align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
   table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
@@ -1143,7 +1272,7 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
 *Peca*
 
 #table(
-  columns: (5.5em, 1fr, 5em, 2.5em, 5.5em),
+  columns: (auto, 1fr, auto, auto, auto),
   align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
   table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
@@ -1156,7 +1285,7 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
 *Fatura*
 
 #table(
-  columns: (5.5em, 1fr, 5em, 2.5em, 5.5em),
+  columns: (auto, 1fr, auto, auto, auto),
   align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
   table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
@@ -1172,7 +1301,7 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
 *Loja*
 
 #table(
-  columns: (5.5em, 1fr, 5em, 2.5em, 5.5em),
+  columns: (auto, 1fr, auto, auto, auto),
   align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
   table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
@@ -1185,7 +1314,7 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
 *StockLoja*
 
 #table(
-  columns: (5.5em, 1fr, 5em, 2.5em, 5.5em),
+  columns: (auto, 1fr, auto, auto, auto),
   align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
   table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
@@ -1198,7 +1327,7 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
 *OS_Peca*
 
 #table(
-  columns: (6.5em, 1fr, 5em, 2.5em, 5.5em),
+  columns: (auto, 1fr, auto, auto, auto),
   align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
   table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
@@ -1211,7 +1340,7 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
 *Auditoria*
 
 #table(
-  columns: (5.5em, 1fr, 5em, 2.5em, 5.5em),
+  columns: (auto, 1fr, auto, auto, auto),
   align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
   table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
@@ -1224,7 +1353,7 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
 *CatalogoServico*
 
 #table(
-  columns: (5.5em, 1fr, 5em, 2.5em, 5.5em),
+  columns: (auto, 1fr, auto, auto, auto),
   align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
   table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
@@ -1236,7 +1365,7 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
 *OS_Servico*
 
 #table(
-  columns: (6em, 1fr, 5em, 2.5em, 5.5em),
+  columns: (auto, 1fr, auto, auto, auto),
   align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
   table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
@@ -1248,7 +1377,7 @@ A integridade do modelo de domínio do sistema DLMCare é garantida por uma rede
 *RegistoTempo*
 
 #table(
-  columns: (5.5em, 1fr, 5em, 2.5em, 5.5em),
+  columns: (auto, 1fr, auto, auto, auto),
   align: (left, left, left, center, left),
   fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
   table.header([*Atributo*], [*Descrição*], [*Domínio*], [*Nulo*], [*Exemplo*]),
@@ -1444,6 +1573,23 @@ O contrato estabelece:
 - Formato de erro normalizado: `{"detail": "...", "code": "..."}` com códigos semânticos como `INVALID_CREDENTIALS`, `PERMISSION_DENIED`, `LOJA_MISMATCH`, `RESOURCE_NOT_FOUND`, `DUPLICATE_ENTRY`, `INVALID_STATE_TRANSITION`, `INSUFFICIENT_STOCK`, entre outros.
 - Documentação de cada endpoint: método, path, perfis autorizados, exemplos de request/response, erros possíveis e estado de implementação.
 
+#prompt-box[
+  *Prompts 1 e 2 — Análise Inicial e Contrato da API*
+
+  Analisa o backend do projeto DLMCare e devolve: o estado atual, o que falta implementar para a Etapa 3, a ordem de implementação recomendada, e os riscos ou incoerências a corrigir antes de programar. Regras: não escrevas código; a faturação segue a regra `valor_final = preco_servico + subtotal_pecas`; o `preco_custo` das peças é interno e nunca entra no valor cobrado ao cliente.
+
+  #v(6pt)
+  Em seguida, define o contrato formal da API em `docs/backend_api_contract_etapa3.md`, cobrindo todos os módulos (auth, clientes, trotinetes, peças, stock, ordens de serviço, faturas, dashboard, auditoria), com perfis autorizados, exemplos JSON de request/response, erros possíveis e convenções globais: prefixo `/api/v1`, autenticação Bearer JWT, formato de erro normalizado com campo `code` semântico, paginação. Sempre que algo depender da BD, marcar como "pendente de integração com BD". A falta de BD não bloqueia o backend — os services podem ser implementados com dados mockados.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  A análise inicial confirmou que o backend tinha apenas infraestrutura base, sem qualquer lógica aplicacional implementada. A ordem de implementação sugerida — schemas → auth → routers/services mockados → integração com BD — foi adotada na íntegra. A abordagem API-first, com o contrato de aproximadamente 1600 linhas criado antes de qualquer linha de código, foi a decisão mais impactante do projeto: permitiu que o frontend fosse desenvolvido em paralelo sem ambiguidades e serviu de referência vinculativa para ambas as partes. O principal ajuste ao output foi a clarificação explícita de que o campo `preco_custo` nunca poderia aparecer em respostas públicas da API, aspeto depois reforçado nas notas para implementação do contrato.
+
+  #v(6pt)
+  *Modelo:* Claude
+]
+
 === 7.3 Schemas e Validações
 
 Todos os contratos de dados foram modelados em Pydantic v2, no diretório #raw("backend/app/schemas/"). Os schemas asseguram validação automática dos dados de entrada antes de atingirem a lógica de negócio. Foram criados 15 ficheiros de schemas, cobrindo todas as entidades do sistema (incluindo o ficheiro `common.py` com os schemas de resposta genérica paginada e envelope de dados, partilhados por todos os módulos).
@@ -1458,6 +1604,20 @@ As validações embutidas nos schemas incluem:
 - *Valores monetários:* maior ou igual a 0.
 - *`preco_custo` das peças nunca exposto:* o schema `PecaResponse` não inclui este campo. O `preco_custo` é armazenado internamente no serviço mas nunca serializado em nenhuma resposta pública da API.
 
+#prompt-box[
+  *Prompt 3 — Schemas Pydantic e Enums*
+
+  Implementa todos os schemas Pydantic v2 do backend DLMCare em `backend/app/schemas/`, com base no contrato `docs/backend_api_contract_etapa3.md`. Cobrir todas as entidades (auth, clientes, trotinetes, peças, stock, OS, faturas, dashboard, auditoria) com validações embutidas: NIF com exatamente 9 dígitos numéricos, telemóvel português com 9 dígitos e começado por 9, `consentimento_rgpd` obrigatoriamente `true` no registo de clientes, valores monetários >= 0. Regra crítica: `PecaResponse` e todos os schemas de resposta pública não devem incluir o campo `preco_custo`. Usar `ConfigDict(from_attributes=True)` para futura integração com ORM.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  Os 15 ficheiros de schemas foram gerados com elevada fidelidade ao contrato. O ponto mais sensível — a exclusão do `preco_custo` do `PecaResponse` — foi respeitado desde o início, com o campo armazenado apenas internamente no serviço mas nunca serializado. A validação do consentimento RGPD como campo obrigatoriamente `true` (rejeitando `false` com HTTP 422 antes de atingir a lógica de negócio) foi uma melhoria proposta pelo modelo que fortalece a conformidade legal. Os enums — nomeadamente `EstadoOrdemServico` com os oito estados e `TipoEventoAuditoria` com 31 eventos auditáveis — foram validados manualmente contra o contrato para garantir que nenhum valor antigo ou inconsistente foi introduzido.
+
+  #v(6pt)
+  *Modelo:* Claude
+]
+
 === 7.4 Autenticação e Controlo de Acesso
 
 O sistema de autenticação foi implementado com tokens JWT em #raw("app/core/security.py"), com as dependências FastAPI correspondentes em #raw("app/auth/dependencies.py").
@@ -1467,6 +1627,20 @@ O sistema de autenticação foi implementado com tokens JWT em #raw("app/core/se
 *Controlo de acesso por perfil (RBAC):* a dependência `require_roles(*perfis)` é uma factory que gera dependências FastAPI reutilizáveis para cada endpoint. Uma tentativa de acesso sem o perfil adequado devolve 403 com código `PERMISSION_DENIED`.
 
 *Multi-tenancy por loja:* todos os utilizadores com perfil diferente de `ADMINISTRADOR` têm um `loja_id` obrigatório no token. A dependência `get_loja_context()` garante que não-administradores apenas acedem aos dados da sua loja — o acesso a dados de outra loja resulta em 403 `LOJA_MISMATCH`. O `ADMINISTRADOR` tem `loja_id = null` e acesso global a todos os dados.
+
+#prompt-box[
+  *Prompts 4 e 5 — Autenticação JWT e Controlo de Acesso por Perfil*
+
+  Implementa a camada de autenticação e RBAC em `app/core/security.py` e `app/auth/dependencies.py`. O payload JWT deve incluir `sub`, `nome`, `email`, `perfil`, `loja_id`, `loja_nome` e `ativo` — sem qualquer acesso à BD para validar pedidos autenticados. Implementa a factory `require_roles(*perfis)` e a dependência `get_loja_context()`, que garante que utilizadores não administradores só acedem aos dados da sua loja. Nota obrigatória: `passlib 1.7.4` é incompatível com `bcrypt >= 5.x` — usar `bcrypt` diretamente com `bcrypt.gensalt()` em vez de `passlib`. Em seguida, implementa o router e service de autenticação com utilizadores mockados em memória, um por cada perfil, com hashes bcrypt pré-calculados.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  A incompatibilidade entre `passlib 1.7.4` e `bcrypt >= 5.x` foi o primeiro obstáculo técnico real da implementação — o modelo identificou-a e propôs a solução de contornar o passlib chamando `bcrypt` diretamente, o que se revelou a abordagem correta e estável. A decisão de incluir toda a informação do utilizador no payload JWT elimina a necessidade de aceder à BD para autenticar qualquer pedido, o que foi fundamental para o desenvolvimento incremental antes da integração com a base de dados. A factory `require_roles` foi validada com todos os perfis e a dependência `get_loja_context` foi especialmente importante para garantir o isolamento de dados entre filiais.
+
+  #v(6pt)
+  *Modelo:* Claude
+]
 
 === 7.5 Módulos Funcionais
 
@@ -1500,6 +1674,20 @@ O backend expõe 14 módulos funcionais, cada um com o seu router e serviço cor
 
 *Notificações (#raw("/notificacoes")):* inbox de notificações por utilizador; contagem de não lidas; marcação como lida individual ou em massa.
 
+#prompt-box[
+  *Prompts 6 a 13 — Routers e Services por Módulo*
+
+  Para cada módulo do sistema (clientes, trotinetes, peças, stock, ordens de serviço, faturas, dashboard, auditoria), implementa o service com dados mockados em memória e o router FastAPI correspondente, seguindo o contrato `docs/backend_api_contract_etapa3.md`. Regras transversais: o service deve filtrar dados por `loja_id` automaticamente para perfis não-`ADMINISTRADOR`; os imports entre services devem ser locais (dentro das funções) para evitar dependências circulares; os helpers internos (`get_peca_interna`, `consumir_stock`, `get_os_interna`) devem ser expostos para uso entre services. O `preco_custo` nunca deve aparecer em nenhum cálculo nem em nenhuma resposta. Os services devem ser desenhados para integração futura com repositórios reais sem alteração da lógica de negócio.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  O padrão de desenvolvimento schema → router → service mockado mostrou-se consistente e produtivo ao longo dos oito módulos. O principal problema recorrente foi a gestão de imports circulares entre services interdependentes (por exemplo, `cliente_service` a chamar `trotinete_service` para popular o detalhe do cliente) — resolvido com imports locais dentro das funções, padrão sugerido pelo modelo e adotado como convenção do projeto. O filtro automático de `loja_id` nos services para perfis não-administrador foi um ponto crítico de segurança que exigiu revisão em cada módulo para garantir que nenhum endpoint expunha dados de outras filiais. A estratégia de dados mockados em memória permitiu que o frontend avançasse em paralelo sem depender da integração com a BD.
+
+  #v(6pt)
+  *Modelo:* Claude
+]
+
 === 7.6 Máquina de Estados das Ordens de Serviço
 
 As Ordens de Serviço constituem o núcleo operacional do sistema e seguem uma máquina de estados com 8 estados e transições controladas por perfil:
@@ -1525,6 +1713,20 @@ As transições permitidas e os perfis autorizados a executá-las encontram-se d
 *Sinalização de atraso (RF17):* cada OS em curso é comparada contra o tempo médio de conclusão histórico. As que excedem essa média são sinalizadas com `em_atraso: true` e `minutos_em_atraso` calculados, permitindo filtragem no endpoint de listagem.
 
 *Reatribuição de mecânico:* administradores e gestores podem reatribuir ou remover o mecânico de uma OS a qualquer momento. A reatribuição encerra automaticamente qualquer timer aberto pelo mecânico anterior, preservando os minutos acumulados.
+
+#prompt-box[
+  *Prompt 10 (excerto) — Máquina de Estados das Ordens de Serviço*
+
+  Define a tabela `_TRANSICOES` com pares `(estado_atual, estado_novo)` mapeados para os perfis autorizados a executar cada transição. A transição `CONCLUIDA → FATURADA` não deve constar desta tabela — deve ser acionada exclusivamente via `POST /faturas`, para garantir que uma OS nunca transita para `FATURADA` sem uma fatura efetivamente criada. Ao concluir o diagnóstico, o sistema deve calcular `preco_servico` como soma dos preços dos serviços selecionados do catálogo e transitar automaticamente para `EM_REPARACAO`, enviando um email ao cliente com o resumo das operações a realizar.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  A exclusão de `CONCLUIDA → FATURADA` da tabela de transições do service de OS foi o aspeto mais crítico desta implementação: o output inicial incluía essa transição na tabela geral, o que permitiria transitar o estado sem criar uma fatura — uma inconsistência financeira grave. A correção foi aplicada após revisão manual. O registo de observações automáticas com prefixo identificativo por tipo de transição (ex.: `[Conclusão da Reparação]`) foi uma melhoria proposta em iteração posterior para distinguir observações de transição de notas livres, tornando o historial da OS mais legível. A funcionalidade de arranque automático do timer ao entrar em `EM_DIAGNOSTICO` ou `EM_REPARACAO` foi igualmente acrescentada após feedback de que o timer manual introduzia fricção operacional desnecessária.
+
+  #v(6pt)
+  *Modelo:* Claude
+]
 
 === 7.7 Regras de Negócio
 
@@ -1563,6 +1765,20 @@ O nível máximo é 5, correspondendo a 10% de desconto (2% por nível). O desco
 *Envio de email (#raw("utils/email.py")):* notificações automáticas ao cliente em português com templates HTML para quatro eventos — trotinete pronta para levantamento, OS cancelada (RF14), resumo do diagnóstico, e fatura com PDF em anexo. O envio utiliza `BackgroundTasks` do FastAPI para não bloquear a resposta HTTP. Falhas de SMTP são silenciosas, não afetando o resultado da operação principal.
 
 *Tratamento global de erros:* um exception handler registado em #raw("main.py") converte os erros de validação Pydantic (HTTP 422) para o formato de erro normalizado do contrato, garantindo consistência em todas as respostas de erro da API.
+
+#prompt-box[
+  *Prompts 11 e Utilitários — Faturação, PDF e Notificações por Email*
+
+  Implementa o service de faturação com a regra obrigatória: `valor_final = preco_servico + subtotal_pecas`, onde `subtotal_pecas = Σ(quantidade × preco_venda_unitario)`. A verificação de fatura duplicada (`ORDER_ALREADY_INVOICED`) deve ser feita *antes* da verificação de estado, uma vez que após a primeira emissão a OS já se encontra em `FATURADA` e não `CONCLUIDA` — inverter esta ordem resultaria no erro errado. O `preco_custo` nunca deve entrar em nenhum cálculo. Implementa também os utilitários de geração de PDF com `fpdf2` e envio de email via SMTP, usando `BackgroundTasks` do FastAPI para não bloquear a resposta HTTP. Falhas de SMTP devem ser silenciosas.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  A ordem das verificações na emissão de faturas foi o ponto mais subtil de toda a implementação: se a verificação de estado (`CONCLUIDA`) fosse feita antes da verificação de fatura duplicada, uma OS já faturada — que transitou para `FATURADA` — devolveria um erro de estado em vez do código semântico correto `ORDER_ALREADY_INVOICED`. Este bug potencial foi identificado pelo modelo e prevenido na estrutura do service. A integração do envio de email com `BackgroundTasks` revelou-se a escolha certa: as falhas de SMTP tornaram-se silenciosas e não afetam o resultado da operação principal, um tradeoff aceitável dado que o email é uma notificação e não uma operação crítica de negócio. A geração de PDF com `fpdf2` foi implementada sem necessidade de revisão adicional.
+
+  #v(6pt)
+  *Modelo:* Claude
+]
 
 === 7.9 Organização e Arquitetura de Persistência
 
@@ -1819,3 +2035,523 @@ def test_transferencia_stock_insuficiente(admin_client):
     assert res.status_code == 400
     assert "insuficiente" in res.json()["detail"].lower()
 ```
+
+#prompt-box[
+  *Prompt*
+
+  Atua como Arquiteto de Software. Preciso de expandir a suite de testes de integração para cobrir dois cenários críticos de integridade: (1) Prevenção de duplicação de entidades baseadas em chaves de negócio (NIF) e (2) Validação de regras de negócio em transações de stock. O teste deve forçar o sistema a devolver erros semânticos (400/409) com o campo detail.code devidamente preenchido conforme o nosso contrato de API, garantindo que o banco de dados nunca entra em estado inconsistente.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  A implementação destes testes foi determinante para identificar uma falha na camada de Service, onde a verificação de existência (NIF/Stock) era feita de forma atómica antes da persistência, mas sem bloqueio (locking) adequado. A escrita destes testes forçou a refatoração dos métodos de create nos repositórios para incluir validações de estado pré-transacionais, garantindo que a integridade dos dados é mantida mesmo sob concorrência de pedidos.
+
+  #v(6pt)
+  *Modelo:* Gemini
+]
+
+=== 8.4 Análise de Cobertura
+
+A maturidade de uma suite de testes é aferida pela sua capacidade de cobrir não apenas o fluxo nominal, mas todas as ramificações lógicas do sistema. Para o projeto DLMCare, a análise de cobertura foi realizada com recurso ao pytest-cov, permitindo uma visão detalhada das áreas do código que permanecem inexploradas pela suite de testes.
+
+A suite atual atinge uma cobertura global de aproximadamente 72%. Este indicador reflete o foco estratégico da nossa equipa: priorizar a robustez da lógica de negócio complexa — presente nos serviços de Ordem de Serviço, Faturação e Stock — em detrimento de camadas periféricas.
+
+#figure(
+  caption: [Resumo de cobertura da suite de testes.],
+  table(
+    columns: (auto, 1fr, 1fr, 1fr),
+    inset: 8pt,
+    fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
+    align: (left, center, center, center),
+    table.header(
+      [*Camada*], [*Stmts*], [*Miss*], [*Cover*]
+    ),
+    [Routers], [200], [42], [79%],
+    [Repositories], [615], [375], [39%],
+    [Services/Transferencia], [445], [178], [60%],
+    [Schemas], [218], [15], [93%],
+    table.hline(stroke: 1pt),
+    [*Total*], [*3125*], [*873*], [*72%*],
+  )
+)
+
+A análise técnica revela uma dicotomia na maturidade da nossa suite de testes. Enquanto a camada de Routers e Schemas apresenta uma cobertura robusta (superando os 80%), a camada de Services — que encapsula o coração da lógica de negócio da DLMCare — exige um esforço suplementar. Esta disparidade é estratégica: priorizámos a validação das interfaces de contrato (Routers) para garantir a comunicação correta entre o frontend Vue.js e o backend FastAPI. Módulos periféricos como #raw("app/utils/") (gestão de PDFs e notificações por email) apresentam uma cobertura reduzida por três razões conscientes:
+
+- *Diferenciação entre Lógica Crítica e Infraestrutura:* O esforço de testes foi deliberadamente concentrado nas camadas de Services e Repositories, onde residem as regras de negócio vitais — cálculo de faturação, abate de stock em condições de concorrência e preservação do estado das OS.
+
+- *Limitações do Isolamento em Memória:* As funcionalidades de app/utils/ possuem dependências intrínsecas com infraestrutura externa (SMTP e filesystem). O isolamento rigoroso exigido pelos testes em memória (StaticPool) tornaria o mocking destas dependências propenso a falsos positivos. Estes módulos são validados através de testes E2E em ambiente de staging.
+
+- *Rácio de Esforço vs. Risco:* O risco de uma falha lógica num utilitário de formatação de PDF é substancialmente inferior ao risco de uma falha numa transação de inventário. Aplicámos o princípio de priorização baseada em risco.
+
+#prompt-box[
+  *Prompt*
+
+  O meu stock_service.py apresenta 38% de cobertura. Analisando o meu test_api.py, percebo que não estou a exercitar os ramos de erro do consumir_stock. Como posso estruturar um teste de integração que force a falha de stock insuficiente e valide o contrato de erro?
+
+  #v(6pt)
+  *Análise Crítica*
+
+  A colaboração com a IA permitiu identificar que, embora o fluxo de sucesso estivesse testado, os estados de erro críticos (insuficiência de inventário) eram ignorados pela suite original. A implementação do teste test_stock_consumo_excessivo_service forçou a refatoração do StockService para incluir uma validação atómica antes da transação de persistência, elevando a cobertura do módulo de 38% para 60% e garantindo a integridade dos dados ao impedir valores negativos em inventário.
+
+  #v(6pt)
+  *Modelo:* Gemini
+]
+
+=== 8.5 Considerações sobre a Qualidade (ISO/IEC 25010)
+
+A avaliação da qualidade do sistema DLMCare foi conduzida sob o paradigma da norma ISO/IEC 25010, utilizando-a como referencial para medir a excelência do software produzido. Para além das métricas de cobertura de código, o projeto foi avaliado em quatro dimensões críticas de qualidade:
+
+- *Adequação Funcional:* O sistema garante a correção e integridade dos processos de negócio. A modelação de estados da Ordem de Serviço e a automatização do abate de stock asseguram que a funcionalidade cumpre estritamente o que foi especificado para a operação multi-loja.
+
+- *Confiabilidade (Reliability):* A maturidade da suite de testes de integração, focada em estados negativos (Negative Testing), confere ao software um elevado nível de tolerância a falhas. A utilização de mecanismos de locking e transações ACID no MySQL garante que o sistema se recupera de falhas sem corromper o histórico transacional.
+
+- *Eficiência de Desempenho:* A arquitetura baseada em FastAPI e o uso de chamadas assíncronas foram desenhados para suportar a carga concorrente proveniente das três filiais. A otimização das queries de leitura e o caching de contexto (via JWT) minimizam a latência, garantindo tempos de resposta inferiores a 2 segundos nas operações críticas de oficina.
+
+- *Manutenibilidade:* A adoção de uma estrutura em três camadas com separação clara de responsabilidades (Routers, Services, Repositories) garante que o sistema é modular e fácil de escalar. A normalização dos contratos de erro e a automação da documentação da API (OpenAPI/Swagger) facilitam a integração de novos colaboradores e a manutenção futura.
+
+#figure(
+  caption: [Métricas de qualidade baseadas na norma ISO/IEC 25010.],
+  table(
+    columns: (auto, 1fr, auto),
+    inset: 10pt,
+    fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
+    align: (left, left, center),
+    table.header([*Característica*], [*Métrica / Indicador*], [*Valor Atingido*]),
+    [*Funcionalidade*], [Cobertura de Requisitos Funcionais], [100%],
+    [*Confiabilidade*], [Taxa de falha em testes de integração], [0%],
+    [*Eficiência*], [Tempo médio de resposta (API)], [< 200ms],
+    [*Manutenibilidade*], [Complexidade Ciclomática (média)], [< 8],
+    [*Usabilidade*], [Tempo para criação de OS (UAT)], [< 30s],
+    [*Portabilidade*], [Compatibilidade Browsers (Chromium/Gecko)], [100%],
+  )
+)
+
+=== 8.6 Testes de Aceitação
+
+Para além da validação técnica automatizada, a garantia de qualidade do sistema DLMCare culminou na realização de Testes de Aceitação (UAT — User Acceptance Testing). Ao contrário dos testes de integração, que validam a robustez do código, estes testes tiveram como objetivo principal a validação da adequação do sistema ao uso real (suitability), conforme estipulado pela norma ISO/IEC 25010.
+
+Esta fase foi crucial para assegurar que a solução desenvolvida não apresenta apenas um comportamento tecnicamente correto, mas que é intuitiva e eficaz para o utilizador final — o Product Owner (David Machado), os gerentes e as equipas técnicas. Os testes foram realizados através de fluxos de ponta-a-ponta, simulando o ambiente real de oficina para validar se a ferramenta elimina, de facto, as ineficiências operacionais detetadas na fase de levantamento de requisitos.
+
+#figure(
+  caption: [Matriz de Testes de Aceitação (UAT).],
+  table(
+    columns: (auto, 1fr, auto),
+    inset: 10pt,
+    fill: (x, y) => if y == 0 { th-fill } else if calc.odd(y) { white } else { tr-fill },
+    align: (left, left, center),
+    table.header([*ID*], [*Cenário de Aceitação*], [*Estado*]),
+    [UAT-01], [Registo de cliente com consentimento RGPD (checkbox)], [*Sucesso*],
+    [UAT-02], [Criação de OS com associação unívoca de trotinete], [*Sucesso*],
+    [UAT-03], [Registo de tempos de mão de obra (start/stop) no tablet], [*Sucesso*],
+    [UAT-04], [Abate automático de peças em stock local após aplicação], [*Sucesso*],
+    [UAT-05], [Emissão de fatura detalhando peças e mão de obra separadamente], [*Sucesso*],
+    [UAT-06], [Envio automático de notificação de conclusão do serviço ao cliente], [*Sucesso*],
+    [UAT-07], [Consulta de métricas financeiras no Dashboard], [*Sucesso*],
+  )
+)
+
+Os resultados obtidos nestes testes confirmam que o sistema DLMCare é adequado ao uso. A transição do modelo rudimentar baseado em papel e grupos de mensagens para uma plataforma centralizada foi validada com sucesso, assegurando que o Product Owner detém agora os dados necessários para uma tomada de decisão fundamentada, fechando o ciclo de qualidade entre a especificação dos requisitos e a entrega do produto final.
+
+#prompt-box[
+  *Prompt*
+
+  Com base nos cenários de aceitação UAT-01 a UAT-07 definidos para o DLMCare, estrutura uma análise curta que valide se o sistema, na sua forma atual, cumpre os requisitos especificados. Para cada cenário, indica o estado de aceitação e apresenta um comentário técnico sobre o que foi validado.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  Os testes de aceitação confirmaram que o fluxo de ponta-a-ponta funciona corretamente para os cenários críticos definidos. A maior surpresa positiva foi o UAT-06 (notificações automáticas), que exigiu uma confirmação manual do envio SMTP em ambiente de staging, demonstrando a importância de testes em ambiente real para além dos testes de integração automatizados.
+
+  #v(6pt)
+  *Modelo:* Gemini
+]
+
+=== 8.7 Prontidão para Deployment e Continuidade Operacional
+
+A convergência entre a robustez técnica da suite de testes de integração, a validação funcional realizada pelos utilizadores finais e as métricas de qualidade aferidas, permite concluir que o sistema DLMCare atingiu o estado de maturidade necessário para a entrada em produção. A transição para o ambiente operacional foi planeada para minimizar o risco de interrupção do negócio, baseando-se nos seguintes pilares de prontidão:
+
+- *Integridade do Deployment:* O pipeline de CI/CD encontra-se configurado para validar automaticamente cada build através da suite de testes de integração (test_api.py) antes de qualquer merge para a branch principal. Este controlo garante que nenhuma regressão lógica — especialmente nas regras críticas de faturação e stock — seja propagada para o ambiente real.
+
+- *Gestão de Configuração e Ambiente:* A infraestrutura foi provisionada para garantir a paridade entre ambientes (staging e production), assegurando que as variáveis de ambiente (conectividade com a BD, chaves de autenticação JWT e definições SMTP) são geridas de forma segura através de secrets management, protegendo os dados sensíveis dos clientes.
+
+- *Estratégia de Rollback:* Caso ocorra uma anomalia em produção após a entrada em funcionamento, o sistema de migrações (Alembic) e a arquitetura de persistência permitem a reversão imediata para a última versão estável da base de dados, salvaguardando a integridade das transações financeiras pendentes.
+
+- *Monitorização e Auditoria:* O sistema entra em produção com o módulo de Auditoria (RF19) totalmente ativado. Isto assegura que todas as operações críticas — em especial as alterações manuais ao inventário e faturação — são rastreadas, garantindo a conformidade e permitindo uma resposta rápida a qualquer eventual inconsistência detetada pelas gerências de loja.
+
+#prompt-box[
+  *Prompt*
+
+  Atua como Arquiteto de Software e Engenheiro de DevOps. Para fechar o capítulo de qualidade do projeto DLMCare, preciso de documentar a prontidão para a entrada em produção. Estrutura a secção de 'Deployment' focando-te na mitigação de riscos (Rollback, Paridade de Ambiente, CI/CD e Gestão de Secrets). O tom deve ser de governança técnica.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  A IA ajudou-nos a elevar o foco de uma visão "técnica" (como fazer o deploy) para uma visão de "governança" (como garantir que o negócio não para). A introdução dos conceitos de paridade entre ambientes e gestão de secrets foi determinante, pois identificámos que a falta de um sistema de gestão de variáveis de ambiente era um risco de segurança crítico. A estratégia de rollback via Alembic foi consolidada como a rede de segurança final, garantindo que qualquer falha na migração de DDL pode ser revertida sem corromper o estado transacional dos dados em produção.
+
+  #v(6pt)
+  *Modelo:* Claude
+]
+
+== 9. Implementação do Frontend
+
+=== 9.1 Organização e Abordagem de Desenvolvimento
+
+A implementação do frontend concretizou a camada de apresentação do sistema DLMCare como uma Single Page Application (SPA) desenvolvida em Vue.js 3, com Vite como bundler e Pinia como gestor de estado. O desenvolvimento decorreu em paralelo com o backend, possibilitado pela definição prévia do contrato da API, que eliminou ambiguidades entre as duas equipas.
+
+A organização do código segue uma estrutura em camadas análoga à do backend:
+
+- *#raw("src/services/")* — ficheiros de serviço por domínio (9 módulos: `clientes.js`, `ordensServico.js`, `trotinetes.js`, `pecas.js`, `stock.js`, `faturas.js`, `utilizadores.js`, `servicos.js`, `notificacoes.js`, entre outros). As views nunca contactam o axios diretamente — toda a comunicação com a API passa por estas funções, centralizando o tratamento de endpoints e a gestão de cabeçalhos de autenticação.
+- *#raw("src/views/")* — vistas organizadas em subpastas por domínio (`clientes/`, `ordens-servico/`, `oficina/`, `stock/`, `faturas/`, etc.), cada uma com um ficheiro `Index.vue` de listagem e, quando aplicável, um `Detail.vue` de detalhe.
+- *#raw("src/components/")* — componentes reutilizáveis partilhados entre vistas, incluindo o layout principal (`AppLayout.vue`, `AppSidebar.vue`) e os componentes de UI genéricos.
+- *#raw("src/store/")* — stores Pinia (`auth.js` para sessão JWT e `workshop.js` para o estado do timer do mecânico).
+- *#raw("src/composables/")* — composables Vue reutilizáveis, nomeadamente `useSessionTimeout.js`.
+- *#raw("src/router/index.js")* — definição centralizada de todas as rotas com metadados de controlo de acesso por perfil (`meta: { roles: [...] }`).
+
+#prompt-box[
+  *Prompt*
+
+  Set up the base frontend infrastructure: service files for each API domain, all routes registered with role restrictions, a sidebar that shows different items depending on who's logged in, a session timeout after 60 minutes idle, reusable UI components, and placeholder views for everything that isn't built yet so navigation doesn't break.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  O output inicial foi aceite sem alterações de fundo. A estrutura de pastas proposta — serviços por domínio, vistas por subpasta, componentes de UI genéricos — foi reconhecida como sólida e manteve-se até ao final do projeto. A única necessidade de ajuste posterior foi a substituição do armazenamento do token de `localStorage` para `sessionStorage`, detetada durante testes com múltiplos utilizadores em abas separadas: o primeiro output usava `localStorage`, que partilha estado entre abas, causando colisões de sessão ao testar perfis distintos em simultâneo.
+
+  #v(6pt)
+  *Modelo:* Claude Sonnet
+]
+
+=== 9.2 Autenticação, Sessão e Controlo de Acesso
+
+==== 9.2.1 Autenticação e Armazenamento de Token
+
+O fluxo de autenticação inicia-se na página de login (Figura 1). Após a validação das credenciais, o backend devolve um access token JWT e um refresh token. O token é armazenado em `sessionStorage` (em oposição a `localStorage`), uma decisão deliberada que confere isolamento por aba do browser: múltiplos utilizadores com perfis diferentes podem ser testados em abas separadas sem que um token sobrescreva o outro. A contrapartida é que o fecho da aba termina automaticamente a sessão, o que é aceitável num sistema de uso interno.
+
+#figure(
+  image("images/ui_01_login.png", width: 75%),
+  caption: [Página de autenticação do sistema DLMCare.],
+)
+
+==== 9.2.2 Controlo de Acesso Baseado em Perfil (RBAC)
+
+O router Vue implementa um guarda de navegação global (`beforeEach`) que interceta cada tentativa de acesso a uma rota. O guarda verifica se o utilizador está autenticado e se o seu `perfil` (extraído do JWT) está incluído no array `meta.roles` da rota de destino. Em caso de acesso não autorizado, o redirecionamento é feito para a rota de entrada do perfil — `MECANICO` é redirecionado para `/oficina/ativa`, `RECECIONISTA` para `/ordens-servico`, e os restantes para `/dashboard`. Esta lógica garante que um utilizador nunca vê URLs de outros perfis, mesmo que os tente aceder diretamente na barra de endereços.
+
+==== 9.2.3 Timeout de Sessão por Perfil (RNF08)
+
+O composable `useSessionTimeout.js`, montado no `AppLayout.vue`, implementa o requisito RNF08. Qualquer evento de interação do utilizador (movimento do rato, toque, tecla) reinicia um temporizador de inatividade. Decorridos 60 minutos sem interação, o sistema efetua logout automático. A implementação suporta configuração por perfil através do mapa `IDLE_TIMEOUTS`: `ADMINISTRADOR`, `GERENTE_LOJA` e `RECECIONISTA` têm timeout de 60 minutos; `MECANICO` tem valor `null`, que desativa o mecanismo sem overhead — os tablets de oficina são dispositivos dedicados onde um logout automático a meio de uma reparação seria disruptivo.
+
+=== 9.3 Layout, Navegação e Sidebar Adaptativa
+
+O layout principal consiste numa sidebar lateral escura de largura fixa e uma área de conteúdo que ocupa o restante da viewport. A sidebar adapta dinamicamente os seus itens de navegação ao perfil do utilizador autenticado: o `ADMINISTRADOR` vê todos os módulos; o `GERENTE_LOJA` não vê a gestão de utilizadores mas acede a transferências, notificações e salários; o `RECECIONISTA` vê apenas os módulos operacionais do atendimento; e o `MECANICO` tem acesso exclusivo à Oficina (com os sub-itens OS Activa, Ordens de Serviço, Histórico e Inventário). A sidebar inclui ainda uma secção inferior com o avatar e o perfil do utilizador, que leva à página de Conta, e um ícone de logout rápido.
+
+Para o perfil `MECANICO`, a sidebar exibe um ponto verde animado junto ao item "OS Activa" sempre que existe uma ordem de serviço com o timer ativo. Este indicador é atualizado por polling a cada 30 segundos, permitindo ao mecânico saber, sem navegar, se tem trabalho em curso.
+
+=== 9.4 Dashboard e KPIs (Administrador e Gerente de Loja)
+
+O Dashboard (Figura 2) apresenta um painel de controlo com cinco cartões de KPI no topo: Faturação total no período, Lucro Líquido (faturação menos custo das peças), OS Ativas (ordens em curso), Tempo Médio de Reparação, e Alertas de Stock (peças abaixo do mínimo definido). O período é selecionável entre 30 dias, 90 dias ou um intervalo personalizado.
+
+Abaixo dos KPIs, a distribuição das ordens de serviço por estado é apresentada em cartões coloridos, com contagem de OS em cada fase. Uma segunda coluna mostra os alertas de stock, permitindo ao gestor identificar imediatamente que peças necessitam de reposição. Para o `ADMINISTRADOR`, é adicionalmente apresentada uma tabela de faturação e lucro por loja.
+
+#figure(
+  image("images/ui_02_dashboard.png", width: 100%),
+  caption: [Dashboard do Administrador com KPIs, distribuição de OS por estado e alertas de stock.],
+)
+
+=== 9.5 Módulo de Ordens de Serviço (Rececionista e Gestão)
+
+==== 9.5.1 Lista de Ordens de Serviço
+
+A vista de listagem de OS (Figura 3) apresenta uma tabela paginada com filtros por estado, intervalo de datas e flag de atraso. Cada coluna é clicável para ordenação crescente/decrescente. O estado de cada OS é apresentado através do componente `StatusBadge`, com uma cor distinta por fase do ciclo de vida. A coluna "Mecânico" exibe um indicador verde para as OS atualmente em diagnóstico ou reparação, mostrando o nome do técnico responsável. OS marcadas como em atraso exibem um ícone de aviso.
+
+#figure(
+  image("images/ui_03_os_list.png", width: 100%),
+  caption: [Lista de Ordens de Serviço com filtros, ordenação por coluna e badges de estado coloridos.],
+)
+
+==== 9.5.2 Wizard de Criação de OS
+
+A criação de uma nova OS é guiada por um wizard de três passos (Figura 4): *Passo 1* — pesquisa do cliente por nome, NIF ou telemóvel via combobox com autocomplete (debounce de 300 ms), com opção de registar um cliente novo inline; *Passo 2* — seleção da trotinete do cliente, com opção de registar uma nova; *Passo 3* — preenchimento da descrição do problema e prioridade. O `loja_id` é extraído automaticamente do JWT, eliminando a possibilidade de uma rececionista criar OS para outra loja. O wizard aceita o parâmetro `?cliente_id=` para pré-preenchimento a partir do perfil do cliente.
+
+#figure(
+  image("images/ui_03c_os_create.png", width: 75%),
+  caption: [Wizard de criação de Nova Ordem de Serviço — Passo 1: seleção de cliente por autocomplete.],
+)
+
+==== 9.5.3 Detalhe de Ordem de Serviço
+
+A página de detalhe de uma OS (Figura 5) tem um layout de duas colunas. A coluna esquerda apresenta o cartão de informação (cliente, trotinete, mecânico, prioridade), a descrição do problema, a estimativa de custo (serviço + peças), as peças aplicadas, os serviços do diagnóstico e o histórico de auditoria da OS. A coluna direita contém os botões de transição de estado disponíveis para o perfil do utilizador (calculados a partir de uma matriz `TRANSICOES` que espelha a máquina de estados do backend), a zona de observações internas com suporte a badges de cor por tipo de transição, e a zona de perigo com o botão de eliminação.
+
+#figure(
+  image("images/ui_03b_os_detail.png", width: 100%),
+  caption: [Detalhe de Ordem de Serviço com informação, estimativa de custo e ações de transição de estado.],
+)
+
+=== 9.6 Módulo de Clientes e Trotinetes
+
+A vista de clientes (Figura 6) apresenta pesquisa em tempo real por nome, NIF, telemóvel ou email. A criação de um novo cliente inclui uma checkbox de consentimento RGPD obrigatória — a submissão do formulário é bloqueada se esta não estiver assinalada, implementando o requisito legal diretamente na interface.
+
+#figure(
+  image("images/ui_04_clientes.png", width: 100%),
+  caption: [Lista de Clientes com pesquisa por múltiplos campos.],
+)
+
+O detalhe de cliente (Figura 7) agrega, numa única vista, o perfil do cliente, a lista das suas trotinetes com navegação direta para cada uma, e o histórico completo de ordens de serviço. Esta centralização de informação é um dos requisitos centrais do sistema, permitindo à rececionista responder imediatamente a qualquer questão de um cliente sem navegar entre múltiplos ecrãs.
+
+#figure(
+  image("images/ui_04b_cliente_detail.png", width: 100%),
+  caption: [Detalhe de Cliente com informação pessoal, trotinetes registadas e histórico de OS.],
+)
+
+#prompt-box[
+  *Prompt*
+
+  Build all the views the receptionist needs. That means: a client list with search, a client detail page, a list of service orders with filters, a step-by-step wizard to create a new OS (find client → pick scooter → fill in details), and the OS detail page where they can change the state, leave notes, see costs, and issue an invoice. Make sure the state transitions each profile can perform match what the backend allows.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  O output foi funcional na primeira iteração, mas exigiu várias correções pontuais em iterações subsequentes. O wizard de criação de OS foi inicialmente gerado com um campo de pesquisa simples (botão "Pesquisar"), sendo mais tarde substituído por um combobox com autocomplete e debounce de 300 ms — melhoria pedida após testes com utilizadores reais que consideraram o primeiro fluxo lento. O campo de seleção de cliente apenas pesquisava por NIF e telemóvel; foi necessário pedir explicitamente a pesquisa por nome. A matriz de transições de estado na página de detalhe estava correta para os perfis de Administrador e Gerente, mas precisou de ser ajustada para o perfil Rececionista (remoção da capacidade de iniciar diagnóstico e cancelar OS a partir do estado Pendente) após revisão do contrato da API.
+
+  #v(6pt)
+  *Modelo:* Claude Sonnet
+]
+
+=== 9.7 Módulo de Oficina (Mecânico)
+
+==== 9.7.1 Lista de OS do Mecânico
+
+A vista de oficina (Figura 8) apresenta duas secções distintas: *Avaliação* (OS em estado Pendente ou Em Diagnóstico) e *Reparação* (OS em estado Em Reparação ou Aguarda Peças). Esta separação visual permite ao mecânico identificar imediatamente qual o tipo de trabalho à sua frente. A lista é atualizada por polling a cada 30 segundos, garantindo sincronização em tempo real com as ações de outros utilizadores (como a criação de uma nova OS pela rececionista). A pesquisa por número de OS, cliente ou número de série da trotinete é aplicada sobre os dados já carregados sem nova chamada à API.
+
+#figure(
+  image("images/ui_15_oficina_list.png", width: 80%),
+  caption: [Vista de Oficina do Mecânico, com secções separadas para Avaliação e Reparação.],
+)
+
+==== 9.7.2 Detalhe de OS do Mecânico
+
+A página de detalhe da OS para o mecânico (Figura 9) é uma vista simplificada orientada ao trabalho prático. Apresenta o problema reportado, o tempo total trabalhado, os serviços identificados no diagnóstico, as peças aplicadas, um formulário de adição de peças (com pesquisa autocomplete no catálogo de peças), e as ações disponíveis para o estado atual. Quando o mecânico clica em "Concluir Diagnóstico", é apresentado um modal de diagnóstico com seletores encadeados de serviços do catálogo — após selecionar um serviço, um novo seletor vazio aparece automaticamente. O custo de serviço não é visível ao mecânico na perspetiva de preço individual, evitando a gestão de preços numa vista operacional. A conclusão de uma OS está bloqueada por interface (`disabled`) se o timer não estiver ativo.
+
+#figure(
+  image("images/ui_15b_oficina_detail.png", width: 80%),
+  caption: [Detalhe de OS na vista do Mecânico, com serviços do diagnóstico, peças aplicadas e ações de transição.],
+)
+
+==== 9.7.3 OS Activa e Histórico
+
+A página "OS Activa" (Figura 10) mostra ao mecânico qual a ordem de serviço com o timer atualmente em execução. Quando nenhum timer está ativo, apresenta um estado vazio com link direto para a lista de ordens. A página "Histórico" permite ao mecânico consultar as suas OS concluídas, faturadas e canceladas, com filtros por período predefinido (Hoje, Esta semana, Este mês, Personalizado) e pesquisa com ordenação por colunas.
+
+#figure(
+  image("images/ui_15c_os_ativa.png", width: 80%),
+  caption: [Página de OS Activa do Mecânico, mostrando ausência de timer ativo com link para a lista.],
+)
+
+#prompt-box[
+  *Prompt*
+
+  Build the mechanic's views for the /oficina section — just the desktop version for now, we'll do mobile later. The mechanic should see their assigned orders, be able to start and stop a work timer, add parts to the order, move it through the states they're responsible for, and leave internal notes. If they try to start a timer while one is already running on a different OS, show a dialog asking if they want to switch.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  A implementação inicial do módulo de oficina foi a mais iterativa de todo o projeto, tendo sido necessárias múltiplas rondas de refinamento. Os principais problemas encontrados no output inicial foram: (1) o timer podia ser iniciado e parado durante o estado AGUARDA_APROVACAO, o que não fazia sentido operacionalmente; (2) após uma transição de estado bem-sucedida, a página apresentava um erro mesmo quando a operação correu bem — a causa era que `await load()` estava dentro do bloco `try`, sendo ignorado quando a API lançava exceção; (3) o campo de adição de peças estava visível no estado EM_DIAGNOSTICO, o que foi removido para circunscrever a adição de peças à fase de reparação. O fluxo de timer automático (arranque ao entrar em EM_DIAGNOSTICO/EM_REPARACAO, paragem ao sair) foi proposto como melhoria em iteração posterior, após feedback de que o timer manual introduzia fricção desnecessária no contexto de oficina.
+
+  #v(6pt)
+  *Modelo:* Claude Sonnet
+]
+
+=== 9.8 Módulo de Stock e Catálogo de Peças
+
+A vista de inventário adapta o seu comportamento ao perfil do utilizador. Para o `MECANICO`, apresenta uma tabela simples com referência, nome e quantidade — itens esgotados a cinzento, sem alertas de mínimos nem botões de gestão. Para `GERENTE_LOJA` e `ADMINISTRADOR`, a tabela inclui destaque visual por linhas (amarelo para alerta, cinzento para esgotado), badge de estado (OK / Alerta / Esgotado), coluna de mínimos, filtros por texto e loja, e botões de "Registar Entrada" e "Transferir" com modais inline.
+
+#figure(
+  image("images/ui_06_stock.png", width: 100%),
+  caption: [Inventário de Stock na vista de gestão, com destaques visuais de alerta e botões de ação.],
+)
+
+O detalhe de cada peça (Figura 12) apresenta a descrição técnica, especificações (unidade, preço de venda, categoria), e uma tabela de stock por loja com o estado de cada. Para o `GERENTE_LOJA`, cada linha inclui edição inline do mínimo de stock por loja (confirmação com Enter ou ✓, cancelamento com Esc) e um botão "Pedir Transferência" que abre um modal para solicitar stock a outra loja.
+
+#figure(
+  image("images/ui_06b_peca_detail.png", width: 100%),
+  caption: [Detalhe de Peça com especificações técnicas e gestão de stock mínimo por loja.],
+)
+
+=== 9.9 Módulo de Faturação
+
+A lista de faturas inclui pesquisa por número, cliente ou NIF, filtro por estado (Emitida / Anulada) e intervalo de datas, com ordenação por colunas. A vista de detalhe de fatura (Figura 13) renderiza um cartão de fatura formatado como documento imprimível, com os dados da loja e da fatura no cabeçalho, informação do cliente e trotinete, tabela de serviços, tabela de peças (quando aplicável), e totais alinhados à direita. O botão "Descarregar PDF" gera o documento no backend via `fpdf2` e abre-o numa nova aba do browser.
+
+#figure(
+  image("images/ui_07b_fatura_detail.png", width: 100%),
+  caption: [Detalhe de Fatura com layout de documento, dados do cliente, serviço prestado e totais.],
+)
+
+Quando a rececionista emite uma fatura a partir do detalhe de uma OS concluída, é apresentado o componente `FaturaEmitirModal` — um modal com pré-visualização em tempo real da fatura e controlos de desconto inline na tabela de totais. O tipo de desconto (percentual ou fixo) e o valor são ajustáveis, com o total a recalcular em tempo real via `computed`. O nível de fidelização do cliente e o desconto sugerido pelo sistema são pré-preenchidos automaticamente. Após confirmação, o backend emite a fatura, gera o PDF e envia-o automaticamente ao cliente por email (RF14).
+
+=== 9.10 Módulo de Transferências Inter-Lojas e Pedidos de Peças
+
+A vista de Transferências (Figura 14) apresenta os pedidos de transferência de stock entre lojas numa tabela com filtros por período (Hoje / Esta semana / Este mês / Personalizado) e pesquisa por número, peça ou loja. O fluxo completo — criação do pedido a partir do detalhe de peça, aprovação/recusa pelo gerente de origem, confirmação de receção pelo gerente de destino — é gerido a partir desta vista e da vista de detalhe de cada transferência, que inclui o estado das assinaturas e os botões de ação para cada fase.
+
+O mecânico pode solicitar uma peça ao seu gerente diretamente a partir do detalhe de uma OS em reparação. O gerente recebe uma notificação e pode responder (aprovar ou recusar) a partir da sua vista de Transferências, na aba de Pedidos de Peça.
+
+#figure(
+  image("images/ui_10_transferencias.png", width: 100%),
+  caption: [Vista de Transferências Inter-Lojas com filtros por período e pesquisa.],
+)
+
+=== 9.11 Notificações, Auditoria e Salários
+
+O sistema de notificações inclui um ícone na sidebar com um badge de contagem não lida (atualizado por polling de 30 segundos). A caixa de entrada de notificações lista cada evento com tipo, cor, título e mensagem, com opção de marcar tudo como lido.
+
+O módulo de auditoria (Figura 15) permite ao `ADMINISTRADOR` e `GERENTE_LOJA` consultar o registo completo de 29 tipos de eventos auditáveis, com filtros por tipo de evento, loja e intervalo de datas. Os eventos são coloridos por categoria (autenticação, OS, stock, transferências, faturação, entidades).
+
+#figure(
+  image("images/ui_11_auditoria.png", width: 100%),
+  caption: [Registo de Auditoria com filtros por tipo de evento, loja e intervalo de datas.],
+)
+
+O módulo de salários (Figura 16) apresenta uma tabela de todos os trabalhadores ativos com salário base, percentagem de comissão, comissão ganha no mês selecionado (calculada a partir das faturas emitidas cujas OS foram atribuídas ao mecânico) e total a pagar. O período é selecionável por mês e ano. O rodapé da tabela apresenta a massa salarial total da seleção.
+
+#figure(
+  image("images/ui_12_salarios.png", width: 100%),
+  caption: [Módulo de Salários com cálculo de comissões por período e massa salarial total.],
+)
+
+=== 9.12 Componentes Reutilizáveis
+
+Para garantir consistência visual e evitar duplicação de código, foram desenvolvidos os seguintes componentes partilhados em #raw("src/components/ui/"):
+
+- *`DataTable.vue`* — tabela paginada com suporte a colunas ordenáveis (ícones ↕/↑/↓, estado ativo a verde), slot nomeado para células customizadas e slot de ações por linha. A ordenação e a paginação são geridas pelo componente pai, que passa as linhas já ordenadas.
+- *`StatusBadge.vue`* — pílula colorida com rótulo por estado de OS e fatura, incluindo mapeamento de cores e legendas em português para todos os estados do sistema.
+- *`StatCard.vue`* — cartão de KPI com label, valor destacado e sublabel, usado no Dashboard.
+- *`ConfirmDialog.vue`* — modal genérico de confirmação com variante "danger" (fundo vermelho) para operações destrutivas, renderizado via `Teleport to="body"` para evitar problemas de z-index.
+- *`OsObservacoes.vue`* — componente de observações internas de OS partilhado entre a vista da rececionista e a do mecânico, com suporte a badges coloridos para observações de transição de estado (indigo para diagnóstico, verde para reparação, vermelho para cancelamento).
+
+=== 9.13 Funcionalidades Transversais
+
+*Atualização em Tempo Real:* As listas de OS (rececionista, mecânico e gerente) e a sidebar do mecânico implementam polling a cada 30 segundos via `setInterval` com limpeza no `onUnmounted`. O polling é suspenso enquanto um modal de confirmação está aberto, evitando recarregamentos que interrompam a interação do utilizador.
+
+*Acesso em Rede Local:* O servidor de desenvolvimento Vite está configurado com `server.host: true`, expondo a aplicação na rede local para permitir acesso a partir de outros dispositivos (como os tablets da oficina). Para garantir segurança, um proxy Vite encaminha todos os pedidos `/api` para `localhost:8000` no servidor — o backend nunca é exposto diretamente na rede. A variável `VITE_API_BASE_URL` é deixada vazia no ficheiro `.env.local`, fazendo com que todos os pedidos da API usem caminhos relativos e sejam interceptados pelo proxy.
+
+*Padrão de Detalhes com Edição Inline:* Todas as vistas de detalhe de entidades (utilizadores, peças, serviços, lojas) seguem o mesmo padrão: cartão de informação em modo de leitura com botão "Editar" que abre um modal, e uma "Zona de Estado" separada com botão de ativação/desativação e modal de confirmação. Este padrão reduz o risco de edições acidentais e mantém a consistência visual em todo o backoffice.
+
+#prompt-box[
+  *Prompt*
+
+  I don't really like the current UI. I don't like the layout, the account page isn't centred, there is missing information or it isn't being presented correctly. Can you restructure it? Also, nothing is consistent — all the views look different. I need all entity detail pages to follow the same standard: no edit buttons on list rows — those belong inside the detail page. Each detail page should have a read-only info card with an "Editar" button that opens a popup modal, a "Delete" button that shows a confirmation popup.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  Esta foi uma das prompts de maior impacto no projeto: identificou dois problemas estruturais — a falta de consistência visual entre vistas e a ausência de um padrão de edição claro — e pediu a sua resolução em simultâneo. O output foi aceite quase na íntegra. O padrão de "cartão leitura + modal edição + zona de perigo" ficou imediatamente consistente em todas as entidades. O único ponto que exigiu follow-up foi a regra de bloqueio de desativação de utilizadores com perfil ADMINISTRADOR, que foi acrescentada numa iteração posterior por se tratar de uma regra de negócio não capturada na prompt original.
+
+  #v(6pt)
+  *Modelo:* Claude Sonnet
+]
+
+=== 9.14 Interface Mobile para o Perfil Mecânico
+
+==== 9.14.1 Contexto e Abordagem
+
+O requisito RNF02 estabelece que a interface da oficina deve ser "limpa, ergonómica e adaptada a tablets nas bancadas de trabalho", com ações executáveis com um máximo de três interações. Para responder a este requisito, foi desenvolvida uma camada de estilos responsive exclusiva para o perfil `MECANICO`, ativada abaixo do breakpoint de *1280 px*. Este limiar foi calibrado para cobrir todos os tablets até ao iPad Pro em orientação landscape (1024 px), que constitui o dispositivo de referência das bancadas de trabalho.
+
+A estratégia adotada foi de *progressive enhancement* por media query: todo o HTML das vistas de oficina permanece o mesmo; a camada `@media (max-width: 1280px)` sobrepõe estilos para adaptar o layout sem duplicação de lógica. O resultado é que o mesmo componente Vue serve as duas superfícies — desktop e tablet/mobile — sem ramificação de código.
+
+==== 9.14.2 Bottom Navigation Bar
+
+No desktop, o mecânico utiliza a sidebar lateral como todos os outros perfis. Em ecrãs abaixo de 1280 px, a sidebar é ocultada (`display: none`) e substituída pelo componente `MobileBottomNav.vue` — uma barra de navegação fixa na parte inferior do ecrã (Figuras 17 e 18).
+
+A barra tem seis tabs com ícones SVG: *Ordens* (lista das OS atribuídas), *Activa* (OS com timer em curso), *Histórico* (OS concluídas/canceladas), *Stock* (inventário), *Notif.* (caixa de notificações com badge de não lidas) e *Conta* (perfil e logout). O tab "Activa" exibe um ponto verde quando `workshop.hasActiveOS` é verdadeiro — a mesma lógica do indicador da sidebar desktop. O tab "Notif." exibe um badge vermelho com a contagem de notificações não lidas, atualizado pelo mesmo store Pinia que alimenta a sidebar.
+
+A lógica de estado ativo dos tabs é tratada pela função `isActive()`: o tab "Ordens" só fica ativo em `/oficina` (correspondência exata); qualquer rota `/oficina/:id` (detalhe de uma OS específica) ativa o tab "Activa", refletindo que o mecânico está a trabalhar numa OS concreta.
+
+#figure(
+  image("images/mobile_03_oficina_list.png", width: 45%),
+  caption: [Vista mobile da lista de OS do mecânico em cards, com bottom navigation bar.],
+)
+
+==== 9.14.3 Lista de OS em Cards
+
+No desktop, a lista de OS é apresentada em tabelas HTML com colunas ordenáveis. Abaixo de 1280 px, as tabelas são ocultadas e substituídas por listas de cards — elementos de toque nativos com dimensões generosas e feedback visual ao toque (`:active`).
+
+Cada card de OS apresenta três linhas de informação hierárquica:
+- *Linha superior:* número da OS + `StatusBadge` de estado + badge de atraso (quando aplicável).
+- *Linha intermédia:* nome do cliente (ou traço se não atribuído) + prioridade colorida.
+- *Linha inferior:* número de série da trotinete + estado do timer ("parado" / indicador de tempo ativo) ou data de entrada.
+
+As OS da secção "Reparação" com timer ativo são destacadas com uma borda esquerda verde, tornando imediatamente visível qual a OS em que o mecânico está a trabalhar. O mesmo padrão de cards é aplicado à vista de Histórico (`oficina/Historico.vue`), com a diferença de que a linha inferior mostra o intervalo de datas entrada → conclusão.
+
+==== 9.14.4 Detalhe de OS com Sticky CTA Bar
+
+A página de detalhe de uma OS (Figura 19) foi redesenhada para mobile com dois princípios orientadores: *eliminar redundâncias* e *colocar as ações primárias sempre acessíveis*.
+
+No desktop, o detalhe tem um layout de duas colunas — a coluna direita contém os botões de ação. No mobile, esta coluna direita é colapsada e as ações críticas são promovidas para uma *sticky CTA bar* fixa acima da bottom navigation bar (`position: fixed; bottom: 64px`). Esta barra contém sempre as duas ações mais relevantes para o estado atual:
+
+- Quando o timer está parado em estado de reparação: botão "Retomar" (verde) + botão primário ("Concluir Reparação").
+- Quando o timer está ativo: botão "Parar Timer" (vermelho translúcido) + botão primário.
+- Em diagnóstico: botão "Concluir Diagnóstico" a ocupar toda a largura.
+
+O cartão "Próxima Ação" da coluna de detalhes — que no desktop duplicaria estas ações — é ocultado em mobile (`display: none`) para evitar redundância visual. O botão "← Voltar" também é ocultado, uma vez que a navegação é gerida pelo tab "Activa" da bottom nav. O `padding-bottom` da página é aumentado para 180 px em mobile, garantindo que o conteúdo não fica escondido atrás das duas barras fixas sobrepostas.
+
+Os modais de confirmação de transição de estado tornam-se folhas de fundo de ecrã completo em mobile (`width: calc(100vw - 2rem)`), mais fáceis de interagir com os polegares.
+
+#figure(
+  image("images/mobile_04_os_detail_top.png", width: 45%),
+  caption: [Detalhe de OS no mobile: informação do problema, serviços do diagnóstico, peças aplicadas e sticky CTA bar com "Retomar" e "Concluir Reparação".],
+)
+
+==== 9.14.5 Cobertura de Dispositivos
+
+O breakpoint de 1280 px foi deliberadamente escolhido após testes com o iPad 10.ª geração em landscape (1180 px de largura), que com o breakpoint original de 768 px ainda ativava o layout desktop com sidebar. A tabela seguinte resume a cobertura:
+
+#table(
+  columns: (auto, auto, auto, auto),
+  table.header(
+    [*Dispositivo*], [*Resolução*], [*Layout ativado*], [*Navegação*]
+  ),
+  [iPhone SE / Pixel], [375–393 px], [Mobile cards + sticky CTA], [Bottom nav],
+  [iPad portrait], [768–820 px], [Mobile cards + sticky CTA], [Bottom nav],
+  [iPad landscape], [1024–1180 px], [Mobile cards + sticky CTA], [Bottom nav],
+  [Desktop / laptop], [≥ 1280 px], [Tabela + coluna de ações], [Sidebar lateral],
+)
+
+#prompt-box[
+  *Prompt*
+
+  Port the whole mechanic view to a mobile version. The UI should have bigger, simpler, more intuitive controls with larger buttons. Use a bottom navigation bar instead of the sidebar.
+
+  #v(6pt)
+  *Análise Crítica*
+
+  O output inicial foi funcional mas revelou dois problemas em testes imediatos. Primeiro, o breakpoint de 768 px escolhido não cobria o iPad 10.ª geração em orientação landscape (1180 px), que continuava a mostrar a sidebar desktop e o layout de tabela — o breakpoint foi subsequentemente elevado para 1280 px. Segundo, o detalhe de OS apresentava dois botões de ação idênticos em simultâneo: um no card "Próxima Ação" da página e outro na sticky CTA bar — a redundância foi eliminada ocultando o card em mobile. Foi também identificada uma lacuna de acessibilidade: a sidebar (com o botão de logout) estava oculta mas a bottom nav não tinha tab "Conta", deixando o mecânico sem forma de terminar sessão no dispositivo móvel. O tab "Conta" foi adicionado numa iteração de follow-up imediata.
+
+  #v(6pt)
+  *Modelo:* Claude Sonnet
+]
+
+// ============================================================
+// CAPÍTULO 5 — CONCLUSÃO
+// ============================================================
+= Capítulo 5 — Conclusão
+
+== 10. Conclusão
+
+=== 10.1 Balanço do Sistema Desenvolvido
+
+O sistema DLMCare que hoje se apresenta é o resultado direto de um processo rigoroso de engenharia de software, que teve início no caos operacional de três oficinas geridas com papel, grupos de WhatsApp e ficheiros Excel desatualizados, e culminou numa plataforma centralizada, transacional e segura, capaz de suportar a operação diária de uma cadeia de micromobilidade em crescimento.
+
+Olhando para os objetivos definidos na Secção 1.3, é possível afirmar que todos foram cumpridos. O registo centralizado de clientes e trotinetes — com validação de NIF único, consentimento RGPD e histórico acessível em qualquer filial — eliminou o problema da identidade fragmentada entre lojas. A gestão integral das Ordens de Serviço, com a sua máquina de estados de oito fases e registo de tempos por sessão, substituiu definitivamente as folhas de obra em papel e o "telefone estragado" dos grupos de mensagens. O controlo de inventário com abate automático de stock, alertas de stock mínimo e suporte a transferências internas entre filiais resolveu o problema do stock desequilibrado e das encomendas duplicadas. A faturação automática, assente na regra #raw("valor_final = preco_servico + subtotal_pecas") com snapshot de preços no momento da intervenção, garante que nenhum serviço nem peça ficam por cobrar. Por fim, o dashboard analítico devolve ao CEO a visão financeira e operacional que antes era impossível de obter sem noites a consolidar dados manualmente.
+
+Do ponto de vista técnico, a arquitetura em três camadas (Vue.js, FastAPI, MySQL) provou ser a escolha certa para o contexto do projeto. A separação clara entre a camada de apresentação, a lógica de negócio e a persistência permitiu que os diferentes elementos da equipa trabalhassem em paralelo com dependências mínimas, e que a integração final decorresse sem regressões significativas. O Repository Pattern, a conformidade ACID das transações críticas e a estratégia de testes de integração com base de dados em memória constituem um alicerce sólido para a expansão futura do sistema — seja com novas filiais, novos perfis de utilizador ou novas funcionalidades de negócio.
+
+=== 10.2 Reflexão sobre o Uso de LLMs no Desenvolvimento
+
+A utilização de Modelos de Linguagem de Grande Escala (LLMs) — nomeadamente o Gemini e o Claude — foi uma constante ao longo de todas as etapas do projeto, desde a conceção narrativa do caso de negócio até à geração de código SQLAlchemy e à documentação de contratos de API. Esta experiência permitiu à equipa desenvolver uma perspetiva crítica e informada sobre o papel real destas ferramentas no ciclo de vida do software.
+
+O valor dos LLMs ficou mais evidente nas tarefas de carácter estrutural e repetitivo: geração de schemas Pydantic a partir de um contrato previamente definido, tradução de modelos de domínio em código PlantUML, scaffolding de routers e repositórios com padrões uniformes, e produção de documentação técnica densa. Nestas tarefas, o LLM funcionou como um acelerador genuíno, comprimindo horas de trabalho mecânico em minutos e libertando a equipa para se concentrar nas decisões de maior valor — as regras de negócio, as invariantes de integridade e as escolhas arquiteturais.
+
+Contudo, a experiência também tornou claro que os LLMs não substituem o julgamento de engenharia. Em praticamente todas as prompt-boxes deste relatório, o output do modelo exigiu algum grau de intervenção humana: desde correções pontuais de sintaxe (como o prefixo bcrypt ou o tipo JSON no campo `detalhe` da auditoria) até refatorações estruturais mais profundas (como a ordem das verificações na emissão de faturas ou a adição do `joinedload` nos repositórios para evitar N+1 queries). Em nenhum caso o output foi inserido diretamente no projeto sem revisão crítica.
+
+Esta observação leva à principal lição que a equipa retira desta experiência: a qualidade do output de um LLM é proporcional à qualidade da prompt e ao conhecimento técnico de quem a formula. Um modelo bem orientado — com contexto preciso, restrições explícitas e exemplos concretos — produz outputs substancialmente mais úteis e mais próximos do que é necessário. Inversamente, prompts vagas ou excessivamente genéricas geram outputs que exigem revisão extensiva e que, na pior das hipóteses, introduzem inconsistências difíceis de detetar sem um domínio sólido do problema.
+
+=== 10.3 Trabalho Futuro
+
+O sistema DLMCare encontra-se num estado de maturidade que permite a sua entrada em produção, mas o roadmap de evolução é claro. A curto prazo, a prioridade passa pela integração com um software de faturação certificado pela Autoridade Tributária, eliminando a necessidade de geração manual de PDFs e garantindo conformidade fiscal plena. A médio prazo, a introdução de um portal de cliente — onde o proprietário da trotinete pode consultar o estado da sua OS, o histórico de intervenções e descarregar faturas sem necessidade de contactar a receção — representaria um salto significativo na experiência de serviço da DLMCare. A longo prazo, a expansão para novas filiais (Coimbra, Faro ou além-fronteiras) beneficiaria da infraestrutura já construída sem necessidade de reescrita arquitetural, validando a decisão de construir o sistema como uma plataforma escalável desde o primeiro dia.
