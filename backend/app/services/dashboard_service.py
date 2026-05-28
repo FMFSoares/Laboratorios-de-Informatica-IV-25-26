@@ -85,7 +85,7 @@ class DashboardService:
 
         # Métrica 5: Peças abaixo do stock mínimo
         stock_query = self.db.query(StockLoja, Peca, Loja).join(Peca).join(Loja)\
-            .filter(StockLoja.quantidade < StockLoja.limite_minimo)
+            .filter(StockLoja.quantidade <= StockLoja.limite_minimo)
         if loja_filtro is not None:
             stock_query = stock_query.filter(StockLoja.loja_id == loja_filtro)
 
